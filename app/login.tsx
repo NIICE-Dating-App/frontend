@@ -2,15 +2,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Dimensions,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path, Circle as SvgCircle } from 'react-native-svg';
@@ -148,8 +148,7 @@ export default function LoginScreen() {
       </View>
 
       {/* Back Button */}
-      <TouchableOpacity style={styles.backButton}
-        onPress={() => router.back()}>
+      <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
         <Ionicons name="chevron-back" size={26} color="#FFFFFF" />
       </TouchableOpacity>
 
@@ -263,7 +262,7 @@ const styles = StyleSheet.create({
   },
   inputLabel: {
     fontSize: 17,
-    fontWeight: '600',
+    fontFamily: 'Kadwa-Bold',
     color: '#FFFFFF',
     marginBottom: 10,
     letterSpacing: 0.3,
@@ -274,6 +273,7 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     paddingHorizontal: 22,
     fontSize: 16,
+    fontFamily: 'Kadwa',
     color: '#FFFFFF',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
@@ -292,7 +292,7 @@ const styles = StyleSheet.create({
   },
   loginButtonText: {
     fontSize: 18,
-    fontWeight: '700',
+    fontFamily: 'Kadwa-Bold',
     color: '#FFFFFF',
     letterSpacing: 0.4,
   },

@@ -1,19 +1,21 @@
-FROM node:18-alpine
+FROM node:18-slim
 
 WORKDIR /app
 
-# Install Android SDK and other dependencies
-RUN apk add --no-cache openjdk11 android-sdk android-platform-tools
-RUN npm install -g @expo/ngrok@^4.1.0
-
+# Copy package files and install dependencies
 COPY package*.json ./
 RUN npm install
 
+# Install Expo CLI dependencies globally
+RUN npm install -g @expo/ngrok@^4.1.0
+
+# Copy application files
 COPY . .
 
+# Expose ports for Expo
 EXPOSE 8081 19000 19001 19002
 
+# Set Expo environment variables
 ENV EXPO_DEVTOOLS_LISTEN_ADDRESS=0.0.0.0
-ENV ANDROID_HOME=/usr/lib/android-sdk
 
-CMD [ "npx", "expo", "start", "--tunnel" ]
+CMD ["npx", "expo", "start", "--tunnel"]
