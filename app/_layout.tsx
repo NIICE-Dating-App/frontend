@@ -12,7 +12,6 @@ SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
-  
   const [fontsLoaded] = useFonts({
     'Kadwa': require('../assets/fonts/Kadwa-Regular.ttf'),
     'Kadwa-Bold': require('../assets/fonts/Kadwa-Bold.ttf'),
@@ -30,10 +29,34 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="signup" options={{ headerShown: false, title: 'Sign Up' }} />
-        <Stack.Screen name="login" options={{ headerShown: false, title: 'Log In' }} />
+      <Stack
+        screenOptions={{
+          animation: 'fade',
+          animationDuration: 400,
+          gestureEnabled: true,
+          headerShown: false,
+        }}
+      >
+        <Stack.Screen 
+          name="index" 
+          options={{ 
+            headerShown: false,
+          }} 
+        />
+        <Stack.Screen 
+          name="signup" 
+          options={{ 
+            headerShown: false, 
+            title: 'Sign Up',
+          }} 
+        />
+        <Stack.Screen 
+          name="login" 
+          options={{ 
+            headerShown: false, 
+            title: 'Log In',
+          }} 
+        />
       </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>
