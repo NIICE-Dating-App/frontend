@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
+<<<<<<< Updated upstream:app/login.tsx
     ActivityIndicator,
     Alert,
     Dimensions,
@@ -15,6 +16,22 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path, Circle as SvgCircle } from 'react-native-svg';
 import { supabase } from '../supabase';
+=======
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import Svg, { Path, Circle as SvgCircle } from "react-native-svg";
+import { Fonts } from "../../constants/theme";
+import { supabase } from "../../lib/supabase";
+>>>>>>> Stashed changes:app/(auth)/login.tsx
 
 const { width, height } = Dimensions.get('window');
 
