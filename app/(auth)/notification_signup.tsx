@@ -3,20 +3,20 @@ import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
-    Alert,
-    Animated,
-    Dimensions,
-    Easing,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  Animated,
+  Dimensions,
+  Easing,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Path, Circle as SvgCircle } from "react-native-svg";
-import { BackButton } from "../components/BackButton";
-import { Fonts } from "../constants/theme";
+import { BackButton } from "../../components/BackButton";
+import { Fonts } from "../../constants/theme";
 
 const BG = "#EEF7FF";
 const INK = "#000910";

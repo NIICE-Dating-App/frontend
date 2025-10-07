@@ -2,17 +2,19 @@
 import { router } from "expo-router";
 import React from "react";
 import {
-    Dimensions,
-    Platform,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  Dimensions,
+  Platform,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BackButton } from "../components/BackButton";
-import { Fonts } from "../constants/theme";
+import { BackButton } from "../../components/BackButton";
+import { Fonts } from "../../constants/theme";
+import { supabase } from "../../lib/supabase"; // 👈 make sure path is correct
 
 const BG = "#EEF7FF";
 const INK = "#000910";
@@ -22,8 +24,41 @@ const { width: W, height: H } = Dimensions.get("window");
 const isSmall = W < 380;
 
 export default function DoneSignup() {
-  const onCreateProfile = () => {
-    router.push("/try");
+  const onCreateProfile = async () => {
+    try {
+      // get current Supabase session
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error || !session?.user) {
+        Alert.alert("Error", "Session not found. Please log in again.");
+        return;
+      }
+
+      // ✅ create an empty profile row for onboarding with defaults
+      const { error: upsertError } = await supabase.from("profiles").upsert({
+        id: session.user.id,
+        onboarding_step: 0,
+        onboarding_completed: false,
+
+        // set defaults for non-nullable fields
+        gender: "man",
+        sexual_orientation: "straight",
+        brings_you: "date",
+        interested_in: ["woman"],
+        looking_for: ["short_term"],
+        prompt: "To be filled soon",
+      });
+
+      if (upsertError) {
+        Alert.alert("Error", upsertError.message);
+        return;
+      }
+
+      // move to the first onboarding screen
+      router.push("/(onboarding)/name_age_signup");
+    } catch (err) {
+      console.error("Profile creation error:", err);
+      Alert.alert("Unexpected error", "Please try again.");
+    }
   };
 
   return (
@@ -67,45 +102,35 @@ const styles = StyleSheet.create({
     marginTop: 16,
     marginBottom: 16,
   },
-
   copy: {
     marginTop: isSmall ? TOP_OFFSET * 0.8 : TOP_OFFSET,
     marginBottom: 32,
     alignItems: "flex-start",
   },
-
-  // first line
   lead: {
     color: INK,
     fontSize: isSmall ? 34 : 38,
     fontFamily: Fonts.bold,
     fontWeight: "bold",
-    lineHeight: isSmall ? 55 : 60, // safely > fontSize, keeps a stable box
+    lineHeight: isSmall ? 55 : 60,
   },
-
-  // wrapper adds headroom *above* the large text so iOS doesn't crop the ascent
   accentWrap: {
-    paddingTop: 10,             // ascent buffer (prevents the “pushed up” look)
-    marginTop: -8,              // visually tightens the two lines
+    paddingTop: 10,
+    marginTop: -8,
     overflow: "visible",
   },
-
-  // second (big) line
   accent: {
     color: BLUE,
     fontSize: isSmall ? 48 : 56,
     fontFamily: Fonts.bold,
     fontWeight: "800",
-    lineHeight: isSmall ? 80 : 90, // like your working screen: comfortably > fontSize
+    lineHeight: isSmall ? 80 : 90,
     ...(Platform.OS === "android" ? { includeFontPadding: false } : null),
   },
-
   ctaArea: {
     marginTop: "auto",
     paddingBottom: 36,
   },
-
-  // keep EXACT geometry
   primaryBtnDark: {
     height: 56,
     borderRadius: 28,

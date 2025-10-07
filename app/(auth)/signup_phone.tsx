@@ -1,16 +1,16 @@
 import { router } from "expo-router";
 import React, { useState } from "react";
 import {
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import CountryPicker, { Country, CountryCode } from "react-native-country-picker-modal";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BackButton } from "../components/BackButton";
-import { Fonts } from "../constants/theme";
+import { BackButton } from "../../components/BackButton";
+import { Fonts } from "../../constants/theme";
 
 export default function SignupPhone() {
   const [countryCode, setCountryCode] = useState<CountryCode>("TR");

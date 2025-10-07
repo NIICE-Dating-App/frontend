@@ -1,18 +1,18 @@
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BackButton } from "../components/BackButton";
-import { Fonts } from "../constants/theme";
-import { supabase } from "../lib/supabase";
+import { BackButton } from "../../components/BackButton";
+import { Fonts } from "../../constants/theme";
+import { supabase } from "../../lib/supabase";
 
 export default function PasswordCreateSignup() {
   const params = useLocalSearchParams();
@@ -78,13 +78,12 @@ export default function PasswordCreateSignup() {
     <SafeAreaView style={styles.container}>
       <BackButton style={styles.backButton} />
 
+      {/* Title */}
       <View style={styles.titleWrapper}>
         <Text style={styles.titleText}>Create a password</Text>
-        <Text style={styles.subtitleText}>
-          Secure your account with a strong password
-        </Text>
       </View>
 
+      {/* Password */}
       <View style={styles.inputContainer}>
         <Text style={styles.inputLabel}>Password</Text>
         <TextInput
@@ -92,12 +91,13 @@ export default function PasswordCreateSignup() {
           value={password}
           onChangeText={setPassword}
           secureTextEntry={true}
-          placeholder="Minimum 6 characters"
+          placeholder=""
           placeholderTextColor="#999"
           editable={!loading}
         />
       </View>
 
+      {/* Verify Password */}
       <View style={styles.inputContainer}>
         <Text style={styles.inputLabel}>Verify Password</Text>
         <TextInput
@@ -105,31 +105,13 @@ export default function PasswordCreateSignup() {
           value={verifyPassword}
           onChangeText={setVerifyPassword}
           secureTextEntry={true}
-          placeholder="Re-enter password"
+          placeholder=""
           placeholderTextColor="#999"
           editable={!loading}
         />
       </View>
 
-      {password.length > 0 && (
-        <View style={styles.strengthContainer}>
-          <Text
-            style={[
-              styles.strengthText,
-              password.length >= 6
-                ? styles.strengthGood
-                : styles.strengthWeak,
-            ]}
-          >
-            {password.length >= 8
-              ? "✓ Strong password"
-              : password.length >= 6
-              ? "✓ Good password"
-              : "⚠ Password too short"}
-          </Text>
-        </View>
-      )}
-
+      {/* Next Button */}
       <TouchableOpacity
         style={[styles.button, (!isValid || loading) && styles.buttonDisabled]}
         onPress={handleNext}
@@ -139,7 +121,7 @@ export default function PasswordCreateSignup() {
         {loading ? (
           <ActivityIndicator color="#EEF7FF" />
         ) : (
-          <Text style={styles.buttonText}>Create Password & Continue</Text>
+          <Text style={styles.buttonText}>Next</Text>
         )}
       </TouchableOpacity>
     </SafeAreaView>
@@ -170,12 +152,6 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.bold,
     lineHeight: 60,
   },
-  subtitleText: {
-    color: "#555",
-    fontSize: 16,
-    fontFamily: Fonts.primary,
-    marginTop: 4,
-  },
   inputContainer: {
     marginBottom: 24,
   },
@@ -199,20 +175,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 3,
     elevation: 2,
-  },
-  strengthContainer: {
-    marginTop: -16,
-    marginBottom: 20,
-  },
-  strengthText: {
-    fontSize: 14,
-    fontFamily: Fonts.primary,
-  },
-  strengthWeak: {
-    color: "#FF6B6B",
-  },
-  strengthGood: {
-    color: "#51CF66",
   },
   button: {
     height: 56,

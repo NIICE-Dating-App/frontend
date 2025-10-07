@@ -1,18 +1,18 @@
 import { router } from "expo-router";
 import React, { useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BackButton } from "../components/BackButton";
-import { Colors, Fonts } from "../constants/theme";
-import { supabase } from "../lib/supabase";
+import { BackButton } from "../../components/BackButton";
+import { Colors, Fonts } from "../../constants/theme";
+import { supabase } from "../../lib/supabase";
 
 export default function EmailSignup() {
   const [email, setEmail] = useState("");
@@ -31,9 +31,42 @@ export default function EmailSignup() {
     setLoading(true);
 
     try {
-      // Send OTP to email
+      const trimmedEmail = email.toLowerCase().trim();
+
+      // Check if user already exists using RPC function
+      const { data: userExists, error: checkError } = await supabase
+        .rpc('check_user_exists', { user_email: trimmedEmail });
+
+      if (checkError) {
+        console.error("Error checking user:", checkError);
+        throw checkError;
+      }
+
+      if (userExists) {
+        Alert.alert(
+          "Account Already Exists",
+          "An account with this email already exists. Would you like to log in instead?",
+          [
+            {
+              text: "Cancel",
+              style: "cancel",
+              onPress: () => setLoading(false),
+            },
+            {
+              text: "Log In",
+              onPress: () => {
+                setLoading(false);
+                router.push("/login");
+              },
+            },
+          ]
+        );
+        return;
+      }
+
+      // Send OTP to email for new user signup
       const { data, error } = await supabase.auth.signInWithOtp({
-        email: email.toLowerCase().trim(),
+        email: trimmedEmail,
         options: {
           shouldCreateUser: true,
         },
@@ -46,10 +79,10 @@ export default function EmailSignup() {
       // Navigate to verification page with email as parameter
       router.push({
         pathname: "/email_verif_signup",
-        params: { email: email.toLowerCase().trim() },
+        params: { email: trimmedEmail },
       });
     } catch (error: any) {
-      console.error("Error sending OTP:", error);
+      console.error("Error in signup process:", error);
       Alert.alert(
         "Error",
         error.message || "Failed to send verification code. Please try again."

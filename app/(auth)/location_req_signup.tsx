@@ -2,17 +2,17 @@ import * as Location from "expo-location";
 import { router } from "expo-router";
 import React, { useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BackButton } from "../components/BackButton";
-import { LocationPinsHero } from "../components/MapPins";
-import { Fonts } from "../constants/theme";
+import { BackButton } from "../../components/BackButton";
+import { LocationPinsHero } from "../../components/MapPins";
+import { Fonts } from "../../constants/theme";
 
 const BG = "#EEF7FF";
 const INK = "#000910";

@@ -14,8 +14,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Path, Circle as SvgCircle } from "react-native-svg";
-import { Fonts } from "../constants/theme";
-import { supabase } from "../lib/supabase";
+import { Fonts } from "../../constants/theme";
+import { supabase } from "../../lib/supabase";
 
 const { height } = Dimensions.get("window");
 
