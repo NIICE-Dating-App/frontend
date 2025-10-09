@@ -1,3 +1,4 @@
+// app/(onboarding)/(friend)/hope_to_find_signup.tsx
 import { Fonts } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
 import { moderateScale, scale, verticalScale } from "@/utils/responsive";
@@ -18,29 +19,55 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+// 🟢 Options for friendship values
 const OPTIONS = [
-  "Marriage",
-  "Life partner",
-  "Long-term relationship",
-  "Short-term relationship",
-  "Fun, casual dates",
-  "Intimacy",
-  "Figuring it out",
+  "Loyalty",
+  "Trustworthy",
+  "Good listener",
+  "Sense of humor",
+  "Supportive",
+  "Non-judgmental",
+  "Honest",
+  "Reliable",
+  "Fun to be around",
+  "Authentic",
+  "Understanding",
+  "Shared interests",
+  "Deep conversations",
+  "Adventurous",
+  "Positive energy",
+  "Low-maintenance",
+  "Makes time for me",
+  "Encouraging",
+  "Respectful of boundaries",
+  "Growth-minded",
 ];
 
-// 🔵 UI → ENUM mapping
+// 🔵 UI → ENUM mapping for DB
 const ENUM_MAP: Record<string, string> = {
-  "Marriage": "marriage",
-  "Life partner": "life_partner",
-  "Long-term relationship": "long_term_relationship",
-  "Short-term relationship": "short_term_relationship",
-  "Fun, casual dates": "casual_dates",
-  "Intimacy": "intimacy",
-  "New friends": "new_friends",
-  "Figuring it out": "figuring_it_out",
+  "Loyalty": "loyalty",
+  "Trustworthy": "trustworthy",
+  "Good listener": "good_listener",
+  "Sense of humor": "sense_of_humor",
+  "Supportive": "supportive",
+  "Non-judgmental": "non_judgmental",
+  "Honest": "honest",
+  "Reliable": "reliable",
+  "Fun to be around": "fun_to_be_around",
+  "Authentic": "authentic",
+  "Understanding": "understanding",
+  "Shared interests": "shared_interests",
+  "Deep conversations": "deep_conversations",
+  "Adventurous": "adventurous",
+  "Positive energy": "positive_energy",
+  "Low-maintenance": "low_maintenance",
+  "Makes time for me": "makes_time_for_me",
+  "Encouraging": "encouraging",
+  "Respectful of boundaries": "respectful_of_boundaries",
+  "Growth-minded": "growth_minded",
 };
 
-export default function HopeToFindSignup() {
+export default function HopeToFindFriendSignup() {
   const [selected, setSelected] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const animRefs = useRef<Record<string, Animated.Value>>({});
@@ -63,8 +90,8 @@ export default function HopeToFindSignup() {
     if (selected.includes(opt)) {
       setSelected(selected.filter((x) => x !== opt));
     } else {
-      if (selected.length >= 2) {
-        Alert.alert("Limit reached", "You can choose up to 2 options.");
+      if (selected.length >= 5) {
+        Alert.alert("Limit reached", "You can choose up to 5 values.");
         return;
       }
       setSelected([...selected, opt]);
@@ -74,11 +101,6 @@ export default function HopeToFindSignup() {
   const isSelected = (opt: string) => selected.includes(opt);
 
   const handleNext = async () => {
-    if (selected.length === 0) {
-      Alert.alert("Missing info", "Please select what you're hoping to find.");
-      return;
-    }
-
     try {
       setLoading(true);
       const {
@@ -87,30 +109,32 @@ export default function HopeToFindSignup() {
       } = await supabase.auth.getSession();
       if (error || !session?.user) throw new Error("Session not found");
 
+      // normalize to enum values
       const normalized = selected.map((x) => ENUM_MAP[x]);
 
-      // 🟦 Insert or update user_modes for dating mode
+      // 🟦 Insert or update user_modes for friend mode
       const { error: upsertError } = await supabase
-      .from("user_modes")
-      .upsert(
-        {
-          user_id: session.user.id,
-          mode: "dating",
-          looking_for_date: normalized,
-          updated_at: new Date(),
-        },
-        { onConflict: "user_id,mode" }
-      );
-
+        .from("user_modes")
+        .upsert(
+          {
+            user_id: session.user.id,
+            mode: "friend",
+            value_friend: normalized, // ✅ correct enum[] column
+            updated_at: new Date(),
+          },
+          { onConflict: "user_id,mode" }
+        );
 
       if (upsertError) throw new Error(upsertError.message);
 
+      // update onboarding progress
       await supabase
         .from("profiles")
         .update({ onboarding_step: 4 })
         .eq("id", session.user.id);
 
-      router.push("/(onboarding)/(common)/hobbies1_signup");
+      // 🧭 Route to next common page
+      router.push("/(onboarding)/(common)/lifestyle2_signup");
     } catch (e: any) {
       Alert.alert("Error", e.message);
     } finally {
@@ -127,7 +151,7 @@ export default function HopeToFindSignup() {
         <Ionicons name="chevron-back" size={moderateScale(26)} color="#FFFFFF" />
       </TouchableOpacity>
 
-      {/* Progress */}
+      {/* Progress Bar */}
       <View style={styles.progressWrapper}>
         <View style={styles.progressTrack}>
           <View style={styles.progressFill} />
@@ -140,9 +164,9 @@ export default function HopeToFindSignup() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.title}>What are you hoping to find?</Text>
+        <Text style={styles.title}>What do you value in friendship?</Text>
         <Text style={styles.subtitle}>
-          It’s your dating journey — choose 1 or 2 options that feel right for you.
+          Choose up to 5 that feel true to you — or skip if you’d like.
         </Text>
 
         {OPTIONS.map((opt) => {
@@ -171,17 +195,13 @@ export default function HopeToFindSignup() {
             </Pressable>
           );
         })}
-
-        <Text style={styles.note}>
-          This information will be shown on your profile.
-        </Text>
       </ScrollView>
 
-      {/* Next Button */}
+      {/* Next Button (skippable) */}
       <TouchableOpacity
-        style={[styles.nextButton, selected.length === 0 && { opacity: 0.5 }]}
+        style={[styles.nextButton, loading && { opacity: 0.5 }]}
         onPress={handleNext}
-        disabled={loading || selected.length === 0}
+        disabled={loading}
       >
         <Ionicons name="chevron-forward" size={moderateScale(30)} color="#FFFFFF" />
       </TouchableOpacity>
@@ -249,13 +269,6 @@ const styles = StyleSheet.create({
   optionSelected: { shadowOpacity: 0.4, shadowRadius: 8, transform: [{ scale: 1.02 }] },
   optionText: { fontFamily: Fonts.bold, fontSize: moderateScale(17), color: "#1B2B44" },
   optionTextSelected: { color: "#FFFFFF" },
-
-  note: {
-    fontFamily: Fonts.bold,
-    fontSize: moderateScale(14),
-    color: "#6C757D",
-    marginTop: verticalScale(24),
-  },
 
   nextButton: {
     position: "absolute",

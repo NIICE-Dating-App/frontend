@@ -19,26 +19,25 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const OPTIONS = [
-  "Marriage",
-  "Life partner",
-  "Long-term relationship",
-  "Short-term relationship",
-  "Fun, casual dates",
-  "Intimacy",
-  "Figuring it out",
-];
-
-// 🔵 UI → ENUM mapping
-const ENUM_MAP: Record<string, string> = {
-  "Marriage": "marriage",
-  "Life partner": "life_partner",
-  "Long-term relationship": "long_term_relationship",
-  "Short-term relationship": "short_term_relationship",
-  "Fun, casual dates": "casual_dates",
-  "Intimacy": "intimacy",
-  "New friends": "new_friends",
-  "Figuring it out": "figuring_it_out",
-};
+    "New friends nearby",
+    "Workout/fitness buddy",
+    "Travel companions",
+    "Activity/hobby partners",
+    "Casual hangouts",
+    "Professional networking",
+    "Close friendships",
+  ];
+  
+  const ENUM_MAP: Record<string, string> = {
+    "New friends nearby": "new_friends_nearby",
+    "Workout/fitness buddy": "workout_fitness_buddy",
+    "Travel companions": "travel_companions",
+    "Activity/hobby partners": "activity_hobby_partners",
+    "Casual hangouts": "casual_hangouts",
+    "Professional networking": "professional_networking",
+    "Close friendships": "close_friendships",
+  };
+  
 
 export default function HopeToFindSignup() {
   const [selected, setSelected] = useState<string[]>([]);
@@ -95,8 +94,8 @@ export default function HopeToFindSignup() {
       .upsert(
         {
           user_id: session.user.id,
-          mode: "dating",
-          looking_for_date: normalized,
+          mode: "friend",
+          looking_for_friend: normalized,
           updated_at: new Date(),
         },
         { onConflict: "user_id,mode" }
@@ -142,7 +141,7 @@ export default function HopeToFindSignup() {
       >
         <Text style={styles.title}>What are you hoping to find?</Text>
         <Text style={styles.subtitle}>
-          It’s your dating journey — choose 1 or 2 options that feel right for you.
+          It’s your friendship journey — choose 1 or 2 options that feel right for you.
         </Text>
 
         {OPTIONS.map((opt) => {

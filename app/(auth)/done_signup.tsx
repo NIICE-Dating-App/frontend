@@ -44,7 +44,7 @@ export default function DoneSignup() {
         sexual_orientation: "straight",
         brings_you: "date",
         interested_in: ["woman"],
-        looking_for: ["short_term"],
+        //looking_for: ["short_term"],
         prompt: "To be filled soon",
       });
 

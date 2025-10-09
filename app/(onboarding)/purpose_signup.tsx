@@ -1,10 +1,12 @@
 // app/(onboarding)/purpose_signup.tsx
 import { Fonts } from "@/constants/theme";
+import { supabase } from "@/lib/supabase";
 import { moderateScale, scale, verticalScale } from "@/utils/responsive";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useRef, useState } from "react";
 import {
+  Alert,
   Animated,
   Keyboard,
   Pressable,
@@ -19,6 +21,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function PurposeSignup() {
   const [selected, setSelected] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   const animRefs = useRef<{ [key: string]: Animated.Value }>({});
 
   const ensureAnim = (type: string) => {
@@ -31,7 +34,7 @@ export default function PurposeSignup() {
   const handlePress = (type: string) => {
     const anim = ensureAnim(type);
 
-    // Soft press feel
+    // Soft press animation
     Animated.sequence([
       Animated.timing(anim, {
         toValue: 1,
@@ -48,12 +51,61 @@ export default function PurposeSignup() {
     setSelected(type);
   };
 
-  const handleNext = () => {
-    router.push({
-      pathname: "/(onboarding)/who_to_meet_signup",
-      params: selected ? { purpose: selected } : undefined,
-    });
+  const handleNext = async () => {
+    if (!selected) return;
+  
+    try {
+      setLoading(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) throw new Error("No session found");
+  
+      const userId = session.user.id;
+      const modeValue = selected.toLowerCase() === "date" ? "dating" : "friend";
+      const bringsValue = selected.toLowerCase() === "date" ? "date" : "friends";
+  
+      // 🧠 Ensure deletion finishes before inserting
+      const { error: deleteError } = await supabase
+        .from("user_modes")
+        .delete()
+        .eq("user_id", userId);
+  
+      if (deleteError) throw deleteError;
+  
+      // 🧩 Insert the new mode
+      const { error: insertError } = await supabase
+        .from("user_modes")
+        .insert({
+          user_id: userId,
+          mode: modeValue,
+          updated_at: new Date().toISOString(),
+        });
+  
+      if (insertError) throw insertError;
+  
+      // 🧩 Update profiles table
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .update({
+          brings_you: bringsValue,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", userId);
+  
+      if (profileError) throw profileError;
+  
+      // ✅ Move to next step
+      router.push({
+        pathname: "/(onboarding)/who_to_meet_signup",
+        params: { purpose: selected },
+      });
+    } catch (e: any) {
+      console.error(e);
+      Alert.alert("Error", e.message);
+    } finally {
+      setLoading(false);
+    }
   };
+  
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
@@ -153,9 +205,9 @@ export default function PurposeSignup() {
 
         {/* Next */}
         <TouchableOpacity
-          style={[styles.nextButton, !selected && { opacity: 0.5 }]}
+          style={[styles.nextButton, (!selected || loading) && { opacity: 0.5 }]}
           onPress={handleNext}
-          disabled={!selected}
+          disabled={!selected || loading}
         >
           <Ionicons
             name="chevron-forward"
@@ -239,9 +291,6 @@ const styles = StyleSheet.create({
     marginTop: verticalScale(7),
     marginBottom: verticalScale(26),
   },
-
-  
-
   buttonRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -259,18 +308,14 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 5,
   },
-  cardSelected: {
-    shadowOpacity: 0.35,
-  },
+  cardSelected: { shadowOpacity: 0.35 },
   optionText: {
     fontFamily: Fonts.bold,
     fontSize: moderateScale(20),
     color: "#1B2B44",
     marginBottom: verticalScale(14),
   },
-  optionTextSelected: {
-    color: "#FFFFFF",
-  },
+  optionTextSelected: { color: "#FFFFFF" },
   circle: {
     width: scale(28),
     height: scale(28),
@@ -278,10 +323,7 @@ const styles = StyleSheet.create({
     borderWidth: scale(3),
     borderColor: "#1B2B44",
   },
-  circleSelected: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#FFFFFF",
-  },
+  circleSelected: { backgroundColor: "#FFFFFF", borderColor: "#FFFFFF" },
   note: {
     fontFamily: Fonts.bold,
     fontSize: moderateScale(15),
