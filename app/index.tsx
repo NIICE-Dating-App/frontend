@@ -93,7 +93,7 @@ const styles = StyleSheet.create({
 	},
 	logo: {
 		position: 'absolute',
-		top: '40%',
+		top: '45%',
 		left: '50%',
 		transform: [
 			{ translateX: -scale(140) }, 

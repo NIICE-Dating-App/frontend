@@ -3,10 +3,13 @@ import { supabase } from "@/lib/supabase";
 import { moderateScale, scale, verticalScale } from "@/utils/responsive";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   Alert,
   Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
@@ -23,7 +26,9 @@ export default function NameAgeSignup() {
   const [month, setMonth] = useState("");
   const [year, setYear] = useState("");
 
-  // ✅ Helper: checks if the given date is valid
+  const monthRef = useRef<TextInput>(null);
+  const yearRef = useRef<TextInput>(null);
+
   const isValidDate = (d: number, m: number, y: number) => {
     const date = new Date(y, m - 1, d);
     return (
@@ -55,7 +60,6 @@ export default function NameAgeSignup() {
       return Alert.alert("Invalid date", "Please enter a valid date of birth.");
     }
 
-    // ❌ Reject impossible dates like 31 Feb or 35 June
     if (!isValidDate(birthDay, birthMonth, birthYear)) {
       return Alert.alert("Invalid date", "This date does not exist.");
     }
@@ -118,69 +122,96 @@ export default function NameAgeSignup() {
           </View>
         </View>
 
-        {/* Main Content */}
-        <View style={styles.contentWrapper}>
-          <Text style={styles.title}>
-            Let’s start with{"\n"}these simple questions
-          </Text>
+        {/* Keyboard-aware scroll container */}
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={verticalScale(1)} // adjusts how far it pushes up
+        >
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={styles.contentWrapper}>
+              <Text style={styles.title}>
+                Let’s start with{"\n"}these simple questions
+              </Text>
 
-          {/* First Name */}
-          <View style={styles.inputBlock}>
-            <Text style={styles.label}>Your first name</Text>
-            <TextInput
-              style={styles.input}
-              value={name}
-              onChangeText={setName}
-              placeholder=""
-              placeholderTextColor="#A0A0A0"
-              returnKeyType="done"
-              onSubmitEditing={Keyboard.dismiss}
-            />
-          </View>
-
-          {/* Birthday Section */}
-          <View style={styles.inputBlock}>
-            <Text style={styles.label}>Your birthday</Text>
-            <View style={styles.birthdayRow}>
-              <View style={styles.birthdayField}>
-                <Text style={styles.birthdayLabel}>Day</Text>
+              {/* First Name */}
+              <View style={styles.inputBlock}>
+                <Text style={styles.label}>Your first name</Text>
                 <TextInput
-                  style={styles.birthdayInput}
-                  keyboardType="number-pad"
+                  style={styles.input}
+                  value={name}
+                  onChangeText={setName}
+                  placeholder=""
+                  placeholderTextColor="#A0A0A0"
                   returnKeyType="done"
-                  maxLength={2}
-                  value={day}
-                  onChangeText={setDay}
                   onSubmitEditing={Keyboard.dismiss}
                 />
               </View>
-              <View style={styles.birthdayField}>
-                <Text style={styles.birthdayLabel}>Month</Text>
-                <TextInput
-                  style={styles.birthdayInput}
-                  keyboardType="number-pad"
-                  returnKeyType="done"
-                  maxLength={2}
-                  value={month}
-                  onChangeText={setMonth}
-                  onSubmitEditing={Keyboard.dismiss}
-                />
-              </View>
-              <View style={styles.birthdayField}>
-                <Text style={styles.birthdayLabel}>Year</Text>
-                <TextInput
-                  style={styles.birthdayInput}
-                  keyboardType="number-pad"
-                  returnKeyType="done"
-                  maxLength={4}
-                  value={year}
-                  onChangeText={setYear}
-                  onSubmitEditing={Keyboard.dismiss}
-                />
+
+              {/* Birthday Section */}
+              <View style={styles.inputBlock}>
+                <Text style={styles.label}>Your birthday</Text>
+                <View style={styles.birthdayRow}>
+                  {/* Day */}
+                  <View style={styles.birthdayField}>
+                    <Text style={styles.birthdayLabel}>Day</Text>
+                    <TextInput
+                      style={styles.birthdayInput}
+                      keyboardType="number-pad"
+                      returnKeyType="next"
+                      maxLength={2}
+                      value={day}
+                      onChangeText={(text) => {
+                        setDay(text);
+                        if (text.length === 2) monthRef.current?.focus();
+                      }}
+                      blurOnSubmit={false}
+                      onSubmitEditing={() => monthRef.current?.focus()}
+                    />
+                  </View>
+
+                  {/* Month */}
+                  <View style={styles.birthdayField}>
+                    <Text style={styles.birthdayLabel}>Month</Text>
+                    <TextInput
+                      ref={monthRef}
+                      style={styles.birthdayInput}
+                      keyboardType="number-pad"
+                      returnKeyType="next"
+                      maxLength={2}
+                      value={month}
+                      onChangeText={(text) => {
+                        setMonth(text);
+                        if (text.length === 2) yearRef.current?.focus();
+                      }}
+                      blurOnSubmit={false}
+                      onSubmitEditing={() => yearRef.current?.focus()}
+                    />
+                  </View>
+
+                  {/* Year */}
+                  <View style={styles.birthdayField}>
+                    <Text style={styles.birthdayLabel}>Year</Text>
+                    <TextInput
+                      ref={yearRef}
+                      style={styles.birthdayInput}
+                      keyboardType="number-pad"
+                      returnKeyType="done"
+                      maxLength={4}
+                      value={year}
+                      onChangeText={setYear}
+                      onSubmitEditing={() => Keyboard.dismiss()}
+                    />
+                  </View>
+                </View>
               </View>
             </View>
-          </View>
-        </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
 
         {/* Next Button */}
         <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
@@ -196,10 +227,7 @@ const INK = "#000910";
 const BLUE = "#1B44CD";
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: BG,
-  },
+  container: { flex: 1, backgroundColor: BG },
   backButton: {
     position: "absolute",
     top: verticalScale(58),
@@ -213,7 +241,7 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   progressWrapper: {
-    marginTop: verticalScale(58 + 30),
+    marginTop: verticalScale(88),
     paddingHorizontal: scale(24),
   },
   progressTrack: {
@@ -227,8 +255,11 @@ const styles = StyleSheet.create({
     backgroundColor: BLUE,
     borderRadius: scale(3),
   },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: verticalScale(100),
+  },
   contentWrapper: {
-    flex: 1,
     paddingHorizontal: scale(24),
     paddingTop: verticalScale(20),
   },
@@ -239,9 +270,7 @@ const styles = StyleSheet.create({
     color: INK,
     marginBottom: verticalScale(30),
   },
-  inputBlock: {
-    marginBottom: verticalScale(32),
-  },
+  inputBlock: { marginBottom: verticalScale(32) },
   label: {
     fontFamily: Fonts.bold,
     fontSize: moderateScale(20),

@@ -102,7 +102,7 @@ export default function GenderSignup() {
         return;
       }
 
-      router.push("/(onboarding)/purpose_signup");
+      router.push("/(onboarding)/orientation_signup");
     } catch (err) {
       console.error("Gender update error:", err);
       Alert.alert("Unexpected error", "Please try again.");

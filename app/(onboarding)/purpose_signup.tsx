@@ -1,11 +1,13 @@
-// app/(auth)/purpose_signup.tsx
+// app/(onboarding)/purpose_signup.tsx
 import { Fonts } from "@/constants/theme";
 import { moderateScale, scale, verticalScale } from "@/utils/responsive";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
+  Animated,
   Keyboard,
+  Pressable,
   StatusBar,
   StyleSheet,
   Text,
@@ -16,12 +18,40 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function PurposeSignup() {
-  const [selectedPurpose, setSelectedPurpose] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+  const animRefs = useRef<{ [key: string]: Animated.Value }>({});
 
-  const onNext = () => {
+  const ensureAnim = (type: string) => {
+    if (!animRefs.current[type]) {
+      animRefs.current[type] = new Animated.Value(0);
+    }
+    return animRefs.current[type];
+  };
+
+  const handlePress = (type: string) => {
+    const anim = ensureAnim(type);
+
+    // Soft press feel
+    Animated.sequence([
+      Animated.timing(anim, {
+        toValue: 1,
+        duration: 180,
+        useNativeDriver: false,
+      }),
+      Animated.timing(anim, {
+        toValue: 0,
+        duration: 220,
+        useNativeDriver: false,
+      }),
+    ]).start();
+
+    setSelected(type);
+  };
+
+  const handleNext = () => {
     router.push({
-      pathname: "/try",
-      params: selectedPurpose ? { purpose: selectedPurpose } : undefined,
+      pathname: "/(onboarding)/who_to_meet_signup",
+      params: selected ? { purpose: selected } : undefined,
     });
   };
 
@@ -43,52 +73,95 @@ export default function PurposeSignup() {
         </View>
 
         {/* Content */}
-        <View style={styles.contentWrapper}>
-          {/* Heading */}
-          <View style={{ marginBottom: verticalScale(6) }}>
+        <View style={styles.content}>
+          <View>
             <Text style={styles.titleLine}>What brings you to</Text>
-
-            {/* Row kept to avoid clipping; spacing tightened */}
             <View style={styles.titleRow}>
               <Text style={styles.highlightBig}>Niice</Text>
               <Text style={styles.questionMark}>?</Text>
             </View>
           </View>
 
-          {/* Subtitle */}
           <Text style={styles.subtitle}>
-            Are you looking for a romantic{"\n"}
-            relationship, new friends, or to{"\n"}
-            network without boredom?
+            Are you looking for a <Text style={{ color: BLUE }}>date</Text> or{" "}
+            <Text style={{ color: BLUE }}>friends</Text>?
           </Text>
 
-          {/* Options */}
-          <View style={styles.buttonGroup}>
-            {["Date", "Friends", "Date & Friends"].map((p) => (
-              <TouchableOpacity
-                key={p}
-                style={[
-                  styles.optionButton,
-                  selectedPurpose === p && styles.optionButtonSelected,
-                ]}
-                onPress={() => setSelectedPurpose(p)}
-                activeOpacity={0.9}
-              >
-                <Text style={styles.optionText}>{p}</Text>
-                <View
-                  style={[
-                    styles.circle,
-                    selectedPurpose === p && styles.circleSelected,
-                  ]}
-                />
-              </TouchableOpacity>
-            ))}
+          {/* Buttons */}
+          <View style={styles.buttonRow}>
+            {["Date", "Friends"].map((type) => {
+              const isSelected = selected === type;
+              const anim = ensureAnim(type);
+
+              const bgColor = anim.interpolate({
+                inputRange: [0, 1],
+                outputRange: isSelected
+                  ? ["#1B44CD", "#1437B3"]
+                  : ["#FFFFFF", "#EAF1F8"],
+              });
+
+              const shadowOpacity = anim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0.12, 0.35],
+              });
+
+              return (
+                <Pressable key={type} onPress={() => handlePress(type)}>
+                  <Animated.View
+                    style={[
+                      styles.cardWrapper,
+                      {
+                        backgroundColor: bgColor,
+                        shadowOpacity,
+                        transform: [
+                          {
+                            scale: anim.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [1, 0.97],
+                            }),
+                          },
+                        ],
+                      },
+                      isSelected && styles.cardSelected,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.optionText,
+                        isSelected && styles.optionTextSelected,
+                      ]}
+                    >
+                      {type}
+                    </Text>
+                    <View
+                      style={[
+                        styles.circle,
+                        isSelected && styles.circleSelected,
+                      ]}
+                    />
+                  </Animated.View>
+                </Pressable>
+              );
+            })}
           </View>
+
+          {/* Note */}
+          <Text style={styles.note}>
+            You can change this mode anytime in the app.
+          </Text>
         </View>
 
         {/* Next */}
-        <TouchableOpacity style={styles.nextButton} onPress={onNext}>
-          <Ionicons name="chevron-forward" size={moderateScale(30)} color="#FFFFFF" />
+        <TouchableOpacity
+          style={[styles.nextButton, !selected && { opacity: 0.5 }]}
+          onPress={handleNext}
+          disabled={!selected}
+        >
+          <Ionicons
+            name="chevron-forward"
+            size={moderateScale(30)}
+            color="#FFFFFF"
+          />
         </TouchableOpacity>
       </SafeAreaView>
     </TouchableWithoutFeedback>
@@ -100,11 +173,7 @@ const INK = "#000910";
 const BLUE = "#1B44CD";
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: BG,
-  },
-
+  container: { flex: 1, backgroundColor: BG },
   backButton: {
     position: "absolute",
     top: verticalScale(58),
@@ -117,7 +186,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     zIndex: 10,
   },
-
   progressWrapper: {
     marginTop: verticalScale(58 + 30),
     paddingHorizontal: scale(24),
@@ -129,96 +197,102 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: verticalScale(6),
-    width: "13.33%",
+    width: "13%",
     backgroundColor: BLUE,
     borderRadius: scale(3),
   },
-
-  contentWrapper: {
+  content: {
     flex: 1,
     paddingHorizontal: scale(24),
-    paddingTop: verticalScale(20),
+    paddingTop: verticalScale(50),
+    justifyContent: "flex-start",
   },
-
-  // Title line (kept)
   titleLine: {
     fontFamily: Fonts.bold,
     fontSize: moderateScale(30),
     lineHeight: verticalScale(48),
     color: INK,
-    includeFontPadding: false,
-    marginBottom: 0,
   },
-
-  // Tighten spacing to the "Niice ?" row
   titleRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: verticalScale(-2),         // was +6 → pulls the row closer
+    marginTop: verticalScale(-2),
   },
-
-  // Large word; lineHeight slightly reduced but still safe from clipping
   highlightBig: {
     fontFamily: Fonts.bold,
     color: BLUE,
     fontSize: moderateScale(42),
-    lineHeight: verticalScale(62),        // was 62
-    includeFontPadding: false,
+    lineHeight: verticalScale(62),
   },
-
-  // Bigger "?" with ample line box, slight optical nudge
   questionMark: {
     fontFamily: Fonts.bold,
     color: BLUE,
     fontSize: moderateScale(54),
-    lineHeight: verticalScale(80),        // was 70
-    includeFontPadding: true,
-    marginLeft: scale(8),
-    transform: [{ translateY: verticalScale(1) }],
+    lineHeight: verticalScale(80),
+    marginLeft: scale(6),
   },
-
-  // Tighter spacing below heading
   subtitle: {
     fontFamily: Fonts.bold,
     fontSize: moderateScale(18),
     lineHeight: verticalScale(26),
     color: INK,
-    marginTop: verticalScale(4),          // was 6
-    marginBottom: verticalScale(10),
+    marginTop: verticalScale(7),
+    marginBottom: verticalScale(26),
   },
 
-  buttonGroup: {
-    gap: verticalScale(10),
-  },
-  optionButton: {
-    backgroundColor: BLUE,
-    borderRadius: scale(12),
-    paddingVertical: verticalScale(14),
-    paddingHorizontal: scale(18),
+  
+
+  buttonRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    marginTop: verticalScale(1),
+    marginBottom: verticalScale(50),
   },
-  optionButtonSelected: {
-    backgroundColor: "#1838B3",
+  cardWrapper: {
+    width: scale(150),
+    height: verticalScale(130),
+    borderRadius: scale(32),
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#1B44CD",
+    shadowOffset: { width: 0, height: 5 },
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  cardSelected: {
+    shadowOpacity: 0.35,
   },
   optionText: {
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(18),
+    fontSize: moderateScale(20),
+    color: "#1B2B44",
+    marginBottom: verticalScale(14),
+  },
+  optionTextSelected: {
     color: "#FFFFFF",
   },
   circle: {
-    width: scale(26),
-    height: scale(26),
-    borderRadius: scale(13),
+    width: scale(28),
+    height: scale(28),
+    borderRadius: scale(14),
     borderWidth: scale(3),
-    borderColor: "#FFFFFF",
-    backgroundColor: "transparent",
+    borderColor: "#1B2B44",
   },
   circleSelected: {
     backgroundColor: "#FFFFFF",
+    borderColor: "#FFFFFF",
   },
-
+  note: {
+    fontFamily: Fonts.bold,
+    fontSize: moderateScale(15),
+    width: "100%",
+    height: verticalScale(100),
+    borderRadius: scale(35),
+    marginTop: verticalScale(-20),
+    marginBottom: verticalScale(50),
+    color: "#6C757D",
+    textAlign: "center",
+  },
   nextButton: {
     position: "absolute",
     bottom: verticalScale(40),

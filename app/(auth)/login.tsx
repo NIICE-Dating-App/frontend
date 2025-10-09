@@ -1,10 +1,10 @@
+import { moderateScale, scale, verticalScale } from "@/utils/responsive";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Dimensions,
   StatusBar,
   StyleSheet,
   Text,
@@ -17,9 +17,7 @@ import Svg, { Path, Circle as SvgCircle } from "react-native-svg";
 import { Fonts } from "../../constants/theme";
 import { supabase } from "../../lib/supabase";
 
-const { height } = Dimensions.get("window");
-
-const MapPin: React.FC<{ size?: number }> = ({ size = 70 }) => (
+const MapPin: React.FC<{ size?: number }> = ({ size = moderateScale(70) }) => (
   <Svg
     width={size}
     height={size * 1.4}
@@ -39,8 +37,8 @@ const CircleWithPin: React.FC<{
   y: number;
   circleSize?: number;
   hasPin?: boolean;
-}> = ({ x, y, circleSize = 71, hasPin = false }) => (
-  <View style={[styles.circleContainer, { left: x, top: y }]}>
+}> = ({ x, y, circleSize = moderateScale(71), hasPin = false }) => (
+  <View style={[styles.circleContainer, { left: scale(x), top: verticalScale(y) }]}>
     <View
       style={[
         styles.backgroundCircle,
@@ -53,52 +51,83 @@ const CircleWithPin: React.FC<{
     />
     {hasPin && (
       <View style={styles.pinWrapper}>
-        <MapPin size={70} />
+        <MapPin size={moderateScale(70)} />
       </View>
     )}
   </View>
 );
 
 export default function LoginScreen() {
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // ✅ On mount: check if already logged in
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      const session = data?.session;
+      if (session?.user) {
+        await handlePostLoginRedirect(session.user.id);
+      }
+    };
+    checkSession();
+  }, []);
+
   const handleLogin = async () => {
-    if (!username || !password) {
-      Alert.alert("Error", "Please enter both username and password");
+    if (!email || !password) {
+      Alert.alert("Error", "Please enter both email and password");
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      Alert.alert("Invalid Email", "Please enter a valid email address");
       return;
     }
 
     setLoading(true);
     try {
-      const { data: userData, error: userError } = await supabase
-        .from("users")
-        .select("email")
-        .eq("username", username)
-        .single();
-
-      if (userError || !userData) {
-        Alert.alert("Login Failed", "Username not found");
-        setLoading(false);
-        return;
-      }
-
-      const { error } = await supabase.auth.signInWithPassword({
-        email: userData.email,
-        password: password,
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.toLowerCase().trim(),
+        password,
       });
 
       if (error) {
         Alert.alert("Login Failed", error.message);
-      } else {
-        router.push("/try");
+      } else if (data.session?.user) {
+        await handlePostLoginRedirect(data.session.user.id);
       }
-    } catch (error) {
-      Alert.alert("Error", "An unexpected error occurred");
+    } catch (error: any) {
       console.error(error);
+      Alert.alert("Error", "An unexpected error occurred");
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ✅ Handle where to send user after login
+  const handlePostLoginRedirect = async (userId: string) => {
+    try {
+      // Example: assuming you have a table `profiles` with a boolean column `onboarding_completed`
+      const { data: profile, error } = await supabase
+        .from("profiles")
+        .select("onboarding_completed")
+        .eq("id", userId)
+        .single();
+
+      if (error && error.code !== "PGRST116") {
+        console.error(error);
+      }
+
+      if (!profile || !profile.onboarding_completed) {
+        router.replace("/name_age_signup");
+      } else {
+        router.replace("/try");
+      }
+    } catch (err) {
+      console.error("Redirect check failed:", err);
+      router.replace("/name_age_signup");
     }
   };
 
@@ -106,7 +135,7 @@ export default function LoginScreen() {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
 
-      {/* Static Background Circles & Pins */}
+      {/* Background Circles */}
       <View style={styles.backgroundPattern}>
         <CircleWithPin x={47} y={-3} hasPin />
         <CircleWithPin x={317} y={22} hasPin />
@@ -135,21 +164,22 @@ export default function LoginScreen() {
 
       {/* Back Button */}
       <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-        <Ionicons name="chevron-back" size={26} color="#FFFFFF" />
+        <Ionicons name="chevron-back" size={moderateScale(26)} color="#FFFFFF" />
       </TouchableOpacity>
 
-      {/* Centered Wrapper */}
+      {/* Login Card */}
       <View style={styles.centerWrapper}>
         <View style={styles.loginCard}>
           <Text style={styles.title}>Log In</Text>
 
           <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Username</Text>
+            <Text style={styles.inputLabel}>Email</Text>
             <TextInput
               style={styles.input}
-              value={username}
-              onChangeText={setUsername}
+              value={email}
+              onChangeText={setEmail}
               autoCapitalize="none"
+              keyboardType="email-address"
               editable={!loading}
             />
           </View>
@@ -207,17 +237,17 @@ const styles = StyleSheet.create({
   },
   pinWrapper: {
     position: "absolute",
-    top: -43,
+    top: verticalScale(-43),
     alignItems: "center",
     justifyContent: "center",
   },
   backButton: {
     position: "absolute",
-    top: 58,
-    left: 24,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    top: verticalScale(58),
+    left: scale(24),
+    width: scale(56),
+    height: verticalScale(56),
+    borderRadius: scale(28),
     backgroundColor: "#0A0A0A",
     alignItems: "center",
     justifyContent: "center",
@@ -226,66 +256,66 @@ const styles = StyleSheet.create({
   centerWrapper: {
     flex: 1,
     justifyContent: "center",
-    paddingHorizontal: 24,
-    paddingBottom: 60,
+    paddingHorizontal: scale(24),
+    paddingBottom: verticalScale(60),
   },
   loginCard: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 32,
-    paddingVertical: 28,
-    paddingHorizontal: 28,
+    borderRadius: scale(32),
+    paddingVertical: verticalScale(28),
+    paddingHorizontal: scale(28),
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 12 },
+    shadowOffset: { width: 0, height: verticalScale(12) },
     shadowOpacity: 0.25,
-    shadowRadius: 25,
+    shadowRadius: scale(25),
     elevation: 15,
   },
   title: {
-    fontSize: 28,
+    fontSize: moderateScale(28),
     fontWeight: "bold",
     fontFamily: Fonts.bold,
     color: INK,
-    marginBottom: 8,
+    marginBottom: verticalScale(8),
     textAlign: "left",
   },
-  inputContainer: { marginBottom: 20 },
+  inputContainer: { marginBottom: verticalScale(20) },
   inputLabel: {
-    fontSize: 16,
+    fontSize: moderateScale(16),
     fontWeight: "600",
     fontFamily: Fonts.bold,
     color: INK,
-    marginBottom: 6,
+    marginBottom: verticalScale(6),
   },
   input: {
-    height: 52,
+    height: verticalScale(52),
     backgroundColor: BOX,
-    borderRadius: 26,
-    paddingHorizontal: 18,
-    fontSize: 18,
+    borderRadius: scale(26),
+    paddingHorizontal: scale(18),
+    fontSize: moderateScale(18),
     color: "#1A44CC",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: verticalScale(2) },
     shadowOpacity: 0.1,
-    shadowRadius: 3,
+    shadowRadius: scale(3),
     elevation: 2,
   },
   button: {
-    height: 56,
+    height: verticalScale(56),
     backgroundColor: INK,
-    borderRadius: 28,
+    borderRadius: scale(28),
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 12,
+    marginTop: verticalScale(12),
     shadowColor: "#00000040",
     shadowOpacity: 0.3,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 4,
+    shadowOffset: { width: 0, height: verticalScale(4) },
+    shadowRadius: scale(4),
     elevation: 4,
   },
   buttonDisabled: { opacity: 0.6 },
   buttonText: {
     color: BG,
-    fontSize: 18,
+    fontSize: moderateScale(18),
     fontWeight: "bold",
     fontFamily: Fonts.bold,
   },
