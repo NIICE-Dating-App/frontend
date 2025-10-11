@@ -7,21 +7,21 @@ import Slider from "@react-native-community/slider";
 import { router } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
-    Alert,
-    Animated,
-    Easing,
-    Keyboard,
-    KeyboardAvoidingView,
-    LayoutChangeEvent,
-    Platform,
-    Pressable,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    TouchableWithoutFeedback,
-    View,
+  Alert,
+  Animated,
+  Easing,
+  Keyboard,
+  KeyboardAvoidingView,
+  LayoutChangeEvent,
+  Platform,
+  Pressable,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  TouchableWithoutFeedback,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 

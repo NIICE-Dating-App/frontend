@@ -16,7 +16,7 @@ import {
   Text,
   View,
 } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 const BG = "#EAF1F8";
 const INK = "#000910";
@@ -46,6 +46,9 @@ const OPTIONS = [
   "Shared interests",
 ];
 
+// ===========================
+// CHIP COMPONENT
+// ===========================
 const ValueChip = React.memo(
   ({
     label,
@@ -75,7 +78,7 @@ const ValueChip = React.memo(
           ]}
         >
           <LinearGradient
-            colors={selected ? ["#1B44CD", "#3C6FFF", "#7AA9FF"] : ["#F8FAFF", "#EBF1FF"]}
+            colors={selected ? ["#1B44CD", "#3C6FFF", "#7AA9FF"] : ["#F9FBFF", "#EEF3FF"]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={[styles.chip, selected && styles.chipSelected]}
@@ -88,10 +91,12 @@ const ValueChip = React.memo(
   }
 );
 
+// ===========================
+// MAIN COMPONENT
+// ===========================
 export default function ValuePartnerSignup() {
   const [selected, setSelected] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
-  const insets = useSafeAreaInsets();
 
   const toggleOption = useCallback((opt: string) => {
     setSelected((prev) => {
@@ -111,25 +116,24 @@ export default function ValuePartnerSignup() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) throw new Error("Session not found");
 
-      // Optional: save selections
       const normalized = selected.map((s) =>
-  s.toLowerCase().replace(/\s+/g, "_").replace("-", "_")
-);
+        s.toLowerCase().replace(/\s+/g, "_").replace("-", "_")
+      );
 
-  const { error } = await supabase
-    .from("user_modes")
-    .upsert(
-      {
-        user_id: session.user.id,
-        mode: "dating",
-        value_date: normalized,
-        updated_at: new Date(),
-      },
-      { onConflict: "user_id,mode" }
-    );
-
+      const { error } = await supabase
+        .from("user_modes")
+        .upsert(
+          {
+            user_id: session.user.id,
+            mode: "dating",
+            value_date: normalized,
+            updated_at: new Date(),
+          },
+          { onConflict: "user_id,mode" }
+        );
 
       if (error) throw error;
+
       router.push("/(onboarding)/(common)/lifestyle2_signup");
     } catch (e: any) {
       Alert.alert("Error", e.message);
@@ -138,33 +142,36 @@ export default function ValuePartnerSignup() {
     }
   }, [selected]);
 
+  // ===========================
+  // RENDER
+  // ===========================
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
 
       {/* Back Button */}
-      <Pressable
-        style={[styles.backButton, { top: verticalScale(10) + insets.top }]}
-        onPress={() => router.back()}
-      >
+      <Pressable style={styles.backButton} onPress={() => router.back()}>
         <Ionicons name="chevron-back" size={moderateScale(26)} color="#FFFFFF" />
       </Pressable>
 
+      {/* Skip Button (Top-right corner) */}
+      <Pressable style={styles.skipButton} onPress={() => router.push("/(onboarding)/(common)/lifestyle2_signup")}>
+        <Text style={styles.skipText}>Skip</Text>
+      </Pressable>
+
       {/* Progress Bar */}
-      <View style={[styles.progressWrapper, { marginTop: verticalScale(44) + insets.top }]}>
+      <View style={styles.progressWrapper}>
         <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, { width: "33%" }]} />
+          <View style={styles.progressFill} />
         </View>
       </View>
 
+      {/* Content */}
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingBottom: insets.bottom + verticalScale(110) },
-        ]}
+        contentContainerStyle={styles.scrollContent}
       >
-        <Text style={styles.title}>What do you value in your partner</Text>
+        <Text style={styles.title}>What do you value in your partner?</Text>
 
         <View style={styles.wrapContainer}>
           {OPTIONS.map((opt) => (
@@ -178,33 +185,11 @@ export default function ValuePartnerSignup() {
         </View>
       </ScrollView>
 
-      {/* Skip Button (Top-Right corner) */}
-      {/* Skip Button (Top-right above progress bar) */}
-{/* Skip Button (Top-right above progress bar) */}
-      <Pressable
-        style={[
-          styles.skipButton,
-          {
-            top: verticalScale(10) + insets.top,
-            right: scale(24),
-          },
-        ]}
-        onPress={() => router.push("/(onboarding)/(common)/lifestyle2_signup")}
-      >
-        <Text style={styles.skipText}>Skip</Text>
-      </Pressable>
-
-
-
-
       {/* Next Button */}
       <Pressable
         onPress={handleNext}
-        disabled={loading}
-        style={[
-          styles.nextButton,
-          { bottom: insets.bottom + verticalScale(30), opacity: selected.length === 0 ? 0.5 : 1 },
-        ]}
+        disabled={loading || selected.length === 0}
+        style={[styles.nextButton, selected.length === 0 && { opacity: 0.5 }]}
       >
         <Ionicons name="chevron-forward" size={moderateScale(30)} color="#FFFFFF" />
       </Pressable>
@@ -212,10 +197,15 @@ export default function ValuePartnerSignup() {
   );
 }
 
+// ===========================
+// STYLES
+// ===========================
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BG },
+
   backButton: {
     position: "absolute",
+    top: verticalScale(58),
     left: scale(24),
     width: scale(56),
     height: verticalScale(56),
@@ -225,32 +215,49 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     zIndex: 10,
   },
-  progressWrapper: { paddingHorizontal: scale(24) },
-  progressTrack: {
-    height: verticalScale(6),
-    backgroundColor: "#C8CDD2",
-    borderRadius: scale(3),
+
+  skipButton: {
+    position: "absolute",
+    top: verticalScale(64),
+    right: scale(24),
+    zIndex: 10,
+    backgroundColor: "transparent",
+    padding: scale(8),
   },
-  progressFill: {
-    height: verticalScale(6),
-    backgroundColor: BLUE,
-    borderRadius: scale(3),
+  skipText: {
+    fontFamily: Fonts.bold,
+    color: "#7A838E",
+    fontSize: moderateScale(15),
   },
-  scrollContent: { paddingHorizontal: scale(24), paddingTop: verticalScale(28) },
+
+  progressWrapper: { marginTop: verticalScale(88), paddingHorizontal: scale(24) },
+  progressTrack: { height: verticalScale(6), backgroundColor: "#C8CDD2", borderRadius: scale(3) },
+  progressFill: { height: verticalScale(6), width: "33%", backgroundColor: BLUE, borderRadius: scale(3) },
+
+  scrollContent: {
+    paddingHorizontal: scale(24),
+    paddingTop: verticalScale(28),
+    paddingBottom: verticalScale(120),
+  },
+
   title: {
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(28),
-    lineHeight: verticalScale(44),
+    fontSize: moderateScale(33),
+    lineHeight: verticalScale(48),
     color: INK,
     marginBottom: verticalScale(18),
   },
+
   wrapContainer: { flexDirection: "row", flexWrap: "wrap", gap: scale(10) },
+
   shadowWrapper: {
     shadowColor: "#1B44CD",
-    shadowRadius: 8,
+    shadowOpacity: 0.22,
+    shadowRadius: 6,
     shadowOffset: { width: 0, height: 3 },
     borderRadius: scale(30),
   },
+
   chip: {
     paddingVertical: verticalScale(10),
     paddingHorizontal: scale(20),
@@ -266,26 +273,14 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   chipTextSelected: { color: "#FFFFFF" },
-  skipButton: {
-    position: "absolute",
-    alignSelf: "flex-end", // ensures alignment inside SafeAreaView
-    zIndex: 1000,
-    backgroundColor: "transparent",
-    paddingVertical: verticalScale(20),
-    paddingHorizontal: scale(25),
-  },
-  skipText: {
-    fontFamily: Fonts.bold,
-    color: "#7A838E",
-    fontSize: moderateScale(15),
-    textAlign: "right",
-  },
+
   nextButton: {
     position: "absolute",
+    bottom: verticalScale(40),
     right: scale(24),
-    width: scale(70),
-    height: verticalScale(70),
-    borderRadius: scale(35),
+    width: scale(68),
+    height: verticalScale(68),
+    borderRadius: scale(34),
     backgroundColor: INK,
     alignItems: "center",
     justifyContent: "center",

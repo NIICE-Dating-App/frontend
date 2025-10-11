@@ -18,8 +18,9 @@ import {
     UIManager,
     View,
 } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 
+// Enable layout animation on Android
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
@@ -107,7 +108,9 @@ const QUESTIONS = [
   },
 ];
 
-// Reusable animated chip component
+// ===========================
+// CHIP COMPONENT
+// ===========================
 const OptionChip = React.memo(
   ({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) => {
     const anim = useRef(new Animated.Value(1)).current;
@@ -127,14 +130,12 @@ const OptionChip = React.memo(
             styles.shadowWrapper,
             Platform.OS === "ios" && { shadowOpacity: selected ? 0.35 : 0.15 },
           ]}
-          renderToHardwareTextureAndroid
-          shouldRasterizeIOS
         >
           <LinearGradient
-            colors={selected ? ["#1B44CD", "#3C6FFF", "#7AA9FF"] : ["#F8FAFF", "#EBF1FF"]}
+            colors={selected ? ["#1B44CD", "#3C6FFF", "#7AA9FF"] : ["#F9FBFF", "#EEF3FF"]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={[styles.optionChip, selected && { transform: [{ scale: 1.02 }] }]}
+            style={[styles.optionChip, selected && styles.optionSelected]}
           >
             <Text style={[styles.optionText, selected && styles.optionTextSelected]}>{label}</Text>
           </LinearGradient>
@@ -144,13 +145,22 @@ const OptionChip = React.memo(
   }
 );
 
+// ===========================
+// MAIN COMPONENT
+// ===========================
 export default function LifestyleSignup() {
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const insets = useSafeAreaInsets();
 
   const handleSelect = useCallback((questionKey: string, option: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setAnswers((prev) => ({ ...prev, [questionKey]: option }));
+    setAnswers((prev) => {
+      if (prev[questionKey] === option) {
+        const updated = { ...prev };
+        delete updated[questionKey];
+        return updated;
+      }
+      return { ...prev, [questionKey]: option };
+    });
   }, []);
 
   const handleNext = async () => {
@@ -162,13 +172,15 @@ export default function LifestyleSignup() {
         user_id: session.user.id,
         drinking: answers.drinking ?? null,
         smoking: answers.smoking ?? null,
+        kids: null,
         workout: answers.workout ?? null,
         communication: answers.communication ?? null,
         love_language: answers.love_language ?? null,
         zodiac: answers.zodiac ?? null,
       };
 
-      const { error } = await supabase.from("lifestyle").upsert(payload, { onConflict: "user_id" });
+      await supabase.from("lifestyle").delete().eq("user_id", session.user.id);
+      const { error } = await supabase.from("lifestyle").insert(payload);
       if (error) throw error;
 
       router.push("/lifestyle3_signup");
@@ -177,40 +189,36 @@ export default function LifestyleSignup() {
     }
   };
 
+  // ===========================
+  // RENDER
+  // ===========================
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
 
       {/* Back Button */}
-      <Pressable style={[styles.backButton, { top: verticalScale(10) + insets.top }]} onPress={() => router.back()}>
+      <Pressable style={styles.backButton} onPress={() => router.back()}>
         <Ionicons name="chevron-back" size={moderateScale(26)} color="#FFFFFF" />
       </Pressable>
 
+      {/* Skip Button */}
+      <Pressable style={styles.skipButton} onPress={() => handleNext()}>
+        <Text style={styles.skipText}>Skip</Text>
+      </Pressable>
+
       {/* Progress Bar */}
-      <View style={[styles.progressWrapper, { marginTop: verticalScale(44) + insets.top }]}>
+      <View style={styles.progressWrapper}>
         <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, { width: "70%" }]} />
+          <View style={styles.progressFill} />
         </View>
       </View>
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{
-          paddingHorizontal: scale(24),
-          paddingBottom: insets.bottom + verticalScale(110),
-          paddingTop: verticalScale(24), // smaller padding
-        }}
-      >
+      {/* Content */}
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <Text style={styles.title}>Let’s talk about your{"\n"}lifestyle and habits.</Text>
 
         {QUESTIONS.map((q, i) => (
-          <View
-            key={q.key}
-            style={{
-              marginBottom: verticalScale(26),
-              marginTop: i === 0 ? verticalScale(6) : 0, // reduce top gap before first question
-            }}
-          >
+          <View key={q.key} style={{ marginBottom: verticalScale(26), marginTop: i === 0 ? verticalScale(6) : 0 }}>
             <Text style={styles.question}>{q.label}</Text>
             <View style={styles.optionGroup}>
               {q.options.map((opt) => (
@@ -227,27 +235,22 @@ export default function LifestyleSignup() {
       </ScrollView>
 
       {/* Next Button */}
-      <Pressable
-        onPress={handleNext}
-        disabled={Object.keys(answers).length < QUESTIONS.length}
-        style={[
-          styles.nextButton,
-          {
-            bottom: insets.bottom + verticalScale(30),
-            opacity: Object.keys(answers).length < QUESTIONS.length ? 0.5 : 1,
-          },
-        ]}
-      >
+      <Pressable onPress={handleNext} style={styles.nextButton}>
         <Ionicons name="chevron-forward" size={moderateScale(30)} color="#FFFFFF" />
       </Pressable>
     </SafeAreaView>
   );
 }
 
+// ===========================
+// STYLES
+// ===========================
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BG },
+
   backButton: {
     position: "absolute",
+    top: verticalScale(58),
     left: scale(24),
     width: scale(56),
     height: verticalScale(56),
@@ -257,49 +260,64 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     zIndex: 10,
   },
-  progressWrapper: { paddingHorizontal: scale(24) },
-  progressTrack: {
-    height: verticalScale(6),
-    backgroundColor: "#C8CDD2",
-    borderRadius: scale(3),
+
+  skipButton: {
+    position: "absolute",
+    top: verticalScale(64),
+    right: scale(24),
+    zIndex: 10,
+    backgroundColor: "transparent",
+    padding: scale(8),
   },
-  progressFill: {
-    height: verticalScale(6),
-    backgroundColor: BLUE,
-    borderRadius: scale(3),
+  skipText: {
+    fontFamily: Fonts.bold,
+    color: "#7A838E",
+    fontSize: moderateScale(15),
   },
+
+  progressWrapper: { marginTop: verticalScale(88), paddingHorizontal: scale(24) },
+  progressTrack: { height: verticalScale(6), backgroundColor: "#C8CDD2", borderRadius: scale(3) },
+  progressFill: { height: verticalScale(6), width: "70%", backgroundColor: BLUE, borderRadius: scale(3) },
+
+  scrollContent: {
+    paddingHorizontal: scale(24),
+    paddingTop: verticalScale(28),
+    paddingBottom: verticalScale(120),
+  },
+
   title: {
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(30),
-    lineHeight: verticalScale(42),
+    fontSize: moderateScale(33),
+    lineHeight: verticalScale(48),
     color: INK,
-    marginBottom: verticalScale(12), // reduced gap
+    marginBottom: verticalScale(18),
   },
   question: {
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(18),
+    fontSize: moderateScale(20),
     color: INK_SOFT,
     marginBottom: verticalScale(12),
   },
-  optionGroup: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: scale(8), // smaller gap to fit better
-  },
+  optionGroup: { flexDirection: "row", flexWrap: "wrap", gap: scale(8) },
+
   shadowWrapper: {
     shadowColor: "#1B44CD",
-    shadowRadius: 8,
+    shadowOpacity: 0.22,
+    shadowRadius: 6,
     shadowOffset: { width: 0, height: 3 },
     borderRadius: scale(30),
   },
+
   optionChip: {
     paddingVertical: verticalScale(12),
     paddingHorizontal: scale(22),
     borderRadius: scale(30),
-    minWidth: scale(110), // slightly bigger chips
+    minWidth: scale(110),
     alignItems: "center",
     justifyContent: "center",
   },
+  optionSelected: { transform: [{ scale: 1.02 }] },
+
   optionText: {
     fontFamily: Fonts.bold,
     fontSize: moderateScale(16),
@@ -307,12 +325,14 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   optionTextSelected: { color: "#FFFFFF" },
+
   nextButton: {
     position: "absolute",
+    bottom: verticalScale(40),
     right: scale(24),
-    width: scale(70),
-    height: verticalScale(70),
-    borderRadius: scale(35),
+    width: scale(68),
+    height: verticalScale(68),
+    borderRadius: scale(34),
     backgroundColor: INK,
     alignItems: "center",
     justifyContent: "center",
