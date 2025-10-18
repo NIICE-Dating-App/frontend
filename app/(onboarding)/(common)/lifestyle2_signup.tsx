@@ -6,17 +6,17 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useCallback, useRef, useState } from "react";
 import {
-    Alert,
-    Animated,
-    LayoutAnimation,
-    Platform,
-    Pressable,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    UIManager,
-    View,
+  Alert,
+  Animated,
+  LayoutAnimation,
+  Platform,
+  Pressable,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  UIManager,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -277,7 +277,7 @@ const styles = StyleSheet.create({
 
   progressWrapper: { marginTop: verticalScale(88), paddingHorizontal: scale(24) },
   progressTrack: { height: verticalScale(6), backgroundColor: "#C8CDD2", borderRadius: scale(3) },
-  progressFill: { height: verticalScale(6), width: "70%", backgroundColor: BLUE, borderRadius: scale(3) },
+  progressFill: { height: verticalScale(6), width: "64.68%", backgroundColor: BLUE, borderRadius: scale(3) },
 
   scrollContent: {
     paddingHorizontal: scale(24),

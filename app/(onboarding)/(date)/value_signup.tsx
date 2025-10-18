@@ -232,7 +232,7 @@ const styles = StyleSheet.create({
 
   progressWrapper: { marginTop: verticalScale(88), paddingHorizontal: scale(24) },
   progressTrack: { height: verticalScale(6), backgroundColor: "#C8CDD2", borderRadius: scale(3) },
-  progressFill: { height: verticalScale(6), width: "33%", backgroundColor: BLUE, borderRadius: scale(3) },
+  progressFill: { height: verticalScale(6), width: "58.80%", backgroundColor: BLUE, borderRadius: scale(3) },
 
   scrollContent: {
     paddingHorizontal: scale(24),

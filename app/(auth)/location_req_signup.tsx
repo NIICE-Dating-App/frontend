@@ -47,7 +47,7 @@ export default function LocationReqSignup() {
 
       <View style={styles.content}>
         <Text style={styles.title}>
-          We need your location{"\n"}to find closest Nicee’s{"\n"}for you
+          We need your location{"\n"}to find closest Niice’s{"\n"}for you
         </Text>
 
         {/* Animated Pins */}

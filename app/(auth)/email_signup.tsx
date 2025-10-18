@@ -128,7 +128,7 @@ export default function EmailSignup() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => router.push("/try")}
+          onPress={() => router.push("/in_progress")}
           disabled={loading}
         >
           <Text style={styles.skipText}>I will do this later</Text>

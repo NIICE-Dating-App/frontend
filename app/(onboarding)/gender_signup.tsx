@@ -302,7 +302,7 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: verticalScale(6),
-    width: "12.50%",
+    width: "11.76%",
     backgroundColor: BLUE,
     borderRadius: scale(3),
   },
