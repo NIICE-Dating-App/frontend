@@ -165,9 +165,12 @@ export default function LifestyleSignup() {
 
   const handleNext = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (!session?.user) throw new Error("No active session");
 
+      // Single UPSERT to satisfy RLS once (no delete-then-insert)
       const payload = {
         user_id: session.user.id,
         drinking: answers.drinking ?? null,
@@ -179,8 +182,10 @@ export default function LifestyleSignup() {
         zodiac: answers.zodiac ?? null,
       };
 
-      await supabase.from("lifestyle").delete().eq("user_id", session.user.id);
-      const { error } = await supabase.from("lifestyle").insert(payload);
+      const { error } = await supabase
+        .from("lifestyle")
+        .upsert(payload, { onConflict: "user_id" }); // <= key change
+
       if (error) throw error;
 
       router.push("/lifestyle3_signup");

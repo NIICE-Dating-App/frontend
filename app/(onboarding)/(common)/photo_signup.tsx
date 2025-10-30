@@ -12,19 +12,19 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-    ActionSheetIOS,
-    ActivityIndicator,
-    Alert,
-    Image,
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActionSheetIOS,
+  ActivityIndicator,
+  Alert,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -42,6 +42,40 @@ type DBPhoto = {
   is_main: boolean | null;
   created_at?: string;
 };
+
+// ---- Signed URL helpers ----
+const toStoragePath = (urlOrPath: string | null): string | null => {
+  if (!urlOrPath) return null;
+  if (!urlOrPath.startsWith("http")) return urlOrPath.replace(/^\/+/, "");
+
+  const signIdx = urlOrPath.indexOf("/object/sign/user_photos/");
+  if (signIdx !== -1) {
+    const rest = urlOrPath.substring(signIdx + "/object/sign/user_photos/".length);
+    return decodeURIComponent(rest.split("?")[0]);
+  }
+  const pubIdx = urlOrPath.indexOf("/object/public/user_photos/");
+  if (pubIdx !== -1) {
+    const rest = urlOrPath.substring(pubIdx + "/object/public/user_photos/".length);
+    return decodeURIComponent(rest);
+  }
+  const marker = "/user_photos/";
+  const idx = urlOrPath.indexOf(marker);
+  return idx === -1 ? null : decodeURIComponent(urlOrPath.substring(idx + marker.length));
+};
+
+const signPath = async (path: string | null, expiresSeconds = 3600): Promise<string | null> => {
+  if (!path) return null;
+  const { data, error } = await supabase.storage
+    .from("user_photos")
+    .createSignedUrl(path, expiresSeconds);
+  if (error) {
+    console.warn("signPath error:", error.message);
+    return null;
+  }
+  return data?.signedUrl ?? null;
+};
+// ----------------------------
+
 
 export default function PhotoSignup() {
   const [uploading, setUploading] = useState(false);
@@ -83,31 +117,30 @@ export default function PhotoSignup() {
     setTotalCount(rows.length);
 
     // MAIN: do NOT auto-promote extras if main is missing
+    // MAIN (signed URL support)
     const main = rows.find((r) => r.is_main === true) ?? null;
-    setMainPhoto(main ? main.photo_url : null);
+    const signedMain = main ? await signPath(toStoragePath(main.photo_url)) : null;
+    setMainPhoto(signedMain ?? main?.photo_url ?? null);
 
-    // EXTRAS (preserve previous slot positions)
-    const extrasRows = rows.filter((r) => !r.is_main);
-    const remaining = new Set(extrasRows.map((r) => r.photo_url));
+    // EXTRAS (signed URL support for all)
+const extrasRows = rows.filter((r) => !r.is_main);
 
-    const newSlots: (string | null)[] = [null, null, null];
-    // 1) keep existing urls in same slot if they still exist
-    for (let i = 0; i < 3; i++) {
-      const prevUrl = extrasRef.current[i];
-      if (prevUrl && remaining.has(prevUrl)) {
-        newSlots[i] = prevUrl;
-        remaining.delete(prevUrl);
-      }
-    }
-    // 2) fill leftover slots with remaining urls by created_at order
-    const leftover = extrasRows.map((r) => r.photo_url).filter((u) => remaining.has(u));
-    for (let i = 0; i < 3; i++) {
-      if (!newSlots[i] && leftover.length) {
-        newSlots[i] = leftover.shift() ?? null;
-      }
-    }
+// always re-sign each extra photo (safer for private buckets)
+const signedExtras: (string | null)[] = await Promise.all(
+  extrasRows.map(async (r) => {
+    const signed = await signPath(toStoragePath(r.photo_url));
+    return signed ?? r.photo_url;
+  })
+);
 
-    setExtraPhotos(newSlots);
+// preserve slot order for UI stability
+const newSlots: (string | null)[] = [null, null, null];
+for (let i = 0; i < 3; i++) {
+  newSlots[i] = signedExtras[i] ?? null;
+}
+setExtraPhotos(newSlots);
+
+
   }, []);
 
   useFocusEffect(
@@ -431,7 +464,7 @@ export default function PhotoSignup() {
       /* non-fatal */
     }
 
-    router.push("/in_progress");
+    router.push("/final_signup");
   }, [mainPhoto, extraPhotos]);
 
   return (

@@ -18,7 +18,7 @@ import {
   UIManager,
   View,
 } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 // Enable layout animation on Android
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -34,6 +34,7 @@ const INK_SOFT = "#1B2B44";
 // HOBBY GROUPS
 // ===========================
 const HOBBY_GROUPS: Record<string, string[]> = {
+  // (unchanged list you pasted)
   "Sports and Fitness": [
     "🏹 Archery", "🏃 Athletics", "🏸 Badminton", "⚾ Baseball", "🏀 Basketball", "🏖 Beach sports",
     "💪 Bodybuilding", "🧗 Bouldering", "🎳 Bowling", "🥊 Boxing", "🏎 Car Racing", "❤ Cardio",
@@ -49,7 +50,6 @@ const HOBBY_GROUPS: Record<string, string[]> = {
     "🎾 Tennis", "🏃 Track", "🏐 Volleyball", "🚶 Walking", "🏋 Weightlifting", "💪 Working out",
     "🤼 Wrestling", "🧘 Yoga"
   ],
-
   Creativity: [
     "🎵 Acapella", "🎨 Art", "✍ Blogging", "🎶 Choir", "📱 Content Creation", "🦸 Cosplay",
     "🎨 Crafts", "🧶 Crocheting", "💃 Dancing", "🎨 Design", "🔨 DIY", "✏ Drawing", "💼 Entrepreneurship",
@@ -59,7 +59,6 @@ const HOBBY_GROUPS: Record<string, string[]> = {
     "🏺 Pottery", "🏠 Real Estate", "🎤 Singing", "👟 Sneakers", "☠ Tattoos", "🛍 Thrifting",
     "♻ Upcycling", "👔 Vintage fashion", "✍ Writing"
   ],
-
   "Film and TV": [
     "🎬 Action & adventure", "🎥 Action movies", "🎞 Animated", "🎨 Animated movies", "🎌 Anime",
     "🎬 Bollywood", "😂 Comedy", "👨‍🍳 Cooking shows", "🔪 Crime", "🕵 Crime shows", "📺 Documentaries",
@@ -69,43 +68,36 @@ const HOBBY_GROUPS: Record<string, string[]> = {
     "🚀 Sci-fi", "🛸 Sci-Fi", "⚽ Sports shows", "🦸 Superhero", "😨 Thriller", "🎬 Thriller films",
     "🔍 True crime"
   ],
-
   Reading: [
     "📖 Action & adventure", "📚 Biographies", "📕 Classics", "😄 Comedy", "📰 Comic books",
     "🔎 Crime", "🐉 Fantasy", "📜 History", "👻 Horror", "🎌 Manga", "🔍 Mystery", "🤔 Philosophy",
     "📝 Poetry", "🧠 Psychology", "💕 Romance", "🚀 Sci-fi", "🔬 Science", "😰 Thriller"
   ],
-
   "Social and Content": [
     "📸 Instagram", "😂 Memes", "🌐 Metaverse", "🎬 Netflix", "📌 Pinterest", "🎙 Podcasts",
     "📱 Social Media", "☁ SoundCloud", "🎵 Spotify", "🎵 TikTok", "🎮 Twitch", "🎥 Virtual Reality",
     "📹 Vlogging", "❌ X", "▶ YouTube"
   ],
-
   "Staying In": [
     "🤖 AI", "🧁 Baking", "📺 Binge-Watching TV shows", "🎲 Board Games", "🎯 Board games", "♟ Chess",
     "🍳 Cooking", "🌱 Gardening", "🏋 Home Workout", "🪴 House plants", "🎮 Online Games",
     "🛒 Online Shopping", "🎙 Podcasts", "💻 Programming", "📖 Reading", "❓ Trivia", "🎮 Video games"
   ],
-
   Traveling: [
     "🎒 Backpacking", "🏖 Beaches", "⛺ Camping", "🏙 Exploring new cities", "🎣 Fishing trips",
     "🥾 Hiking trips", "🚗 Road trips", "🧳 Solo trips", "🧖 Spa weekends", "🏠 Staycations",
     "❄ Winter sports"
   ],
-
   Pets: [
     "🐸 Amphibian", "🐦 Bird", "🕊 Birds", "🐱 Cat", "🐈 Cats", "🐶 Dog", "🐕 Dogs", "🐠 Fish", "🐹 Hamster",
     "🦎 Lizards", "🐾 Other", "🚫 Pet-free", "🐰 Rabbit", "🐇 Rabbits", "🦎 Reptile", "🐍 Snakes",
     "🐢 Turtle", "🐢 Turtles", "❤ Don't have but love", "🤔 Want a pet", "🤧 All the pets",
     "🤧 Allergic to pets"
   ],
-
   "Fan Favorites": [
     "📼 90s Kid", "🎭 Comic-con", "🏰 Disney", "🐉 Dungeons & Dragons", "⚡ Harry Potter", "⚾ MLB",
     "📚 Manga", "🦸 Marvel", "🏀 NBA"
   ],
-
   "Food and Drink": [
     "🥣 Açaí", "🍖 BBQ", "🍺 Beer", "🍛 Biryani", "🧋 Boba tea", "🥂 Brunch", "🍔 Burgers", "🍰 Cake",
     "🍸 Cocktails", "☕ Coffee", "🍺 Craft Beer", "🍴 Food tours", "🍽 Foodie", "🍸 Gin", "🍦 Ice Cream",
@@ -113,12 +105,10 @@ const HOBBY_GROUPS: Record<string, string[]> = {
     "🥤 Smoothies", "🌮 Street Food", "🍣 Sushi", "🍬 Sweet tooth", "🍰 Sweet treats", "🌮 Tacos",
     "🥡 Takeout", "🍵 Tea", "🌱 Vegan", "🥬 Vegetarian", "🥃 Whisky", "🍷 Wine"
   ],
-
   Gaming: [
     "🚀 Among Us", "🕹 Atari", "🎮 E-Sports", "🎯 Fortnite", "🎮 League of Legends", "🎮 Nintendo",
     "🎮 PlayStation", "🎮 Roblox", "🎮 Xbox"
   ],
-
   "Going Out": [
     "🐠 Aquarium", "🖼 Art galleries", "🍺 Bar Hopping", "🍻 Bars", "🎳 Bowling", "☕ Cafe hopping",
     "🍵 Cafe-hopping", "🚗 Cars", "🪩 Clubbing", "💃 Clubs", "🎵 Concerts", "👑 Drag shows",
@@ -130,7 +120,6 @@ const HOBBY_GROUPS: Record<string, string[]> = {
     "😂 Stand up Comedy", "🎭 Theater", "🛍 Thrifting", "🎪 Town Festivities", "❓ Trivia",
     "🍷 Wine tasting"
   ],
-
   Music: [
     "🎸 90s Britpop", "🎵 Afro", "🎶 Alternative music", "🎵 Arab", "🎸 Blues", "🎻 Classical",
     "🤠 Country", "🎵 Country Music", "🎶 Desi", "🎧 EDM", "🎹 Electronic", "🎛 Electronic Music",
@@ -141,7 +130,6 @@ const HOBBY_GROUPS: Record<string, string[]> = {
     "🎵 R&B", "🎤 Rap", "🎶 Rap music", "🎵 Reggae", "🎵 Reggaeton", "🎸 Rock", "🎵 Rock music",
     "🎶 Soul", "🎵 Soul music", "🎧 Techno", "🎵 Trap Music"
   ],
-
   "Outdoors and Adventure": [
     "🎒 Backpacking", "🏖 Beach Bars", "⛺ Camping", "🛶 Canoeing", "🛋 Couchsurfing", "🤿 Diving",
     "🎣 Fishing", "🤿 Free Diving", "🥾 Hiking", "♨ Hot Springs", "🚤 Jetskiing", "⛰ Mountains",
@@ -149,7 +137,6 @@ const HOBBY_GROUPS: Record<string, string[]> = {
     "🧗 Rock Climbing", "🚣 Rowing", "⛵ Sailing", "⛷ Skiing", "🏂 Snowboarding", "🏄 Surfing",
     "✈ Travel", "🐕 Walking My Dog", "🚶 Walking tours"
   ],
-
   "Values and Causes": [
     "✊ Activism", "✊🏿 Black Lives Matter", "🌍 Climate Change", "♿ Disability Rights",
     "🌱 Environmentalism", "⚖ Equality", "♀ Feminism", "🤝 Human Rights", "🤗 Inclusivity",
@@ -157,20 +144,16 @@ const HOBBY_GROUPS: Record<string, string[]> = {
     "📈 Social Development", "🤝 Volunteering", "🗳 Voter Rights", "☮ World Peace",
     "💪 Youth Empowerment"
   ],
-
-
   "Wellness and Lifestyle": [
     "🏃 Active Lifestyle", "✨ Astrology", "💄 Makeup", "🧘 Meditation", "🧘‍♀ Mindfulness",
     "🧖 Sauna", "💆 Self Care", "📚 Self Development", "💖 Self Love", "🧴 Skincare", "🧖‍♀ Spa",
     "🔮 Tarot", "🆕 Trying New Things", "🧘 Yoga"
   ],
-
   "Self-Care": [
     "🕯 Aromatherapy", "✨ Astrology", "🧊 Cold plunging", "💎 Crystals", "💬 Deep chats",
     "📔 Journaling", "🧘 Mindfulness", "🥗 Nutrition", "🏞 Retreats", "🧴 Skin care", "😴 Sleeping well",
     "🐌 Slow living", "💭 Therapy", "📵 Time offline"
   ],
-
   "Personality and Traits": [
     "🪞 Self-awareness", "🚀 Ambition", "🏃 Being active", "❤ Being family-oriented",
     "🧠 Being open-minded", "💕 Being romantic", "😎 Confidence", "🎨 Creativity", "💚 Empathy",
@@ -224,7 +207,6 @@ export default function Hobbies1Signup() {
   const [selected, setSelected] = useState<string[]>([]);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
-  const insets = useSafeAreaInsets();
 
   const toggleOption = useCallback((opt: string) => {
     setSelected((prev) => {
@@ -258,48 +240,59 @@ export default function Hobbies1Signup() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) throw new Error("Session not found");
 
-      // Normalize & deduplicate
-      const normalizeLabel = (label: string) =>
-        label
-          .replace(
-            /([\u2700-\u27BF]|[\uE000-\uF8FF]|[\uD83C-\uDBFF\uDC00-\uDFFF]|\u24C2|\uD83D[\uDC00-\uDE4F])/g,
-            ""
-          )
-          .trim()
-          .toLowerCase();
+      // Normalize labels to match DB rows (strip emoji, lowercase, trim)
+      const stripEmoji = (s: string) =>
+        s.replace(
+          /([\u2700-\u27BF]|[\uE000-\uF8FF]|[\uD83C-\uDBFF\uDC00-\uDFFF]|\u24C2|\uD83D[\uDC00-\uDE4F])/g,
+          ""
+        );
+      const normalize = (s: string) => stripEmoji(s).replace(/\s+/g, " ").trim().toLowerCase();
 
-      const cleaned = Array.from(new Set(selected.map(normalizeLabel)));
+      const cleaned = Array.from(new Set(selected.map(normalize)));
 
-      // Step 1: Upsert into master
-      const { error: upsertError } = await supabase
-        .from("hobbies_master")
-        .upsert(cleaned.map((label) => ({ label })), { onConflict: "label" });
-      if (upsertError) throw upsertError;
-
-      // Step 2: Get IDs
+      // Fetch the master IDs (READ only — no UPSERT, so RLS is happy)
       const { data: masters, error: selectError } = await supabase
         .from("hobbies_master")
-        .select("id, label")
-        .in("label", cleaned);
+        .select("id,label");
       if (selectError) throw selectError;
 
-      // Step 3: Clear old entries
-      const { error: deleteError } = await supabase
+      // Build a label->id map using the same normalization
+      const map: Record<string, number> = {};
+      (masters ?? []).forEach((m) => {
+        const key = normalize(m.label);
+        if (!(key in map)) map[key] = m.id;
+      });
+
+      // Figure out which cleaned labels exist
+      const found = cleaned
+        .map((c) => ({ c, id: map[c] }))
+        .filter((x) => !!x.id) as { c: string; id: number }[];
+      const missing = cleaned.filter((c) => !map[c]);
+
+      if (missing.length) {
+        // If you want to be strict, block; else, just ignore unknowns
+        Alert.alert(
+          "Some hobbies aren’t available",
+          `These were skipped because they’re not in our list:\n\n${missing.join(", ")}`
+        );
+      }
+
+      // Clear old entries
+      const { error: delErr } = await supabase
         .from("user_hobbies")
         .delete()
         .eq("user_id", session.user.id);
-      if (deleteError) throw deleteError;
+      if (delErr) throw delErr;
 
-      // Step 4: Insert new ones
-      const inserts = masters?.map((m) => ({
-        user_id: session.user.id,
-        hobby_id: m.id,
-      })) ?? [];
+      // Insert the new ones
+      const rows = found.map((f) => ({ user_id: session.user.id, hobby_id: f.id }));
+      if (rows.length === 0) {
+        throw new Error("No valid hobbies found to save.");
+      }
+      const { error: insErr } = await supabase.from("user_hobbies").insert(rows);
+      if (insErr) throw insErr;
 
-      const { error: insertError } = await supabase.from("user_hobbies").insert(inserts);
-      if (insertError) throw insertError;
-
-      // Step 5: Determine mode and route
+      // Route by mode
       const { data: modes, error: modeError } = await supabase
         .from("user_modes")
         .select("mode, updated_at")
@@ -316,7 +309,7 @@ export default function Hobbies1Signup() {
         router.push("/in_progress");
       }
     } catch (e: any) {
-      Alert.alert("Error", e.message);
+      Alert.alert("Error", e.message ?? "Something went wrong");
     } finally {
       setLoading(false);
     }
@@ -336,8 +329,8 @@ export default function Hobbies1Signup() {
 
       {/* Progress Bar */}
       <View style={styles.progressWrapper}>
-        <View style={styles.progressTrack}>
-          <View style={styles.progressFill} />
+        <View className="track" style={styles.progressTrack}>
+          <View className="fill" style={styles.progressFill} />
         </View>
       </View>
 

@@ -123,7 +123,7 @@ export default function LoginScreen() {
       if (!profile || !profile.onboarding_completed) {
         router.replace("/name_age_signup");
       } else {
-        router.replace("/try");
+        router.replace("/final_signup");
       }
     } catch (err) {
       console.error("Redirect check failed:", err);

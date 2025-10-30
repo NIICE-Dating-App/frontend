@@ -1009,7 +1009,7 @@ const styles = StyleSheet.create({
   rowText: {
     fontFamily: Fonts.bold,
     fontSize: moderateScale(16),
-    lineHeight: verticalScale(22),
+    lineHeight: verticalScale(30),
     color: INK_SOFT,
     flex: 1,
     marginRight: scale(10),
@@ -1029,7 +1029,7 @@ const styles = StyleSheet.create({
   rowTextSelected: {
     fontFamily: Fonts.bold,
     fontSize: moderateScale(16),
-    lineHeight: verticalScale(22),
+    lineHeight: verticalScale(30),
     color: "#FFFFFF",
     flex: 1,
     marginRight: scale(10),
