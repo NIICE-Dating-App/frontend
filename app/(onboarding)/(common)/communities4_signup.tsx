@@ -135,9 +135,11 @@ export default function CommunitiesSignup() {
         communities: finalSelections.length > 0 ? finalSelections : null,
       };
 
-      await supabase.from("lifestyle").delete().eq("user_id", session.user.id);
-      const { error } = await supabase.from("lifestyle").insert(payload);
-      if (error) throw error;
+      const { error } = await supabase
+      .from("lifestyle")
+      .upsert(payload, { onConflict: "user_id" });
+    if (error) throw error;
+
 
       router.push("/(onboarding)/(common)/prompt_signup");
     } catch (e: any) {

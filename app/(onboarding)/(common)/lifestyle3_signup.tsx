@@ -163,27 +163,44 @@ export default function BeliefsPetsKidsSignup() {
   }, []);
 
   const handleSave = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) throw new Error("No active session");
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) throw new Error("No active session");
 
-      const payload = {
-        user_id: session.user.id,
-        religion: answers.religion ?? null,
-        politics: answers.politics ?? null,
-        pets: answers.pets ?? null,
-        kids: answers.kids ?? null,
-      };
+    const userId = session.user.id;
 
-      await supabase.from("lifestyle").delete().eq("user_id", session.user.id);
-      const { error } = await supabase.from("lifestyle").insert(payload);
-      if (error) throw error;
+    // Try UPDATE first (preserves other columns)
+    const { data, error } = await supabase
+      .from("lifestyle")
+      .update({
+        religion:  answers.religion ?? null,
+        politics:  answers.politics ?? null,
+        pets:      answers.pets ?? null,
+        kids:      answers.kids ?? null,
+      })
+      .eq("user_id", userId)
+      .select("user_id");
 
-      router.push("/(onboarding)/(common)/communities4_signup");
-    } catch (e: any) {
-      Alert.alert("Error", e.message);
+    if (error) throw error;
+
+    // If no row existed yet, INSERT a new one with just these fields
+    if (!data || data.length === 0) {
+      const { error: insertErr } = await supabase.from("lifestyle").insert({
+        user_id:   userId,
+        religion:  answers.religion ?? null,
+        politics:  answers.politics ?? null,
+        pets:      answers.pets ?? null,
+        kids:      answers.kids ?? null,
+      });
+      if (insertErr) throw insertErr;
     }
-  };
+
+    router.push("/(onboarding)/(common)/communities4_signup");
+  } catch (e: any) {
+    Alert.alert("Error", e.message);
+  }
+};
+
 
   // ===========================
   // RENDER

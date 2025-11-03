@@ -34,7 +34,6 @@ const INK_SOFT = "#1B2B44";
 // HOBBY GROUPS
 // ===========================
 const HOBBY_GROUPS: Record<string, string[]> = {
-  // (unchanged list you pasted)
   "Sports and Fitness": [
     "🏹 Archery", "🏃 Athletics", "🏸 Badminton", "⚾ Baseball", "🏀 Basketball", "🏖 Beach sports",
     "💪 Bodybuilding", "🧗 Bouldering", "🎳 Bowling", "🥊 Boxing", "🏎 Car Racing", "❤ Cardio",
@@ -42,7 +41,7 @@ const HOBBY_GROUPS: Record<string, string[]> = {
     "🐴 Equestrian", "🤸 Fitness classes", "⚽ Football", "🏃‍♂ Functional fitness", "🏁 Go karting",
     "⛳ Golf", "💪 Gym", "🤸‍♀ Gymnastics", "🤾 Handball", "🔥 HIIT", "🥾 Hiking", "🏒 Hockey",
     "🐎 Horse riding", "🏒 Ice Hockey", "🏃‍♀ Jogging", "🛶 Kayaking", "🥍 Lacrosse", "🏃 Marathon",
-    "🥋 Martial Arts", "🧘 Meditation", "🏍 Motorbiking", "🏎 Motor Sports", "🏁 Motorsports",
+    "🥋 Martial Arts", "🧘 Meditation", "🏍 Motorbiking", "🏁 Motorsports",
     "🏐 Netball", "🏓 Padel", "🥒 Pickleball", "🧘‍♀ Pilates", "🏓 Ping pong", "💃 Pole Dancing",
     "🛼 Roller skating", "🏉 Rugby", "👟 Run clubs", "🏃 Running", "⛵ Sailing", "🤿 Scuba diving",
     "🛹 Skateboarding", "⛸ Skating", "⛷ Skiing", "🏂 Snowboarding", "⚽ Soccer", "🥎 Softball",
@@ -60,13 +59,12 @@ const HOBBY_GROUPS: Record<string, string[]> = {
     "♻ Upcycling", "👔 Vintage fashion", "✍ Writing"
   ],
   "Film and TV": [
-    "🎬 Action & adventure", "🎥 Action movies", "🎞 Animated", "🎨 Animated movies", "🎌 Anime",
-    "🎬 Bollywood", "😂 Comedy", "👨‍🍳 Cooking shows", "🔪 Crime", "🕵 Crime shows", "📺 Documentaries",
-    "🎭 Drama", "📺 Drama shows", "🐉 Fantasy", "🧙 Fantasy movies", "🎮 Game shows", "👻 Horror",
-    "😱 Horror Movies", "🎬 Indie", "🎞 Indie films", "🇰🇷 K-drama", "📺 K-drama shows", "🎬 Movies",
-    "🔍 Mystery", "📺 Reality shows", "🎥 Reality TV", "💕 Rom-com", "💑 Rom-coms", "💖 Romance",
-    "🚀 Sci-fi", "🛸 Sci-Fi", "⚽ Sports shows", "🦸 Superhero", "😨 Thriller", "🎬 Thriller films",
-    "🔍 True crime"
+    "🎬 Action & adventure", "🎥 Action movies", "🎨 Animated movies", "🎌 Anime",
+    "🎬 Bollywood", "😂 Comedy", "👨‍🍳 Cooking shows", "🔪 Crime", "🕵 Crime shows",
+    "📺 Documentaries", "🎭 Drama", "🐉 Fantasy", "🧙 Fantasy movies", "🎮 Game shows",
+    "😱 Horror Movies", "🎬 Indie", "🎞 Indie films", "🇰🇷 K-drama", "🎬 Movies",
+    "🔍 Mystery", "🎥 Reality TV", "💑 Rom-coms", "💖 Romance", "🛸 Sci-Fi", "⚽ Sports shows",
+    "🦸 Superhero", "🎬 Thriller films", "🔍 True crime"
   ],
   Reading: [
     "📖 Action & adventure", "📚 Biographies", "📕 Classics", "😄 Comedy", "📰 Comic books",
@@ -79,7 +77,7 @@ const HOBBY_GROUPS: Record<string, string[]> = {
     "📹 Vlogging", "❌ X", "▶ YouTube"
   ],
   "Staying In": [
-    "🤖 AI", "🧁 Baking", "📺 Binge-Watching TV shows", "🎲 Board Games", "🎯 Board games", "♟ Chess",
+    "🤖 AI", "🧁 Baking", "📺 Binge-Watching TV shows", "🎯 Board games", "♟ Chess",
     "🍳 Cooking", "🌱 Gardening", "🏋 Home Workout", "🪴 House plants", "🎮 Online Games",
     "🛒 Online Shopping", "🎙 Podcasts", "💻 Programming", "📖 Reading", "❓ Trivia", "🎮 Video games"
   ],
@@ -89,9 +87,9 @@ const HOBBY_GROUPS: Record<string, string[]> = {
     "❄ Winter sports"
   ],
   Pets: [
-    "🐸 Amphibian", "🐦 Bird", "🕊 Birds", "🐱 Cat", "🐈 Cats", "🐶 Dog", "🐕 Dogs", "🐠 Fish", "🐹 Hamster",
-    "🦎 Lizards", "🐾 Other", "🚫 Pet-free", "🐰 Rabbit", "🐇 Rabbits", "🦎 Reptile", "🐍 Snakes",
-    "🐢 Turtle", "🐢 Turtles", "❤ Don't have but love", "🤔 Want a pet", "🤧 All the pets",
+    "🐸 Amphibian", "🕊 Birds", "🐈 Cats", "🐕 Dogs", "🐠 Fish", "🐹 Hamster",
+    "🦎 Lizards", "🐾 Other", "🚫 Pet-free", "🦎 Reptile", "🐍 Snakes",
+    "🐢 Turtles", "❤ Don't have but love", "🤔 Want a pet", "🤧 All the pets",
     "🤧 Allergic to pets"
   ],
   "Fan Favorites": [
@@ -111,24 +109,23 @@ const HOBBY_GROUPS: Record<string, string[]> = {
   ],
   "Going Out": [
     "🐠 Aquarium", "🖼 Art galleries", "🍺 Bar Hopping", "🍻 Bars", "🎳 Bowling", "☕ Cafe hopping",
-    "🍵 Cafe-hopping", "🚗 Cars", "🪩 Clubbing", "💃 Clubs", "🎵 Concerts", "👑 Drag shows",
+    "🚗 Cars", "🪩 Clubbing", "💃 Clubs", "🎵 Concerts", "👑 Drag shows",
     "🎬 Drive-in Cinema", "🔐 Escape Rooms", "🎨 Exhibition", "🎪 Festivals", "🎬 Film Festival",
     "🍻 Happy hour", "🏠 House Parties", "🎭 Improv", "🎤 Karaoke", "🏳‍🌈 LGBTQ+ nightlife",
     "🎸 Live Music", "🏍 Motorcycles", "🎬 Movies", "🏛 Museums", "🖼 Museums & galleries",
     "🎭 Musical theater", "🌙 Nightlife", "🎉 Parties", "🍺 Pub Quiz", "🍻 Pubs", "🎶 Raves",
-    "🛼 Rollerskating", "💃 Salsa dancing", "💨 Shisha", "🛍 Shopping", "🎤 Stand up",
-    "😂 Stand up Comedy", "🎭 Theater", "🛍 Thrifting", "🎪 Town Festivities", "❓ Trivia",
+    "🛼 Rollerskating", "💃 Salsa dancing", "💨 Shisha", "🛍 Shopping", "🎤 Stand up Comedy",
+    "🎭 Theater", "🛍 Thrifting", "🎪 Town Festivities", "❓ Trivia",
     "🍷 Wine tasting"
   ],
   Music: [
     "🎸 90s Britpop", "🎵 Afro", "🎶 Alternative music", "🎵 Arab", "🎸 Blues", "🎻 Classical",
-    "🤠 Country", "🎵 Country Music", "🎶 Desi", "🎧 EDM", "🎹 Electronic", "🎛 Electronic Music",
-    "🪕 Folk & acoustic", "🎵 Folk music", "🎺 Funk", "🎶 Funk music", "⛪ Gospel music", "🦇 Gothic",
-    "🎤 Grime", "🤘 Heavy Metal", "🎤 Hip Hop", "🎧 Hip hop", "🏠 House", "🎵 House music", "🎸 Indie",
-    "🎶 Indie music", "🎌 J-Pop", "🎷 Jazz", "🇰🇷 K-Pop", "💃 Latin", "🎺 Latin music", "🎹 Metal",
-    "🎵 Music", "🎸 Music bands", "🎭 Opera", "🎤 Pop", "🎵 Pop music", "🎸 Punk", "🤘 Punk rock",
-    "🎵 R&B", "🎤 Rap", "🎶 Rap music", "🎵 Reggae", "🎵 Reggaeton", "🎸 Rock", "🎵 Rock music",
-    "🎶 Soul", "🎵 Soul music", "🎧 Techno", "🎵 Trap Music"
+    "🤠 Country", "🎶 Desi", "🎧 EDM", "🎛 Electronic Music",
+    "🪕 Folk & acoustic", "🎺 Funk", "⛪ Gospel music", "🦇 Gothic",
+    "🤘 Heavy Metal", "🎤 Hip Hop", "🏠 House", "🎸 Indie",
+    "🎌 J-Pop", "🎷 Jazz", "🇰🇷 K-Pop", "💃 Latin", "🎹 Metal",
+    "🎭 Opera", "🎤 Pop", "🤘 Punk rock", "🎵 R&B", "🎤 Rap",
+    "🎵 Reggae", "🎵 Reggaeton", "🎸 Rock", "🎶 Soul", "🎧 Techno", "🎵 Trap Music"
   ],
   "Outdoors and Adventure": [
     "🎒 Backpacking", "🏖 Beach Bars", "⛺ Camping", "🛶 Canoeing", "🛋 Couchsurfing", "🤿 Diving",
@@ -160,6 +157,7 @@ const HOBBY_GROUPS: Record<string, string[]> = {
     "🧠 Intelligence", "☀ Positivity", "🗺 Sense of adventure", "😄 Sense of humor", "👥 Social awareness"
   ],
 };
+
 
 // ===========================
 // CHIP COMPONENT
