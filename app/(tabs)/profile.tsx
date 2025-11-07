@@ -7,22 +7,22 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
-    Dimensions,
-    Easing,
-    Image,
-    Keyboard,
-    Modal,
-    NativeScrollEvent,
-    NativeSyntheticEvent,
-    Pressable,
-    Animated as RNAnimated,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Dimensions,
+  Easing,
+  Image,
+  Keyboard,
+  Modal,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  Pressable,
+  Animated as RNAnimated,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Path, Circle as SvgCircle } from "react-native-svg";
@@ -185,12 +185,14 @@ export default function ProfileTop() {
     promptAnswers?: PromptAnswer[] | null;
   }>({ fullName: "", age: null, bio: null, genderSubtype: null, heightCm: null, education: null, sexualOrientation: null, institution: null, promptAnswers: null });
 
-  const [lifestyle, setLifestyle] = useState<{
-    drinking: string | null; smoking: string | null; zodiac: string | null; religion: string | null; politics: string | null;
-    workout: string | null; communication: string | null; love_language: string | null; pets: string | null; kids: string | null;
-  }>({ drinking: null, smoking: null, zodiac: null, religion: null, politics: null, workout: null, communication: null, love_language: null, pets: null, kids: null });
+const [lifestyle, setLifestyle] = useState<{
+  drinking: string | null; smoking: string | null; zodiac: string | null; religion: string | null; politics: string | null;
+  workout: string | null; communication: string | null; love_language: string | null; pets: string | null; kids: string | null;
+}>({ drinking: null, smoking: null, zodiac: null, religion: null, politics: null, workout: null, communication: null, love_language: null, pets: null, kids: null });
 
-  const [photos, setPhotos] = useState<{ avatar: string | null; first: string | null; second: string | null; }>({ avatar: null, first: null, second: null });
+const [communities, setCommunities] = useState<string[]>([]);
+
+  const [photos, setPhotos] = useState<{ avatar: string | null; first: string | null; second: string | null; third: string | null; }>({ avatar: null, first: null, second: null, third: null });
   const [modes, setModes] = useState<{ looking: string[]; values: string[] }>({ looking: [], values: [] });
   const [hobbies, setHobbies] = useState<string[]>([]);
 
@@ -231,7 +233,7 @@ export default function ProfileTop() {
         // Run core fetches in parallel
         const [profRes, lifeRes, mainRes, othersRes, modesRes, hobbiesRes] = await Promise.all([
           supabase.from("profiles").select("full_name, age, bio, gender_subtype, height_cm, education, sexual_orientation, institution, prompt_answers").eq("id", userId).single(),
-          supabase.from("lifestyle").select("drinking, smoking, zodiac, religion, politics, workout, communication, love_language, pets, kids").eq("user_id", userId).maybeSingle(),
+          supabase.from("lifestyle").select("drinking, smoking, zodiac, religion, politics, workout, communication, love_language, pets, kids, communities").eq("user_id", userId).maybeSingle(),
           supabase.from("user_photos").select("photo_url").eq("user_id", userId).eq("is_main", true).maybeSingle(),
           supabase.from("user_photos").select("photo_url, created_at, is_main").eq("user_id", userId).neq("is_main", true).order("created_at",{ ascending: true }),
           supabase.from("user_modes").select("looking_for_date, value_date").eq("user_id", userId).maybeSingle(),
@@ -269,19 +271,25 @@ export default function ProfileTop() {
           love_language: l.love_language ?? null, pets: l.pets ?? null, kids: l.kids ?? null
         });
 
+        // communities
+        const comms = Array.isArray(l.communities) ? l.communities.filter(Boolean) : [];
+        setCommunities(comms);
+
         // photos
         const avatarUrl = (mainRes as any)?.data?.photo_url || null;
         const others = (othersRes as any)?.data || [];
-        const [first, second] = others;
-        const [avatarSigned, firstSigned, secondSigned] = await Promise.all([
+        const [first, second, third] = others;
+        const [avatarSigned, firstSigned, secondSigned, thirdSigned] = await Promise.all([
           signPath(toStoragePath(avatarUrl)),
           signPath(toStoragePath(first?.photo_url ?? null)),
           signPath(toStoragePath(second?.photo_url ?? null)),
+          signPath(toStoragePath(third?.photo_url ?? null)),
         ]);
         setPhotos({
           avatar: avatarSigned ?? avatarUrl,
           first: firstSigned ?? first?.photo_url ?? null,
           second: secondSigned ?? second?.photo_url ?? null,
+          third: thirdSigned ?? third?.photo_url ?? null,
         });
 
         // modes
@@ -610,7 +618,6 @@ export default function ProfileTop() {
                   <View style={styles.hobbiesTitleGroup}>
                     <Text style={styles.hobbiesTitle}>Your Hobbies</Text>
                     <Image source={require("../../assets/images/puzzle_icon.png")} resizeMode="contain" style={styles.puzzleIcon} />
-                    <Image source={require("../../assets/images/puzzle_icon.png")} resizeMode="contain" style={styles.puzzleIconMirror} />
                   </View>
                 </View>
 
@@ -682,6 +689,39 @@ export default function ProfileTop() {
           </View>
         )}
         {/* ===== END Prompts ===== */}
+
+        {/* Third Photo */}
+        {photos.third && (
+          <View style={{ marginTop: verticalScale(14), alignItems: "center" }}>
+            <PhotoGlassFrame
+              uri={photos.third}
+              onPress={() => { setSelectedModalUri(photos.third); setModalVisible(true); }}
+            />
+          </View>
+        )}
+
+        {/* Communities */}
+        {!!communities.length && (
+          <View style={styles.hobbiesBlock}>
+            <GlassCard overlayStart={{ x: 0.5, y: 0 }} overlayEnd={{ x: 0.5, y: 1 }}>
+              <View style={styles.hobbiesCard}>
+                <View style={styles.hobbiesTitleRow}>
+                  <View style={styles.hobbiesTitleGroup}>
+                    <Text style={styles.hobbiesTitle}>Communities</Text>
+                  </View>
+                </View>
+
+                <View style={[styles.hobbiesGrid, communities.length <= 6 ? styles.hobbiesGridPacked : styles.hobbiesGridPacked]}>
+                  {communities.map((c, i) => (
+                    <View key={i} style={[styles.hobbyChipWrapper, communities.length > 6 && { transform: [{ scale: 0.95 }] }]}>
+                      <Chip text={c} textColor="#FFFFFF" />
+                    </View>
+                  ))}
+                </View>
+              </View>
+            </GlassCard>
+          </View>
+        )}
       </ScrollView>
 
       {/* Photo Modal */}
@@ -842,7 +882,7 @@ const styles = StyleSheet.create({
   puzzleIconMirror: { width: scale(32), height: scale(32), transform: [{ scaleX: -1 }], opacity: 0.95, marginLeft: scale(-4) },
 
   hobbiesGrid: { marginTop: verticalScale(4) },
-  hobbiesGridPacked: { flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-start", alignContent: "flex-start", rowGap: verticalScale(8), columnGap: scale(10) },
+  hobbiesGridPacked: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", alignContent: "flex-start", rowGap: verticalScale(8), columnGap: scale(10) },
   hobbyChipWrapper: { marginBottom: verticalScale(4), maxWidth: "100%" },
 
   // ===== Prompts block styles =====
@@ -869,24 +909,23 @@ const styles = StyleSheet.create({
 promptQuoteWrap: {
   width: "100%",
   alignItems: "center",
-  justifyContent: "center",
-  paddingHorizontal: scale(7),
-  paddingVertical: verticalScale(40),
-  position: "relative",
+  paddingVertical: verticalScale(10),
+  paddingTop: verticalScale(70),
+  backgroundColor: "transparent", // Ensure no visible background
 },
-
 
 promptPage: {
-  overflow: "hidden",
   alignItems: "center",
-  justifyContent: "center",
+  justifyContent: "center", // Push content to bottom
+  paddingHorizontal: scale(20),
+  paddingBottom: verticalScale(12), // Consistent space before dots
+  minHeight: verticalScale(140), // Page height
   position: "relative",
 },
-
 
 promptInner: {
   width: "100%",
-  paddingHorizontal: scale(20), // side margin like other cards
+  alignItems: "center",
 },
 
 
@@ -899,31 +938,34 @@ promptQuote: {
   zIndex: -1,
 },
 promptQuoteLeft: {
-  left: scale(12),
-  top: verticalScale(6),
+  left: scale(-5),
+  top: verticalScale(-20),
 },
 promptQuoteRight: {
-  right: scale(12),
-  bottom: verticalScale(6),
+  right: scale(-5),
+  bottom: verticalScale(-20),
 },
 
 
 promptAnswerText: {
   textAlign: "center",
   fontFamily: Fonts.bold,
-  fontSize: scale(28),
-  lineHeight: verticalScale(50),
+  fontSize: scale(22), // Slightly smaller for better fit
+  lineHeight: verticalScale(32),
   color: INK,
-  paddingHorizontal: scale(8),
+  width: "100%",
+  paddingHorizontal: scale(10),
 },
 
+
   promptDotsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: verticalScale(10),
-    gap: scale(8),
-  },
+  flexDirection: "row",
+  alignItems: "center",
+  justifyContent: "center",
+  paddingTop: verticalScale(12), // Consistent spacing from text
+  paddingBottom: verticalScale(4),
+  gap: scale(8),
+},
   promptDot: {
     width: scale(8),
     height: scale(8),
