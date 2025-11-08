@@ -1,19 +1,27 @@
-import React, { useEffect, useMemo, useRef, useState, forwardRef, useCallback, memo } from "react";
-import {
-  Easing, Pressable, StyleSheet, Text, View, Animated as RNAnimated, TextInput,
-  Image, Platform, Keyboard, Dimensions,
-} from "react-native";
-import MapView, { Marker, PROVIDER_GOOGLE, Camera, Circle } from "react-native-maps";
-import * as Location from "expo-location";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { BlurView } from "expo-blur";
-import { LinearGradient } from "expo-linear-gradient";
-import Svg, { Path, Circle as SvgCircle, Defs, LinearGradient as SvgLinearGradient, Stop } from "react-native-svg";
-import { supabase } from "@/lib/supabase";
-import { useRouter } from "expo-router";
-import { scale, verticalScale } from "@/utils/responsive";
 import { Fonts } from "@/constants/theme";
+import { supabase } from "@/lib/supabase";
+import { scale, verticalScale } from "@/utils/responsive";
+import { BlurView } from "expo-blur";
 import * as Font from "expo-font";
+import { LinearGradient } from "expo-linear-gradient";
+import * as Location from "expo-location";
+import { useRouter } from "expo-router";
+import React, { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Dimensions,
+  Easing,
+  Image,
+  Keyboard,
+  Platform,
+  Pressable,
+  Animated as RNAnimated,
+  StyleSheet, Text,
+  TextInput,
+  View,
+} from "react-native";
+import MapView, { Camera, Circle, Marker, PROVIDER_GOOGLE } from "react-native-maps";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Svg, { Defs, Path, Stop, Circle as SvgCircle, LinearGradient as SvgLinearGradient } from "react-native-svg";
 
 /* ===================== CONSTANTS ===================== */
 const BG = "#EEF7FF";
@@ -75,11 +83,24 @@ const urlForUserPhoto = async (raw: string | null): Promise<string | null> => {
 };
 
 const googleBlueStyle: any[] = [
-  { elementType: "labels", stylers: [{ visibility: "off" }] },
-  { featureType: "road", elementType: "labels", stylers: [{ visibility: "off" }] },
-  { featureType: "administrative", elementType: "labels", stylers: [{ visibility: "off" }] },
-  { featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] },
+  // Hide POI icons and labels (restaurants, stores, etc.)
+  { featureType: "poi", elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+  { featureType: "poi.business", elementType: "labels", stylers: [{ visibility: "off" }] },
+  { featureType: "poi.medical", elementType: "labels", stylers: [{ visibility: "off" }] },
+  { featureType: "poi.place_of_worship", elementType: "labels", stylers: [{ visibility: "off" }] },
+  { featureType: "poi.school", elementType: "labels", stylers: [{ visibility: "off" }] },
+  { featureType: "poi.sports_complex", elementType: "labels", stylers: [{ visibility: "off" }] },
+  
+  // Keep park labels but hide icons
+  { featureType: "poi.park", elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+  
+  // Hide transit stations
   { featureType: "transit", elementType: "labels", stylers: [{ visibility: "off" }] },
+  
+  // Style the remaining labels (street names, area names)
+  { elementType: "labels.text.fill", stylers: [{ color: BLUES.b20 }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#FFFFFF" }, { width: 3 }] },
+  
   { featureType: "landscape.man_made", elementType: "geometry", stylers: [{ color: BLUES.b120 }] },
   { elementType: "geometry", stylers: [{ color: BLUES.b130 }] },
   { featureType: "road", elementType: "geometry", stylers: [{ color: BLUES.b120 }] },
@@ -87,7 +108,13 @@ const googleBlueStyle: any[] = [
   { featureType: "road.local", elementType: "geometry", stylers: [{ color: BLUES.b120 }] },
   { featureType: "road.highway", elementType: "geometry", stylers: [{ color: BLUES.b90 }] },
   { featureType: "road.highway.controlled_access", elementType: "geometry", stylers: [{ color: BLUES.b80 }] },
-  { featureType: "landscape.natural", elementType: "geometry", stylers: [{ color: BLUES.b130 }] },
+  
+  // Parks and green spaces - blueish green
+  { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#B8E6D5" }] },
+  { featureType: "landscape.natural", elementType: "geometry", stylers: [{ color: "#C4E8DB" }] },
+  { featureType: "landscape.natural.landcover", elementType: "geometry", stylers: [{ color: "#B8E6D5" }] },
+  { featureType: "landscape.natural.terrain", elementType: "geometry", stylers: [{ color: "#C4E8DB" }] },
+  
   { featureType: "water", elementType: "geometry", stylers: [{ color: BLUES.b100 }] },
 ];
 
@@ -452,7 +479,7 @@ export default function MapScreen() {
       revealAnim.setValue(0);
       RNAnimated.timing(revealAnim, { toValue: 1, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start(({ finished }) => {
         if (finished) {
-          router.push("/(tabs)/event");
+          router.push("(tabs)/(up_tab)/event");
           setTimeout(() => setRevealVisible(false), 200);
         }
       });
