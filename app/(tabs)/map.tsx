@@ -479,7 +479,7 @@ export default function MapScreen() {
       revealAnim.setValue(0);
       RNAnimated.timing(revealAnim, { toValue: 1, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start(({ finished }) => {
         if (finished) {
-          router.push("(tabs)/(up_tab)/event");
+          router.push("/(tabs)/(up_tab)/event");
           setTimeout(() => setRevealVisible(false), 200);
         }
       });
