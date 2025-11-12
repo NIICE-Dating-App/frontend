@@ -29,6 +29,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Path, Circle as SvgCircle } from "react-native-svg";
+import ActiveFramesModal from "../(frames)/active_frames";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -297,6 +298,8 @@ const [communities, setCommunities] = useState<string[]>([]);
   const [heightModalVisible, setHeightModalVisible] = useState(false);
   const [framesExpanded, setFramesExpanded] = useState(false);
   const [showFrameActionSheet, setShowFrameActionSheet] = useState(false);
+  const [activeFrames, setActiveFrames] = useState<any[]>([]);
+  const [showFrameViewer, setShowFrameViewer] = useState(false);
 
   // animations
   const framesPulse = useRef(new RNAnimated.Value(1)).current;
@@ -325,7 +328,7 @@ const [communities, setCommunities] = useState<string[]>([]);
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ['images', 'videos'],  // Added videos support
         allowsEditing: false,
-        aspect: [9, 16],
+        aspect: [16, 9],
         quality: 0.8,
         videoMaxDuration: 30,  // 30 seconds max for videos
       });
@@ -359,7 +362,7 @@ const handleChooseLibrary = async () => {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images', 'videos'],
         allowsEditing: false,
-        aspect: [9, 16],
+        aspect: [16, 9],
         quality: 0.8,
       });
       
@@ -403,6 +406,69 @@ const handleChooseLibrary = async () => {
     ]).start();
   };
 
+  const fetchActiveFrames = async (userId: string) => {
+  try {
+    const now = new Date().toISOString();
+    const { data, error } = await supabase
+      .from("frames")
+      .select("*")
+      .eq("user_id", userId)
+      .is("archived_at", null)
+      .gte("expires_at", now)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Error fetching frames:", error);
+      setActiveFrames([]);
+      return;
+    }
+
+    if (data && data.length > 0) {
+      console.log("Raw frames data:", data);
+      
+      // Process each frame to get signed URLs (bucket is private!)
+      const processedFrames = await Promise.all(
+        data.map(async (frame) => {
+          if (!frame.media_url) {
+            return frame;
+          }
+          
+          // If already a full URL, use as-is
+          if (frame.media_url.startsWith('http')) {
+            return frame;
+          }
+          
+          // Since the bucket is PRIVATE, we need a SIGNED URL, not public URL
+          const { data: signedUrlData, error: signError } = await supabase.storage
+            .from("frames")  // Correct bucket name
+            .createSignedUrl(frame.media_url, 3600); // Valid for 1 hour
+          
+          if (signError) {
+            console.error("Error creating signed URL for frame", frame.id, ":", signError);
+            return frame; // Return frame as-is if signing fails
+          }
+          
+          console.log("Created signed URL for frame:", frame.id);
+          
+          return {
+            ...frame,
+            media_url: signedUrlData?.signedUrl || frame.media_url,
+          };
+        })
+      );
+      
+      console.log("Processed frames with signed URLs:", processedFrames);
+      setActiveFrames(processedFrames);
+    } else {
+      console.log("No active frames found");
+      setActiveFrames([]);
+    }
+  } catch (error) {
+    console.error("Error fetching active frames:", error);
+    setActiveFrames([]);
+  }
+};
+
   useEffect(() => {
     if (!framesExpanded) {
       const loop = RNAnimated.loop(
@@ -423,6 +489,9 @@ const handleChooseLibrary = async () => {
         const { data: auth } = await supabase.auth.getUser();
         const userId = auth?.user?.id;
         if (!userId) return;
+
+        // Fetch active frame first
+        await fetchActiveFrames(userId);
 
         // Run core fetches in parallel
         const [profRes, lifeRes, mainRes, othersRes, modesRes, hobbiesRes] = await Promise.all([
@@ -597,15 +666,34 @@ const handleChooseLibrary = async () => {
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: verticalScale(20) }} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.profileBlock}>
-          <View style={styles.avatarOuterRing}>
-            <View style={styles.avatarInnerRing}>
-              {photos.avatar ? (
-                <Image source={{ uri: photos.avatar }} style={styles.avatar} resizeMode="cover" />
-              ) : (
-                <View style={[styles.avatar, styles.avatarPlaceholder]}><Text style={styles.placeholderText}>No photo</Text></View>
+          <TouchableOpacity
+            activeOpacity={0.9}
+            onPress={() => activeFrames.length > 0 && setShowFrameViewer(true)}
+            disabled={activeFrames.length === 0}
+          >
+            <View style={[
+              styles.avatarOuterRing,
+              activeFrames.length === 0 && styles.avatarRingInactive
+            ]}>
+              {activeFrames.length > 0 && (
+                <LinearGradient
+                  colors={[BLUE, "#678CFF", "#A8C4FF", BLUE]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.avatarRingGradient}
+                />
               )}
+              <View style={styles.avatarInnerRing}>
+                {photos.avatar ? (
+                  <Image source={{ uri: photos.avatar }} style={styles.avatar} resizeMode="cover" />
+                ) : (
+                  <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                    <Text style={styles.placeholderText}>No photo</Text>
+                  </View>
+                )}
+              </View>
             </View>
-          </View>
+          </TouchableOpacity>
 
           <View style={styles.nameBlock}>
             {displayName.length > 20 ? (
@@ -1014,6 +1102,12 @@ const handleChooseLibrary = async () => {
         onTakeMedia={handleTakeMedia}
         onChooseLibrary={handleChooseLibrary}
       />
+      {/* Active Frames Viewer */}
+      <ActiveFramesModal
+        visible={showFrameViewer}
+        onClose={() => setShowFrameViewer(false)}
+        frames={activeFrames}
+      />
     </SafeAreaView>
   );
 }
@@ -1325,5 +1419,15 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.bold,
     color: INK,
     letterSpacing: 0.4,
+  },
+  avatarRingInactive: { 
+    borderWidth: scale(2), 
+    borderColor: "#E0E0E0" 
+  },
+  avatarRingGradient: {
+    position: "absolute",
+    width: "100%",
+    height: "100%",
+    borderRadius: AVATAR_SIZE / 2,
   },
 });
