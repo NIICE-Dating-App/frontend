@@ -1,25 +1,31 @@
 import { Fonts } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
 import { scale, verticalScale } from "@/utils/responsive";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import * as Font from "expo-font";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Location from "expo-location";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import React, { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Alert,
   Dimensions,
   Easing,
   Image,
   Keyboard,
+  Linking,
+  Modal,
   Platform,
   Pressable,
   Animated as RNAnimated,
+  ScrollView,
   StyleSheet, Text,
   TextInput,
+  TouchableOpacity,
   View,
 } from "react-native";
-import MapView, { Camera, Circle, Marker, PROVIDER_GOOGLE } from "react-native-maps";
+import MapView, { Camera, Marker, PROVIDER_GOOGLE } from "react-native-maps";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Defs, Path, Stop, Circle as SvgCircle, LinearGradient as SvgLinearGradient } from "react-native-svg";
 
@@ -45,6 +51,54 @@ const DEFAULT_PROFILE_PHOTO: string | null = null;
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 const FALLBACK = { lat: 41.9028, lng: 12.4964 };
 const toRad = (d: number) => (d * Math.PI) / 180;
+
+/* ===================== EVENT TYPES ===================== */
+type EventCategory = 
+  | "food_drinks"
+  | "nightlife_party"
+  | "outdoors_nature"
+  | "sports_fitness"
+  | "games_hobbies"
+  | "arts_culture_entertainment"
+  | "learning_career"
+  | "community_volunteering"
+  | "romantic_dating"
+  | "travel_adventure"
+  | "online_virtual"
+  | "other";
+
+interface EventData {
+  id: string;
+  event_name: string;
+  category: EventCategory;
+  latitude: number;
+  longitude: number;
+  location_name: string;
+  time_start: string;
+  time_end: string;
+  capacity: number;
+  event_description?: string;
+  host_id: string;
+  age_min: number;
+  age_max: number;
+  gender_allowed: string;
+  status: string;
+}
+
+const categoryDisplayNames: Record<EventCategory, { label: string; icon: string }> = {
+  food_drinks: { label: "Food & Drinks", icon: "silverware-fork-knife" },
+  nightlife_party: { label: "Nightlife & Party", icon: "weather-night" },
+  outdoors_nature: { label: "Outdoors & Nature", icon: "pine-tree" },
+  sports_fitness: { label: "Sports & Fitness", icon: "dumbbell" },
+  games_hobbies: { label: "Games & Hobbies", icon: "gamepad-variant" },
+  arts_culture_entertainment: { label: "Arts & Culture", icon: "palette" },
+  learning_career: { label: "Learning & Career", icon: "school" },
+  community_volunteering: { label: "Community", icon: "account-group" },
+  romantic_dating: { label: "Romantic & Dating", icon: "heart" },
+  travel_adventure: { label: "Travel & Adventure", icon: "airplane" },
+  online_virtual: { label: "Online / Virtual", icon: "laptop" },
+  other: { label: "Other", icon: "dots-horizontal" },
+};
 
 /* ===================== HOOKS ===================== */
 const useKadwaBold = () => {
@@ -417,6 +471,246 @@ const IiLoader: React.FC = () => {
   );
 };
 
+/* ===================== EVENT MARKER COMPONENT ===================== */
+const EventMarker: React.FC<{ event: EventData }> = ({ event }) => {
+  const categoryInfo = categoryDisplayNames[event.category] || categoryDisplayNames.other;
+  
+  return (
+    <View style={styles.eventMarkerContainer}>
+      <View style={styles.eventMarkerBubble}>
+        <LinearGradient 
+          colors={["#FFFFFF", "#F8FAFF"]} 
+          style={StyleSheet.absoluteFillObject}
+        />
+        <MaterialCommunityIcons 
+          name={categoryInfo.icon as any} 
+          size={20} 
+          color={BLUE}
+        />
+      </View>
+      <View style={styles.eventMarkerPin} />
+    </View>
+  );
+};
+
+/* ===================== EVENT DETAILS MODAL ===================== */
+const EventDetailsModal: React.FC<{
+  visible: boolean;
+  event: EventData | null;
+  onClose: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  isOwnEvent: boolean;
+}> = ({ visible, event, onClose, onEdit, onDelete, isOwnEvent }) => {
+  const insets = useSafeAreaInsets();
+  const slideAnim = useRef(new RNAnimated.Value(SCREEN_H)).current;
+  const panY = useRef(new RNAnimated.Value(0)).current;
+  const startY = useRef(0);
+  const isClosing = useRef(false);
+
+  useEffect(() => {
+    if (visible) {
+      isClosing.current = false;
+      RNAnimated.spring(slideAnim, { toValue: 0, useNativeDriver: true, tension: 65, friction: 11 }).start();
+    } else if (!isClosing.current) {
+      RNAnimated.timing(slideAnim, { toValue: SCREEN_H, duration: 250, useNativeDriver: true }).start();
+    }
+  }, [visible]);
+
+  if (!event) return null;
+
+  const categoryInfo = categoryDisplayNames[event.category] || categoryDisplayNames.other;
+  
+  const formatTime = (dateString: string) => {
+    const date = new Date(dateString);
+    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    return `${days[date.getDay()]}, ${date.getDate()} ${months[date.getMonth()]} · ${date.getHours().toString().padStart(2, "0")}:${date.getMinutes().toString().padStart(2, "0")}`;
+  };
+
+  const openInGoogleMaps = () => {
+    Alert.alert(
+      "Open in Google Maps",
+      `Navigate to ${event.location_name}?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Open",
+          onPress: () => {
+            const url = Platform.select({
+              ios: `maps://app?daddr=${event.latitude},${event.longitude}`,
+              android: `google.navigation:q=${event.latitude},${event.longitude}`,
+            });
+            const fallbackUrl = `https://www.google.com/maps/dir/?api=1&destination=${event.latitude},${event.longitude}`;
+            
+            Linking.canOpenURL(url!)
+              .then((supported) => {
+                if (supported) {
+                  return Linking.openURL(url!);
+                } else {
+                  return Linking.openURL(fallbackUrl);
+                }
+              })
+              .catch(() => Linking.openURL(fallbackUrl));
+          }
+        }
+      ]
+    );
+  };
+
+  const handleTouchStart = (e: any) => {
+    startY.current = e.nativeEvent.pageY;
+  };
+
+  const handleTouchMove = (e: any) => {
+    const deltaY = e.nativeEvent.pageY - startY.current;
+    if (deltaY > 0) {
+      panY.setValue(deltaY);
+    }
+  };
+
+  const handleTouchEnd = (e: any) => {
+    const deltaY = e.nativeEvent.pageY - startY.current;
+    if (deltaY > 100) {
+      // Swiped down more than 100px - animate slide down smoothly
+      isClosing.current = true; // Prevent double animation
+      panY.setValue(0); // Reset panY
+      RNAnimated.timing(slideAnim, {
+        toValue: SCREEN_H,
+        duration: 200,
+        useNativeDriver: true,
+      }).start(() => {
+        onClose(); // Call onClose after animation completes
+      });
+    } else {
+      // Spring back to original position
+      RNAnimated.spring(panY, {
+        toValue: 0,
+        useNativeDriver: true,
+        tension: 80,
+        friction: 12,
+      }).start();
+    }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
+      <Pressable style={styles.modalBackdrop} onPress={onClose}>
+        <RNAnimated.View 
+          style={[
+            styles.modalContainer, 
+            { 
+              transform: [
+                { translateY: RNAnimated.add(slideAnim, panY) }
+              ], 
+              paddingBottom: Math.max(insets.bottom, 20) 
+            }
+          ]}
+        >
+          <Pressable onPress={(e) => e.stopPropagation()}>
+            {/* Swipeable handle area */}
+            <View
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+              style={{ paddingVertical: 8 }}
+            >
+              <View style={styles.modalHandle} />
+            </View>
+
+            {/* Header */}
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <View style={styles.categoryBadge}>
+                  <MaterialCommunityIcons name={categoryInfo.icon as any} size={16} color={BLUE} />
+                  <Text style={styles.categoryBadgeText}>{categoryInfo.label}</Text>
+                </View>
+                <Text style={styles.eventTitle} numberOfLines={2}>{event.event_name}</Text>
+              </View>
+              <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+                <Ionicons name="close" size={26} color="#0A0E1A" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Content */}
+            <ScrollView style={{ maxHeight: SCREEN_H * 0.5 }} showsVerticalScrollIndicator={false}>
+              <View style={{ padding: 20, gap: 20 }}>
+                {/* Time */}
+                <View style={styles.infoCard}>
+                  <View style={styles.infoRow}>
+                    <Ionicons name="calendar-outline" size={20} color={BLUE} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.infoLabel}>Starts</Text>
+                      <Text style={styles.infoValue}>{formatTime(event.time_start)}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.infoRow}>
+                    <Ionicons name="time-outline" size={20} color={BLUE} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.infoLabel}>Ends</Text>
+                      <Text style={styles.infoValue}>{formatTime(event.time_end)}</Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Location - Tappable */}
+                <TouchableOpacity onPress={openInGoogleMaps} activeOpacity={0.7}>
+                  <View style={styles.infoCard}>
+                    <View style={styles.infoRow}>
+                      <Ionicons name="location-outline" size={20} color={BLUE} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.infoLabel}>Location</Text>
+                        <Text style={styles.infoValue}>{event.location_name}</Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={20} color="rgba(10, 14, 26, 0.3)" />
+                    </View>
+                  </View>
+                </TouchableOpacity>
+
+                {/* Description */}
+                {event.event_description && (
+                  <View style={styles.infoCard}>
+                    <Text style={styles.sectionLabel}>Description</Text>
+                    <Text style={styles.descText}>{event.event_description}</Text>
+                  </View>
+                )}
+
+                {/* Details Grid */}
+                <View style={styles.detailsGrid}>
+                  <View style={styles.detailBox}>
+                    <Ionicons name="people-outline" size={18} color={BLUE} />
+                    <Text style={styles.detailBoxText}>{event.capacity} spots</Text>
+                  </View>
+                  <View style={styles.detailBox}>
+                    <Ionicons name="person-outline" size={18} color={BLUE} />
+                    <Text style={styles.detailBoxText}>{event.age_min}–{event.age_max} y/o</Text>
+                  </View>
+                </View>
+              </View>
+            </ScrollView>
+
+            {/* Action Buttons */}
+            {isOwnEvent && (
+              <View style={styles.modalFooter}>
+                <TouchableOpacity onPress={onDelete} style={styles.deleteBtn}>
+                  <Ionicons name="trash-outline" size={20} color="#D5222B" />
+                  <Text style={styles.deleteBtnText}>Delete</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={onEdit} style={styles.editBtn}>
+                  <LinearGradient colors={GRADIENTS.chipActive} style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 14, gap: 8, borderRadius: 14 }}>
+                    <Ionicons name="create-outline" size={20} color="#FFF" />
+                    <Text style={styles.editBtnText}>Edit</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
+            )}
+          </Pressable>
+        </RNAnimated.View>
+      </Pressable>
+    </Modal>
+  );
+};
+
 /* ===================== MAIN SCREEN ===================== */
 export default function MapScreen() {
   const router = useRouter();
@@ -429,12 +723,19 @@ export default function MapScreen() {
   const [isFollowing, setIsFollowing] = useState(true);
   const [userProfilePhoto, setUserProfilePhoto] = useState<string | null>(DEFAULT_PROFILE_PHOTO);
   const [headingDeg, setHeadingDeg] = useState(0);
-  const [radiusMeters, setRadiusMeters] = useState<number | null>(null);
+  const [events, setEvents] = useState<EventData[]>([]);
+  const [selectedEvent, setSelectedEvent] = useState<EventData | null>(null);
+  const [showEventModal, setShowEventModal] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  
+  // Events have a fixed 30km radius (separate from dating radius)
+  const EVENT_RADIUS_METERS = 30000; // 30km
 
   const lastRawPosRef = useRef<{ lat: number; lng: number } | null>(null);
   const smoothPosRef = useRef<{ lat: number; lng: number } | null>(null);
   const lastCameraAtRef = useRef<number>(0);
   const lastSetPosRef = useRef<{ lat: number; lng: number } | null>(null);
+  const cameraPositionRef = useRef<{ lat: number; lng: number } | null>(null);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [filters, setFilters] = useState({ nearby: true, online: false });
@@ -479,7 +780,7 @@ export default function MapScreen() {
       revealAnim.setValue(0);
       RNAnimated.timing(revealAnim, { toValue: 1, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start(({ finished }) => {
         if (finished) {
-          router.push("/(tabs)/(up_tab)/event");
+          router.push("/(events)/add_event");
           setTimeout(() => setRevealVisible(false), 200);
         }
       });
@@ -491,6 +792,11 @@ export default function MapScreen() {
       try {
         const { data: auth } = await supabase.auth.getUser();
         const userId = auth?.user?.id;
+        if (userId) {
+          setCurrentUserId(userId);
+        }
+
+        // Fetch user profile photo
         if (!userId) return;
 
         // Fetch user profile photo
@@ -509,21 +815,129 @@ export default function MapScreen() {
         } else {
           setUserProfilePhoto(null);
         }
-
-        // Fetch user radius from profiles table
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("distance_meters")
-          .eq("id", userId)
-          .single();
-
-        if (profile?.distance_meters) {
-          setRadiusMeters(profile.distance_meters);
-        }
       } catch {
         setUserProfilePhoto(null);
       }
     })();
+  }, []);
+
+  // Fetch events from Supabase
+  const fetchEvents = useCallback(async () => {
+    if (!pos) return;
+    
+    try {
+      const { data, error } = await supabase.rpc('get_nearby_events_with_coordinates', {
+        p_user_lat: pos.lat,
+        p_user_lng: pos.lng,
+        p_radius_meters: EVENT_RADIUS_METERS,
+        p_status: 'active'
+      });
+
+      if (error) {
+        console.error("❌ Error fetching events:", error);
+        return;
+      }
+      
+      if (data) {
+        const validEvents = data
+          .filter((event: any) => {
+            const lat = event.latitude;
+            const lng = event.longitude;
+            if (lat === null || lat === undefined || lng === null || lng === undefined) return false;
+            
+            const eventEndTime = new Date(event.time_end).getTime();
+            if (eventEndTime < Date.now()) return false;
+            
+            return true;
+          })
+          .map((event: any) => ({
+            ...event,
+            latitude: typeof event.latitude === 'string' ? parseFloat(event.latitude) : event.latitude,
+            longitude: typeof event.longitude === 'string' ? parseFloat(event.longitude) : event.longitude,
+          }));
+        
+        console.log(`✅ Loaded ${validEvents.length} events`);
+        setEvents(validEvents as EventData[]);
+      }
+    } catch (error) {
+      console.error("Exception in fetchEvents:", error);
+    }
+  }, [pos]);
+
+  const fetchEventsRef = useRef(fetchEvents);
+  useEffect(() => {
+    fetchEventsRef.current = fetchEvents;
+  }, [fetchEvents]);
+
+  // Initial fetch when position is available
+  useEffect(() => {
+    if (pos) {
+      fetchEvents();
+    }
+  }, [pos, fetchEvents]);
+
+  // Refresh events when screen comes into focus (e.g., returning from add_event)
+  useFocusEffect(
+    useCallback(() => {
+      console.log("🔄 Map screen focused - refreshing events");
+      if (pos) {
+        fetchEvents();
+      }
+    }, [pos, fetchEvents])
+  );
+
+  // Set up real-time subscription ONCE on mount
+  useEffect(() => {
+    console.log("📡 Setting up real-time subscription...");
+
+    const channel = supabase
+      .channel("events_updates")
+      .on(
+        "postgres_changes",
+        { 
+          event: "*", 
+          schema: "public", 
+          table: "events"
+        },
+        (payload) => {
+          console.log("🔔 Real-time event:", payload.eventType);
+          
+          if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
+            console.log("♻️ Refetching events");
+            fetchEventsRef.current();
+          } else if (payload.eventType === "DELETE") {
+            const eventId = (payload.old as any)?.id;
+            if (eventId) {
+              setEvents(prev => prev.filter(e => e.id !== eventId));
+            }
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          console.log("✅ Real-time connected");
+        }
+      });
+
+    return () => {
+      channel.unsubscribe();
+    };
+  }, []); // Empty deps - set up once
+
+  // Periodic cleanup for expired events
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setEvents(prev => {
+        const now = Date.now();
+        const active = prev.filter(e => new Date(e.time_end).getTime() > now);
+        if (active.length !== prev.length) {
+          console.log(`🧹 Removed ${prev.length - active.length} expired events`);
+        }
+        return active;
+      });
+    }, 30000);
+
+    return () => clearInterval(interval);
   }, []);
 
   const haversineMeters = useCallback((a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
@@ -551,18 +965,57 @@ export default function MapScreen() {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== "granted") {
+          console.log("📍 Location permission denied, using fallback location");
           const fallback = { lat: FALLBACK.lat, lng: FALLBACK.lng, acc: 100 };
           setPos(fallback);
           smoothPosRef.current = { lat: fallback.lat, lng: fallback.lng };
+          lastSetPosRef.current = { lat: fallback.lat, lng: fallback.lng };
+          cameraPositionRef.current = { lat: fallback.lat, lng: fallback.lng };
+          setLoading(false);
+          
+          // Animate to fallback location
+          setTimeout(() => {
+            mapRef.current?.animateCamera(
+              { center: { latitude: fallback.lat, longitude: fallback.lng }, zoom: 16, pitch: 0, heading: 0 },
+              { duration: 400 }
+            );
+            lastCameraAtRef.current = Date.now();
+          }, 0);
           return;
         }
 
-        const initial = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest });
+        // Try to get current position with error handling
+        let initial;
+        try {
+          initial = await Location.getCurrentPositionAsync({ 
+            accuracy: Location.Accuracy.Balanced,
+          });
+        } catch (locationError) {
+          console.log("📍 Could not get current location, using fallback:", locationError);
+          const fallback = { lat: FALLBACK.lat, lng: FALLBACK.lng, acc: 100 };
+          setPos(fallback);
+          smoothPosRef.current = { lat: fallback.lat, lng: fallback.lng };
+          lastSetPosRef.current = { lat: fallback.lat, lng: fallback.lng };
+          cameraPositionRef.current = { lat: fallback.lat, lng: fallback.lng };
+          setLoading(false);
+          
+          setTimeout(() => {
+            mapRef.current?.animateCamera(
+              { center: { latitude: fallback.lat, longitude: fallback.lng }, zoom: 16, pitch: 0, heading: 0 },
+              { duration: 400 }
+            );
+            lastCameraAtRef.current = Date.now();
+          }, 0);
+          return;
+        }
+
         const init = { lat: initial.coords.latitude, lng: initial.coords.longitude, acc: initial.coords.accuracy ?? 30 };
+        console.log("📍 Got user location:", init.lat, init.lng);
         setPos(init);
         lastSetPosRef.current = { lat: init.lat, lng: init.lng };
         lastRawPosRef.current = { lat: init.lat, lng: init.lng };
         smoothPosRef.current = { lat: init.lat, lng: init.lng };
+        cameraPositionRef.current = { lat: init.lat, lng: init.lng };
 
         setTimeout(() => {
           mapRef.current?.animateCamera(
@@ -572,50 +1025,90 @@ export default function MapScreen() {
           lastCameraAtRef.current = Date.now();
         }, 0);
 
-        subPos = await Location.watchPositionAsync(
-          { accuracy: Location.Accuracy.Balanced, timeInterval: 1200, distanceInterval: 5 },
-          (loc) => {
-            const { latitude, longitude } = loc.coords;
-            const locAcc: number | undefined = loc.coords.accuracy ?? undefined;
-            const raw = { lat: latitude, lng: longitude };
+        // Watch position updates
+        try {
+          subPos = await Location.watchPositionAsync(
+            { accuracy: Location.Accuracy.Balanced, timeInterval: 1500, distanceInterval: 8 },
+            (loc) => {
+              const { latitude, longitude } = loc.coords;
+              const locAcc: number | undefined = loc.coords.accuracy ?? undefined;
+              const raw = { lat: latitude, lng: longitude };
 
-            const prevRaw = lastRawPosRef.current;
-            if (prevRaw) {
-              const jump = haversineMeters(prevRaw, raw);
-              if ((locAcc ?? 999) > 80 && jump > 80) return;
+              // Reject obvious GPS jumps
+              const prevRaw = lastRawPosRef.current;
+              if (prevRaw) {
+                const jump = haversineMeters(prevRaw, raw);
+                // More aggressive filtering: reject large jumps when accuracy is poor
+                if ((locAcc ?? 999) > 80 && jump > 50) {
+                  console.log("📍 Rejected GPS jump:", jump.toFixed(1), "m, accuracy:", locAcc);
+                  return;
+                }
+                // Even with good accuracy, reject unrealistic jumps
+                if (jump > 200) {
+                  console.log("📍 Rejected unrealistic jump:", jump.toFixed(1), "m");
+                  return;
+                }
+              }
+              lastRawPosRef.current = raw;
+
+              const prevSmooth = smoothPosRef.current ?? raw;
+              const smoothed = smoothPoint(prevSmooth, raw, locAcc);
+              smoothPosRef.current = smoothed;
+
+              const lastSet = lastSetPosRef.current ?? smoothed;
+              const movedSinceSet = haversineMeters(lastSet, smoothed);
+
+              // Only update position state if moved significantly
+              if (movedSinceSet >= 5) {
+                setPos({ lat: smoothed.lat, lng: smoothed.lng, acc: locAcc ?? 25 });
+                lastSetPosRef.current = { lat: smoothed.lat, lng: smoothed.lng };
+              }
+
+              // Camera follow logic - only if following mode is enabled
+              if (isFollowing) {
+                const now = Date.now();
+                const lastCam = lastCameraAtRef.current;
+                
+                // Calculate distance from ACTUAL camera position (not previous smoothed position)
+                const camPos = cameraPositionRef.current ?? smoothed;
+                const distFromCamera = haversineMeters(camPos, smoothed);
+
+                // More conservative thresholds:
+                // - Only move camera if user has moved at least 15 meters from camera center
+                // - Rate limit to max once per 1.2 seconds
+                // - Require decent accuracy
+                if (distFromCamera > 15 && now - lastCam >= 1200 && (locAcc ?? 999) < 100) {
+                  console.log("📍 Following user - moved", distFromCamera.toFixed(1), "m from camera");
+                  mapRef.current?.animateCamera(
+                    { center: { latitude: smoothed.lat, longitude: smoothed.lng }, pitch: 0, heading: 0 },
+                    { duration: 400 }
+                  );
+                  cameraPositionRef.current = { lat: smoothed.lat, lng: smoothed.lng };
+                  lastCameraAtRef.current = now;
+                }
+              }
             }
-            lastRawPosRef.current = raw;
+          );
+        } catch (watchError) {
+          console.log("📍 Could not watch position, using static location:", watchError);
+        }
 
-            const prevSmooth = smoothPosRef.current ?? raw;
-            const smoothed = smoothPoint(prevSmooth, raw, locAcc);
-            smoothPosRef.current = smoothed;
-
-            const lastSet = lastSetPosRef.current ?? smoothed;
-            const movedSinceSet = haversineMeters(lastSet, smoothed);
-
-            if (movedSinceSet >= 3) {
-              setPos({ lat: smoothed.lat, lng: smoothed.lng, acc: locAcc ?? 25 });
-              lastSetPosRef.current = { lat: smoothed.lat, lng: smoothed.lng };
-            }
-
-            const now = Date.now();
-            const lastCam = lastCameraAtRef.current;
-            const distFromCam = mapRef.current && prevSmooth ? haversineMeters(prevSmooth, smoothed) : 999;
-
-            if (isFollowing && distFromCam > 10 && now - lastCam >= 800) {
-              mapRef.current?.animateCamera(
-                { center: { latitude: smoothed.lat, longitude: smoothed.lng }, pitch: 0, heading: 0 },
-                { duration: 300 }
-              );
-              lastCameraAtRef.current = now;
-            }
-          }
-        );
-
-        subHeading = await Location.watchHeadingAsync((h) => {
-          const deg = Number.isFinite(h?.trueHeading) && h.trueHeading >= 0 ? h.trueHeading : h.magHeading ?? 0;
-          setHeadingDeg(deg);
-        });
+        // Watch heading updates
+        try {
+          subHeading = await Location.watchHeadingAsync((h) => {
+            const deg = Number.isFinite(h?.trueHeading) && h.trueHeading >= 0 ? h.trueHeading : h.magHeading ?? 0;
+            setHeadingDeg(deg);
+          });
+        } catch (headingError) {
+          console.log("📍 Could not watch heading:", headingError);
+        }
+      } catch (error) {
+        console.error("📍 Location setup error:", error);
+        // Final fallback
+        const fallback = { lat: FALLBACK.lat, lng: FALLBACK.lng, acc: 100 };
+        setPos(fallback);
+        smoothPosRef.current = { lat: fallback.lat, lng: fallback.lng };
+        lastSetPosRef.current = { lat: fallback.lat, lng: fallback.lng };
       } finally {
         setLoading(false);
       }
@@ -635,6 +1128,7 @@ export default function MapScreen() {
   const recenter = useCallback(() => {
     const c = pos ?? { lat: FALLBACK.lat, lng: FALLBACK.lng, acc: 100 };
     setIsFollowing(true);
+    cameraPositionRef.current = { lat: c.lat, lng: c.lng };
     mapRef.current?.animateCamera({ center: { latitude: c.lat, longitude: c.lng }, zoom: 16, pitch: 0, heading: 0 }, { duration: 400 });
     RNAnimated.sequence([
       RNAnimated.timing(fabRotation, { toValue: 1, duration: 300, useNativeDriver: true, easing: Easing.out(Easing.cubic) }),
@@ -660,24 +1154,32 @@ export default function MapScreen() {
         rotateEnabled={false} scrollEnabled zoomEnabled moveOnMarkerPress={false} onPanDrag={() => setIsFollowing(false)}
         minZoomLevel={10} maxZoomLevel={20}
       >
-        {pos && radiusMeters && (
-          <Circle
-            center={{ latitude: pos.lat, longitude: pos.lng }}
-            radius={radiusMeters}
-            fillColor="rgba(27,68,205,0.12)"
-            strokeColor="rgba(27,68,205,0.35)"
-            strokeWidth={2}
-          />
-        )}
-        
         {pos && (
           <Marker
             key={userProfilePhoto || "placeholder"} tracksViewChanges={true}
             coordinate={{ latitude: pos.lat, longitude: pos.lng }} anchor={{ x: 0.5, y: 0.5 }} stopPropagation
+            zIndex={1000}
           >
             <ProfileMarker photoUrl={userProfilePhoto} headingDeg={headingDeg} />
           </Marker>
         )}
+
+        {/* Event markers */}
+        {events.map((event) => (
+          <Marker
+            key={`evt-${event.id}`}
+            coordinate={{ latitude: event.latitude, longitude: event.longitude }}
+            anchor={{ x: 0.5, y: 1 }}
+            tracksViewChanges={false}
+            onPress={() => {
+              setSelectedEvent(event);
+              setShowEventModal(true);
+            }}
+          >
+            <EventMarker event={event} />
+          </Marker>
+        ))}
+
       </MapView>
 
       <RNAnimated.View
@@ -717,6 +1219,7 @@ export default function MapScreen() {
         </View>
       </View>
 
+
       {revealVisible && (
         <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { zIndex: 999, backgroundColor: "transparent" }]}>
           <RNAnimated.View
@@ -731,6 +1234,68 @@ export default function MapScreen() {
       )}
 
       <GlassFab onPress={recenter} spin={fabSpin} bottom={Math.max(insets.bottom + TAB_HEIGHT, TAB_HEIGHT) - FAB_LOWERING} right={scale(18)} />
+
+      {/* Event Details Modal */}
+      <EventDetailsModal
+        visible={showEventModal}
+        event={selectedEvent}
+        onClose={() => {
+          setShowEventModal(false);
+          setSelectedEvent(null);
+        }}
+        onEdit={() => {
+          setShowEventModal(false);
+          // TODO: Navigate to edit event page with event ID
+          router.push({
+            pathname: "/(events)/edit_event",
+            params: { eventId: selectedEvent?.id }
+          });
+        }}
+        onDelete={() => {
+          Alert.alert(
+            "Delete Event",
+            "Are you sure you want to delete this event? This action cannot be undone.",
+            [
+              {
+                text: "Cancel",
+                style: "cancel"
+              },
+              {
+                text: "Delete",
+                style: "destructive",
+                onPress: async () => {
+                  if (!selectedEvent) return;
+                  
+                  try {
+                    // Delete from database
+                    const { error } = await supabase
+                      .from("events")
+                      .delete()
+                      .eq("id", selectedEvent.id);
+                    
+                    if (error) {
+                      console.error("Delete error:", error);
+                      Alert.alert("Error", "Failed to delete event. Please try again.");
+                    } else {
+                      console.log("✅ Event deleted:", selectedEvent.id);
+                      // Remove from local state immediately
+                      setEvents(prev => prev.filter(e => e.id !== selectedEvent.id));
+                      // Close modal
+                      setShowEventModal(false);
+                      setSelectedEvent(null);
+                      Alert.alert("Success", "Event deleted successfully");
+                    }
+                  } catch (error) {
+                    console.error("Delete exception:", error);
+                    Alert.alert("Error", "An unexpected error occurred");
+                  }
+                }
+              }
+            ]
+          );
+        }}
+        isOwnEvent={selectedEvent?.host_id === currentUserId}
+      />
     </View>
   );
 }
@@ -759,4 +1324,188 @@ const styles = StyleSheet.create({
   progressOuter: { width: "68%", height: verticalScale(10), borderRadius: verticalScale(10) / 2, overflow: "hidden", marginTop: verticalScale(8), backgroundColor: "transparent" },
   progressTrack: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(255,255,255,0.18)", borderWidth: 1, borderColor: "rgba(27,68,205,0.28)", borderRadius: verticalScale(10) / 2 },
   progressRunner: { position: "absolute", top: 1.5, bottom: 1.5, left: 0, width: "26%", borderRadius: verticalScale(10) / 2, shadowColor: BLUE, shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } },
+  
+  // Event marker styles
+  eventMarkerContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  eventMarkerBubble: {
+    width: scale(36),
+    height: scale(36),
+    borderRadius: scale(18),
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: BLUE,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 5,
+    overflow: "hidden",
+  },
+  eventMarkerPin: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: scale(8),
+    borderRightWidth: scale(8),
+    borderTopWidth: scale(10),
+    borderStyle: "solid",
+    borderLeftColor: "transparent",
+    borderRightColor: "transparent",
+    borderTopColor: BLUE,
+    marginTop: -2,
+  },
+
+  // Event Details Modal styles
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "flex-end",
+  },
+  modalContainer: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 8,
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: "rgba(10, 14, 26, 0.2)",
+    borderRadius: 2,
+    alignSelf: "center",
+    marginBottom: 12,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(27, 68, 205, 0.08)",
+  },
+  categoryBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(27, 68, 205, 0.08)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+    marginBottom: 8,
+    alignSelf: "flex-start",
+  },
+  categoryBadgeText: {
+    fontSize: 11,
+    fontFamily: Fonts.bold,
+    color: BLUE,
+  },
+  eventTitle: {
+    fontSize: 22,
+    fontFamily: Fonts.bold,
+    color: "#0A0E1A",
+  },
+  closeBtn: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 18,
+    backgroundColor: "rgba(10, 14, 26, 0.05)",
+    marginLeft: 12,
+  },
+  infoCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "rgba(27, 68, 205, 0.08)",
+    gap: 12,
+  },
+  infoRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+  },
+  infoLabel: {
+    fontSize: 12,
+    fontFamily: Fonts.primary,
+    color: "rgba(10, 14, 26, 0.5)",
+    marginBottom: 2,
+  },
+  infoValue: {
+    fontSize: 15,
+    fontFamily: Fonts.bold,
+    color: "#0A0E1A",
+  },
+  sectionLabel: {
+    fontSize: 14,
+    fontFamily: Fonts.bold,
+    color: "#0A0E1A",
+    marginBottom: 8,
+  },
+  descText: {
+    fontSize: 14,
+    fontFamily: Fonts.primary,
+    color: "#0A0E1A",
+    lineHeight: 20,
+  },
+  detailsGrid: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  detailBox: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(27, 68, 205, 0.05)",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    gap: 6,
+  },
+  detailBoxText: {
+    fontSize: 13,
+    fontFamily: Fonts.bold,
+    color: BLUE,
+  },
+  modalFooter: {
+    flexDirection: "row",
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 8,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(27, 68, 205, 0.08)",
+    gap: 10,
+  },
+  deleteBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: "rgba(213, 34, 43, 0.08)",
+    borderWidth: 1.5,
+    borderColor: "rgba(213, 34, 43, 0.2)",
+    gap: 6,
+  },
+  deleteBtnText: {
+    fontSize: 15,
+    fontFamily: Fonts.bold,
+    color: "#D5222B",
+  },
+  editBtn: {
+    flex: 1,
+    borderRadius: 14,
+    overflow: "hidden",
+  },
+  editBtnText: {
+    fontSize: 15,
+    fontFamily: Fonts.bold,
+    color: "#FFFFFF",
+  },
 });
