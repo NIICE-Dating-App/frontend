@@ -293,42 +293,30 @@ export default function ProfileTop() {
   const [permission, requestPermission] = useCameraPermissions();
 
   const handleTakeMedia = async () => {
-    console.log("Take photo/video clicked");
-    setShowFrameActionSheet(false);
-    
-    setTimeout(async () => {
-      try {
-        const { status } = await requestPermission();
-        if (status !== "granted") {
-          Alert.alert("Permission Required", "Camera access is required to take photos/videos.");
-          return;
-        }
-        
-        const result = await ImagePicker.launchCameraAsync({
-          mediaTypes: ['images', 'videos'],
-          allowsEditing: false,
-          aspect: [16, 9],
-          quality: 0.8,
-          videoMaxDuration: 30,
-        });
-        
-        if (!result.canceled && result.assets[0]) {
-          const asset = result.assets[0];
-          const mediaType = asset.type === 'video' ? 'video' : 'image';
-          router.push({
-            pathname: "/(frames)/frame_editor",
-            params: {
-              uri: asset.uri,
-              type: mediaType
-            }
-          });
-        }
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-        Alert.alert("Error", "Camera failed: " + errorMessage);
+  console.log("Take photo/video clicked");
+  setShowFrameActionSheet(false);
+
+  setTimeout(async () => {
+    try {
+      const { status } = await requestPermission();
+      if (status !== "granted") {
+        Alert.alert(
+          "Permission Required",
+          "Camera access is required to take photos and videos."
+        );
+        return;
       }
-    }, 300);
-  };
+
+      // Navigate to the custom camera screen
+      router.push("/(frames)/camera");
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error occurred";
+      Alert.alert("Error", "Camera permission check failed: " + errorMessage);
+    }
+  }, 300);
+};
+
 
   const handleChooseLibrary = async () => {
     console.log("Choose library clicked");

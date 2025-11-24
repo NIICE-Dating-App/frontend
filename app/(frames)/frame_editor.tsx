@@ -1,81 +1,123 @@
 // app/(frames)/frame_editor.tsx
+import { Colors } from "@/components/theme";
 import { Fonts } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
-import { moderateScale, scale, verticalScale } from "@/utils/responsive";
+import { scale, verticalScale } from "@/utils/responsive";
+import { Ionicons } from "@expo/vector-icons";
 import { decode } from "base64-arraybuffer";
-import { BlurView } from "expo-blur";
-import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
-    Alert,
-    Dimensions,
-    Image,
-    KeyboardAvoidingView,
-    Platform,
-    Animated as RNAnimated,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  Alert,
+  Dimensions,
+  Image,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  Animated as RNAnimated,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  TouchableWithoutFeedback,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import Svg, { Circle } from "react-native-svg";
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
-// =========== THEME ===========
-const BG = "#EEF7FF";
-const INK = "#000910";
-const BLUE = "#1B44CD";
-const LIGHT_BLUE = "#A8C4FF";
-const WHITE = "#FFFFFF";
-const GRAY = "#9CA8B7";
-const SUCCESS_GREEN = "#10B981";
+// Circular loader constants
+const LOADER_SIZE = scale(130);
+const LOADER_STROKE = scale(4);
+const LOADER_RADIUS = LOADER_SIZE / 2 - LOADER_STROKE / 2;
+const LOADER_CIRCUMFERENCE = 2 * Math.PI * LOADER_RADIUS;
 
-const GRADIENTS = {
-  save: [BLUE, LIGHT_BLUE] as const,
-  cancel: ["#EEF4FF", "#DCE8FF"] as const,
-  capture: [BLUE, "#678CFF"] as const,
-};
+const AnimatedCircle = RNAnimated.createAnimatedComponent(Circle);
 
-// =========== TIMER COMPONENT ===========
-const ExpiryTimer: React.FC<{ compact?: boolean }> = ({ compact = false }) => {
-  return (
-    <View style={[styles.timerChip, compact && styles.timerChipCompact]}>
-      <BlurView intensity={80} tint="light" style={StyleSheet.absoluteFillObject} />
-      <Text style={[styles.timerText, compact && styles.timerTextCompact]}>⏱ 24h</Text>
-    </View>
-  );
-};
-
-// =========== MAIN COMPONENT ===========
 export default function FrameEditor() {
-  // Get params passed from profile
   const params = useLocalSearchParams();
   const mediaUri = params.uri as string;
-  const mediaType = params.type as 'image' | 'video';
-  
-  // State
+  const mediaType = params.type as "image" | "video";
+
   const [caption, setCaption] = useState("");
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadState, setUploadState] = useState<"editing" | "uploading" | "success">("editing");
-  
-  // Animation refs
+  const [uploadState, setUploadState] =
+    useState<"editing" | "uploading" | "success">("editing");
+
   const progressAnim = useRef(new RNAnimated.Value(0)).current;
   const successAnim = useRef(new RNAnimated.Value(0)).current;
+  const pulseAnim = useRef(new RNAnimated.Value(1)).current;
 
-  // Handle upload
+  // photo scale for keyboard animation
+  const photoScale = useRef(new RNAnimated.Value(1)).current;
+
+  // animate photo when keyboard shows/hides
+  useEffect(() => {
+    const showEvent =
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent =
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+    const handleShow = () => {
+      RNAnimated.timing(photoScale, {
+        toValue: 0.55, // smaller when typing
+        duration: 150,
+        useNativeDriver: true,
+      }).start();
+    };
+
+    const handleHide = () => {
+      RNAnimated.timing(photoScale, {
+        toValue: 1,
+        duration: 150,
+        useNativeDriver: true,
+      }).start();
+    };
+
+    const subShow = Keyboard.addListener(showEvent, handleShow);
+    const subHide = Keyboard.addListener(hideEvent, handleHide);
+
+    return () => {
+      subShow.remove();
+      subHide.remove();
+    };
+  }, [photoScale]);
+
+  // subtle pulse on uploading loader (slower)
+  useEffect(() => {
+    if (uploadState === "uploading") {
+      const pulse = RNAnimated.loop(
+        RNAnimated.sequence([
+          RNAnimated.timing(pulseAnim, {
+            toValue: 1.05,
+            duration: 1200,
+            useNativeDriver: true,
+          }),
+          RNAnimated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 1200,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      pulse.start();
+      return () => {
+        pulse.stop();
+      };
+    }
+  }, [uploadState, pulseAnim]);
+
   const handleUpload = async () => {
     if (!caption.trim()) {
       Alert.alert("Missing Caption", "Please add a caption to your frame");
       return;
     }
 
+    Keyboard.dismiss();
     setIsUploading(true);
     setUploadState("uploading");
 
-    // Animate progress
     RNAnimated.timing(progressAnim, {
       toValue: 0.9,
       duration: 2000,
@@ -88,26 +130,24 @@ export default function FrameEditor() {
         throw new Error("Not authenticated");
       }
 
-      // Convert media to base64
       const response = await fetch(mediaUri);
       const blob = await response.blob();
       const reader = new FileReader();
-      
+
       const base64 = await new Promise<string>((resolve, reject) => {
         reader.onloadend = () => {
           const base64data = reader.result as string;
-          const base64String = base64data.split(',')[1];
+          const base64String = base64data.split(",")[1];
           resolve(base64String);
         };
         reader.onerror = reject;
         reader.readAsDataURL(blob);
       });
 
-      // Upload to storage
-      const fileExt = mediaType === 'video' ? 'mp4' : 'jpg';
-      const contentType = mediaType === 'video' ? 'video/mp4' : 'image/jpeg';
+      const fileExt = mediaType === "video" ? "mp4" : "jpg";
+      const contentType = mediaType === "video" ? "video/mp4" : "image/jpeg";
       const fileName = `${auth.user.id}/${Date.now()}.${fileExt}`;
-      
+
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from("frames")
         .upload(fileName, decode(base64), {
@@ -116,8 +156,7 @@ export default function FrameEditor() {
 
       if (uploadError) throw uploadError;
 
-      // Create frame record
-      const { data: frameData, error: frameError } = await supabase
+      const { error: frameError } = await supabase
         .from("frames")
         .insert({
           user_id: auth.user.id,
@@ -130,15 +169,13 @@ export default function FrameEditor() {
 
       if (frameError) throw frameError;
 
-      // Complete progress animation
       RNAnimated.timing(progressAnim, {
         toValue: 1,
         duration: 300,
         useNativeDriver: false,
       }).start(() => {
         setUploadState("success");
-        
-        // Success animation
+
         RNAnimated.spring(successAnim, {
           toValue: 1,
           friction: 8,
@@ -146,68 +183,100 @@ export default function FrameEditor() {
           useNativeDriver: true,
         }).start();
 
-        // Navigate back to profile after a short delay
         setTimeout(() => {
           router.back();
         }, 1500);
       });
     } catch (error) {
       console.error("Upload error:", error);
-      Alert.alert("Upload Failed", "Failed to upload your frame. Please try again.");
+      Alert.alert(
+        "Upload Failed",
+        "Failed to upload your frame. Please try again."
+      );
       setUploadState("editing");
+      progressAnim.setValue(0);
     } finally {
       setIsUploading(false);
     }
   };
 
-  // Render uploading state
+  // ========== UPLOADING STATE ==========
   if (uploadState === "uploading") {
-    return (
-      <SafeAreaView style={styles.container} edges={["top"]}>
-        <View style={styles.uploadingContainer}>
-          <BlurView intensity={95} tint="light" style={styles.uploadingBlur}>
-            <LinearGradient
-              colors={["rgba(255,255,255,0.95)", "rgba(246,248,252,0.98)"]}
-              style={styles.uploadingGradient}
-            >
-              <View style={styles.uploadingContent}>
-                <Text style={styles.uploadingTitle}>Uploading your Frame</Text>
-                
-                <View style={styles.progressBarContainer}>
-                  <View style={styles.progressBarBg} />
-                  <RNAnimated.View
-                    style={[
-                      styles.progressBarFill,
-                      {
-                        width: progressAnim.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: ["0%", "100%"],
-                        }),
-                      },
-                    ]}
-                  >
-                    <LinearGradient
-                      colors={GRADIENTS.capture}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                      style={StyleSheet.absoluteFillObject}
-                    />
-                  </RNAnimated.View>
-                </View>
+    // circle progress from empty -> full, starting at 90°
+    const strokeDashoffset = progressAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [LOADER_CIRCUMFERENCE, 0],
+    });
 
-                <Text style={styles.uploadingSubtext}>This will just take a moment...</Text>
+    return (
+      <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
+        <View style={styles.uploadingOuter}>
+          {/* Niice circular loader */}
+          <RNAnimated.View
+            style={[
+              styles.uploadingCard,
+              { transform: [{ scale: pulseAnim }] },
+            ]}
+          >
+            <Svg width={LOADER_SIZE} height={LOADER_SIZE}>
+              {/* track circle */}
+              <Circle
+                cx={LOADER_SIZE / 2}
+                cy={LOADER_SIZE / 2}
+                r={LOADER_RADIUS}
+                stroke="rgba(27,68,205,0.18)"
+                strokeWidth={LOADER_STROKE}
+                fill="transparent"
+              />
+              {/* progress circle, starting at 90° (top) */}
+              <AnimatedCircle
+                cx={LOADER_SIZE / 2}
+                cy={LOADER_SIZE / 2}
+                r={LOADER_RADIUS}
+                stroke={Colors.BLUE}
+                strokeWidth={LOADER_STROKE}
+                fill="transparent"
+                strokeDasharray={`${LOADER_CIRCUMFERENCE}, ${LOADER_CIRCUMFERENCE}`}
+                strokeDashoffset={strokeDashoffset}
+                strokeLinecap="round"
+                rotation={-90}
+                originX={LOADER_SIZE / 2}
+                originY={LOADER_SIZE / 2}
+              />
+            </Svg>
+
+            {/* Niice logo in the center */}
+            <View style={styles.loaderLogoOverlay}>
+              <View style={styles.loaderLogoContainer}>
+                <Image
+                  source={require("../../assets/images/niice_logo_icon.png")}
+                  style={styles.loaderLogo}
+                  resizeMode="contain"
+                />
               </View>
-            </LinearGradient>
-          </BlurView>
+            </View>
+          </RNAnimated.View>
+
+          {/* Text under loader */}
+          <Text style={styles.uploadingTitle}>Uploading frame...</Text>
+          <Text style={styles.uploadingSubtext}>
+            Hang on while we share your NiiceFrame
+          </Text>
+
+          <View style={styles.loadingDots}>
+            <View style={styles.dot} />
+            <View style={styles.dot} />
+            <View style={styles.dot} />
+          </View>
         </View>
       </SafeAreaView>
     );
   }
 
-  // Render success state
+  // ========== SUCCESS STATE ==========
   if (uploadState === "success") {
     return (
-      <SafeAreaView style={styles.container} edges={["top"]}>
+      <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
         <View style={styles.successContainer}>
           <RNAnimated.View
             style={[
@@ -218,304 +287,429 @@ export default function FrameEditor() {
               },
             ]}
           >
-            <Text style={styles.successIcon}>✨</Text>
-            <Text style={styles.successTitle}>Frame Uploaded!</Text>
-            <Text style={styles.successSubtext}>Your frame is now live</Text>
+            {/* Niice logo + full ring + check badge */}
+            <View style={styles.successIconWrapper}>
+              <View style={styles.successRing} />
+
+              <View style={styles.successIconBg}>
+                <Image
+                  source={require("../../assets/images/niice_logo_icon.png")}
+                  style={styles.successLogo}
+                  resizeMode="contain"
+                />
+              </View>
+
+              <View style={styles.successCheckBadge}>
+                <Ionicons name="checkmark" size={20} color="#FFFFFF" />
+              </View>
+            </View>
+
+            <Text style={styles.successTitle}>Frame uploaded</Text>
+            <Text style={styles.successSubtext}>
+              Your frame is now live for everyone to see.
+            </Text>
           </RNAnimated.View>
         </View>
       </SafeAreaView>
     );
   }
 
-  // Render editing state
+  // ========== EDITING STATE ==========
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1 }}
+      <TouchableWithoutFeedback
+        onPress={Keyboard.dismiss}
+        accessible={false}
       >
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.cancelButton}>
-            <Text style={styles.cancelText}>Cancel</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Add Caption</Text>
-          <View style={{ width: scale(60) }} />
-        </View>
+        <KeyboardAvoidingView
+          style={styles.editingContainer}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          {/* Top bar */}
+          <View style={styles.topBar}>
+            {/* Left: 24h pill */}
+            <View style={styles.leftSlot}>
+              <View style={styles.lifetimePill}>
+                <Ionicons
+                  name="time-outline"
+                  size={14}
+                  color={Colors.BLUE}
+                  style={{ marginRight: scale(4) }}
+                />
+                <Text style={styles.lifetimeText}>24h</Text>
+              </View>
+            </View>
 
-        <View style={styles.editorContainer}>
-          <View style={styles.mediaContainer}>
-            {mediaType === 'video' ? (
-  <View style={styles.videoPlaceholder}>
-    <Image source={{ uri: mediaUri }} style={styles.mediaPreview} resizeMode="contain" />
-    <View style={styles.videoOverlay}>
-      <Text style={styles.videoOverlayText}>📹 Video</Text>
-    </View>
-  </View>
-) : (
-              <Image source={{ uri: mediaUri }} style={styles.mediaPreview} resizeMode="contain" />
-            )}
-            
-            <View style={styles.captionInputContainer}>
-              <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFillObject} />
+            {/* Center: Niice logo + "Frame" = NiiceFrame */}
+            <View style={styles.centerTitle}>
+              <Image
+                source={require("../../assets/images/niice_logo_icon.png")}
+                style={styles.logoIcon}
+                resizeMode="contain"
+              />
+              <Text style={styles.titleText}>Frame</Text>
+            </View>
+
+            {/* Right: close */}
+            <TouchableOpacity
+              onPress={() => router.back()}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={styles.closeButton}
+            >
+              <Ionicons name="close" size={22} color={Colors.BLUE} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Media preview */}
+          <View style={styles.photoWrapper}>
+            <RNAnimated.View
+              style={[
+                styles.photoCard,
+                { transform: [{ scale: photoScale }] },
+              ]}
+            >
+              <View style={styles.photoCardInner}>
+                {mediaUri ? (
+                  <Image
+                    source={{ uri: mediaUri }}
+                    style={styles.photo}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={styles.photoPlaceholder}>
+                    <Ionicons
+                      name="image-outline"
+                      size={40}
+                      color="rgba(0,0,0,0.3)"
+                    />
+                    <Text style={styles.placeholderText}>Photo preview</Text>
+                  </View>
+                )}
+              </View>
+            </RNAnimated.View>
+          </View>
+
+          {/* Caption bar */}
+          <View style={styles.captionWrapper}>
+            <View style={styles.captionContainer}>
               <TextInput
                 style={styles.captionInput}
                 placeholder="Add a caption..."
-                placeholderTextColor="rgba(255,255,255,0.6)"
+                placeholderTextColor="rgba(0,0,0,0.35)"
                 value={caption}
                 onChangeText={setCaption}
-                multiline
-                maxLength={100}
-                returnKeyType="done"
-                autoFocus
+                multiline={false}
+                returnKeyType="send"
+                onSubmitEditing={handleUpload}
               />
-              <Text style={styles.charCount}>{caption.length}/100</Text>
+              <TouchableOpacity
+                style={[
+                  styles.sendButton,
+                  (!caption.trim() || isUploading) && styles.sendButtonDisabled,
+                ]}
+                onPress={handleUpload}
+                disabled={!caption.trim() || isUploading}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="arrow-forward" size={22} color="#FFFFFF" />
+              </TouchableOpacity>
             </View>
-
-            <ExpiryTimer compact />
           </View>
-
-          <TouchableOpacity
-            style={styles.uploadButton}
-            onPress={handleUpload}
-            disabled={isUploading || !caption.trim()}
-            activeOpacity={0.8}
-          >
-            <LinearGradient
-              colors={caption.trim() ? GRADIENTS.save : GRADIENTS.cancel}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.uploadButtonGradient}
-            >
-              <Text style={[styles.uploadButtonText, !caption.trim() && styles.uploadButtonTextDisabled]}>
-                Upload Frame
-              </Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </TouchableWithoutFeedback>
     </SafeAreaView>
   );
 }
 
-// =========== STYLES ===========
+const BG = Colors.BG;
+const INK = Colors.INK;
+const BLUE = Colors.BLUE;
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: BG,
   },
 
-  // Header
-  header: {
+  // ===== editing layout =====
+  editingContainer: {
+    flex: 1,
+    paddingHorizontal: scale(20),
+    paddingTop: verticalScale(10),
+    paddingBottom: verticalScale(16),
+  },
+  topBar: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: scale(20),
-    paddingVertical: verticalScale(12),
-    backgroundColor: BG,
+    marginBottom: verticalScale(16),
   },
-  cancelButton: {
-    paddingHorizontal: scale(12),
-    paddingVertical: verticalScale(6),
+  leftSlot: {
+    width: scale(70),
+    alignItems: "flex-start",
+    justifyContent: "center",
   },
-  cancelText: {
-    fontSize: scale(16),
+  lifetimePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: scale(10),
+    paddingVertical: verticalScale(4),
+    borderRadius: scale(14),
+    borderWidth: 1,
+    borderColor: "rgba(27,68,205,0.3)",
+    backgroundColor: "rgba(27,68,205,0.06)",
+  },
+  lifetimeText: {
+    fontSize: scale(12),
     fontFamily: Fonts.bold,
     color: BLUE,
   },
-  headerTitle: {
-    fontSize: scale(18),
+  centerTitle: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    flex: 1,
+    marginLeft: scale(-20), // to offset left slot width
+    columnGap: scale(0),
+  },
+  logoIcon: {
+    height: verticalScale(22),
+    width: scale(70),
+    marginRight: scale(4),
+  },
+  titleText: {
+    color: BLUE,
+    fontSize: scale(25),
     fontFamily: Fonts.bold,
-    color: INK,
     letterSpacing: 0.3,
+    marginTop: verticalScale(4.7),
+  },
+  closeButton: {
+    width: scale(32),
+    height: scale(32),
+    borderRadius: scale(16),
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(27,68,205,0.06)",
   },
 
-  // Editor
-  editorContainer: {
+  photoWrapper: {
     flex: 1,
-    paddingHorizontal: scale(20),
-    paddingVertical: verticalScale(20),
+    alignItems: "center",
+    justifyContent: "center",
   },
-  mediaContainer: {
+  photoCard: {
+    width: SCREEN_WIDTH * 0.8,
+    aspectRatio: 9 / 16,
+    borderRadius: scale(20),
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "rgba(27,68,205,0.12)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  photoCardInner: {
     flex: 1,
-    borderRadius: scale(24),
+    margin: scale(8),
+    borderRadius: scale(16),
     overflow: "hidden",
     backgroundColor: "#000",
-    marginBottom: verticalScale(20),
   },
-  mediaPreview: {
+  photo: {
     width: "100%",
     height: "100%",
   },
-  videoPlaceholder: {
+  photoPlaceholder: {
     flex: 1,
-    backgroundColor: "#1a1a1a",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F2F4FA",
+  },
+  placeholderText: {
+    marginTop: verticalScale(8),
+    color: "rgba(0,0,0,0.4)",
+    fontSize: scale(13),
+    fontFamily: Fonts.primary,
+  },
+
+  captionWrapper: {
+    marginTop: verticalScale(18),
+  },
+  captionContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: scale(999),
+    paddingHorizontal: scale(16),
+    paddingVertical: verticalScale(10),
+    borderWidth: 1,
+    borderColor: "rgba(27,68,205,0.15)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  captionInput: {
+    flex: 1,
+    color: INK,
+    fontSize: scale(15),
+    fontFamily: Fonts.primary,
+    paddingRight: scale(10),
+  },
+  sendButton: {
+    width: scale(40),
+    height: scale(40),
+    borderRadius: scale(20),
+    backgroundColor: BLUE,
     alignItems: "center",
     justifyContent: "center",
   },
-  videoPlaceholderText: {
-    fontSize: scale(24),
-    fontFamily: Fonts.bold,
-    color: WHITE,
+  sendButtonDisabled: {
+    opacity: 0.4,
   },
 
-  // Caption Input
-  captionInputContainer: {
+  // ===== uploading =====
+  uploadingOuter: {
+    flex: 1,
+    backgroundColor: BG,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: scale(40),
+  },
+  uploadingCard: {
+    width: scale(160),
+    height: scale(160),
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: verticalScale(24),
+  },
+  loaderLogoOverlay: {
     position: "absolute",
+    top: 0,
     bottom: 0,
     left: 0,
     right: 0,
-    paddingHorizontal: scale(20),
-    paddingVertical: verticalScale(16),
-    minHeight: verticalScale(80),
-  },
-  captionInput: {
-    fontSize: scale(16),
-    fontFamily: Fonts.primary,
-    color: WHITE,
-    textAlign: "center",
-    minHeight: verticalScale(50),
-  },
-  charCount: {
-    position: "absolute",
-    bottom: verticalScale(8),
-    right: scale(20),
-    fontSize: scale(12),
-    color: "rgba(255,255,255,0.6)",
-    fontFamily: Fonts.primary,
-  },
-
-  // Upload Button
-  uploadButton: {
-    height: verticalScale(56),
-    borderRadius: scale(28),
-    overflow: "hidden",
-  },
-  uploadButtonGradient: {
-    flex: 1,
     alignItems: "center",
     justifyContent: "center",
   },
-  uploadButtonText: {
-    fontSize: moderateScale(18),
-    fontFamily: Fonts.bold,
-    color: WHITE,
-    letterSpacing: 0.4,
-  },
-  uploadButtonTextDisabled: {
-    color: BLUE,
-  },
-
-  // Timer
-  timerChip: {
-    position: "absolute",
-    top: verticalScale(20),
-    right: scale(20),
-    paddingHorizontal: scale(16),
-    paddingVertical: verticalScale(8),
-    borderRadius: scale(20),
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "rgba(27,68,205,0.2)",
-    zIndex: 10,
-  },
-  timerChipCompact: {
-    paddingHorizontal: scale(12),
-    paddingVertical: verticalScale(6),
-  },
-  timerText: {
-    fontSize: scale(14),
-    fontFamily: Fonts.bold,
-    color: BLUE,
-    letterSpacing: 0.3,
-  },
-  timerTextCompact: {
-    fontSize: scale(12),
-  },
-
-  // Uploading
-  uploadingContainer: {
-    flex: 1,
+  loaderLogoContainer: {
+    width: scale(90),
+    height: scale(90),
+    borderRadius: scale(45),
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
-    padding: scale(40),
+    shadowColor: BLUE,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    elevation: 6,
   },
-  uploadingBlur: {
-    borderRadius: scale(24),
-    overflow: "hidden",
-    width: "100%",
-  },
-  uploadingGradient: {
-    padding: scale(32),
-    borderRadius: scale(24),
-  },
-  uploadingContent: {
-    alignItems: "center",
+  loaderLogo: {
+    width: "70%",
+    height: "70%",
   },
   uploadingTitle: {
     fontSize: scale(22),
     fontFamily: Fonts.bold,
     color: INK,
-    marginBottom: verticalScale(24),
-    letterSpacing: 0.3,
-  },
-  progressBarContainer: {
-    width: scale(200),
-    height: verticalScale(8),
-    borderRadius: scale(4),
-    overflow: "hidden",
-    marginBottom: verticalScale(20),
-  },
-  progressBarBg: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(27,68,205,0.1)",
-  },
-  progressBarFill: {
-    height: "100%",
-    borderRadius: scale(4),
-    overflow: "hidden",
+    marginBottom: verticalScale(6),
   },
   uploadingSubtext: {
     fontSize: scale(14),
     fontFamily: Fonts.primary,
-    color: GRAY,
+    color: "rgba(10,14,26,0.65)",
+    textAlign: "center",
+    marginBottom: verticalScale(12),
+  },
+  loadingDots: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    columnGap: scale(8),
+  },
+  dot: {
+    width: scale(8),
+    height: scale(8),
+    borderRadius: scale(4),
+    backgroundColor: "rgba(27,68,205,0.6)",
   },
 
-  // Success
+  // ===== success =====
   successContainer: {
     flex: 1,
+    backgroundColor: BG,
     alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: scale(32),
   },
   successContent: {
     alignItems: "center",
+    justifyContent: "center",
   },
-  successIcon: {
-    fontSize: scale(72),
-    marginBottom: verticalScale(16),
+  successIconWrapper: {
+    width: scale(170),
+    height: scale(170),
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: verticalScale(24),
+  },
+  successRing: {
+    position: "absolute",
+    width: scale(140),
+    height: scale(140),
+    borderRadius: scale(70),
+    borderWidth: scale(3),
+    borderColor: BLUE,
+  },
+  successIconBg: {
+    width: scale(100),
+    height: scale(100),
+    borderRadius: scale(50),
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: BLUE,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  successLogo: {
+    width: "70%",
+    height: "70%",
+  },
+  successCheckBadge: {
+    position: "absolute",
+    bottom: verticalScale(22),
+    right: scale(30),
+    width: scale(32),
+    height: scale(32),
+    borderRadius: scale(16),
+    backgroundColor: BLUE,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: BLUE,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 4,
   },
   successTitle: {
     fontSize: scale(24),
     fontFamily: Fonts.bold,
     color: INK,
-    marginBottom: verticalScale(8),
+    marginBottom: verticalScale(6),
   },
   successSubtext: {
-    fontSize: scale(16),
+    fontSize: scale(14),
     fontFamily: Fonts.primary,
-    color: GRAY,
+    color: "rgba(10,14,26,0.65)",
+    textAlign: "center",
+    paddingHorizontal: scale(8),
   },
-  videoOverlay: {
-  position: 'absolute',
-  top: scale(20),
-  left: scale(20),
-  backgroundColor: 'rgba(0,0,0,0.6)',
-  paddingHorizontal: scale(12),
-  paddingVertical: verticalScale(6),
-  borderRadius: scale(16),
-},
-videoOverlayText: {
-  fontSize: scale(14),
-  fontFamily: Fonts.bold,
-  color: WHITE,
-},
 });

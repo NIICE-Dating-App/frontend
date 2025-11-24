@@ -1,29 +1,29 @@
 // app/(frames)/active_frames.tsx
 import { Fonts } from "@/constants/theme";
+import { supabase } from "@/lib/supabase";
 import { moderateScale, scale, verticalScale } from "@/utils/responsive";
+import { Ionicons } from "@expo/vector-icons";
 import { AVPlaybackStatus, ResizeMode, Video } from "expo-av";
-import { BlurView } from "expo-blur";
-import { LinearGradient } from "expo-linear-gradient";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { router } from "expo-router";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-    ActivityIndicator,
-    Animated,
-    Dimensions,
-    Image,
-    Modal,
-    PanResponder,
-    Pressable,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Animated,
+  Dimensions,
+  Image,
+  Modal,
+  PanResponder,
+  Pressable,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
-
-const BLUE = "#1B44CD";
-const INK = "#000910";
 
 interface Frame {
   id: string;
@@ -38,120 +38,218 @@ interface ActiveFramesModalProps {
   visible: boolean;
   onClose: () => void;
   frames: Frame[];
+  onDeleted?: (id: string) => void;
+  onEdit?: (frame: Frame) => void;
 }
 
-export default function ActiveFramesModal({ visible, onClose, frames }: ActiveFramesModalProps) {
-  const safeFrames = frames || [];
-  
+// helpers for Supabase avatar
+const toStoragePath = (urlOrPath: string | null): string | null => {
+  if (!urlOrPath) return null;
+  if (!urlOrPath.startsWith("http")) return urlOrPath.replace(/^\/+/, "");
+  const markers = [
+    "/object/sign/user_photos/",
+    "/object/public/user_photos/",
+    "/user_photos/",
+  ];
+  for (const m of markers) {
+    const i = urlOrPath.indexOf(m);
+    if (i !== -1) {
+      return decodeURIComponent(urlOrPath.substring(i + m.length).split("?")[0]);
+    }
+  }
+  return null;
+};
+
+const signPath = async (path: string | null): Promise<string | null> => {
+  if (!path) return null;
+  const { data, error } = await supabase.storage
+    .from("user_photos")
+    .createSignedUrl(path, 3600);
+
+  if (error) {
+    console.warn("signPath error:", error.message);
+    return null;
+  }
+  return data?.signedUrl ?? null;
+};
+
+const ActiveFramesModal: React.FC<ActiveFramesModalProps> = ({
+  visible,
+  onClose,
+  frames,
+  onDeleted,
+  onEdit,
+}) => {
+  const [frameList, setFrameList] = useState<Frame[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [mediaError, setMediaError] = useState(false);
-  
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+
   const progressAnim = useRef(new Animated.Value(0)).current;
   const animationRef = useRef<Animated.CompositeAnimation | null>(null);
   const videoRef = useRef<Video>(null);
   const pausedProgressValue = useRef(0);
-  
+
   const translateY = useRef(new Animated.Value(0)).current;
   const opacity = useRef(new Animated.Value(1)).current;
 
-  const currentFrame = safeFrames[currentIndex];
+  const currentFrame = frameList[currentIndex];
 
-  // Calculate time since posted
+  // time ago
   const getTimeAgo = (createdAt: string): string => {
     const now = new Date();
     const created = new Date(createdAt);
-    const hoursAgo = Math.floor((now.getTime() - created.getTime()) / (1000 * 60 * 60));
-    
-    if (hoursAgo === 0) {
-      const minsAgo = Math.floor((now.getTime() - created.getTime()) / (1000 * 60));
-      return minsAgo === 0 ? "now" : `${minsAgo}m`;
+    const diffMs = now.getTime() - created.getTime();
+    const hours = Math.floor(diffMs / (1000 * 60 * 60));
+    if (hours <= 0) {
+      const mins = Math.floor(diffMs / (1000 * 60));
+      return mins <= 0 ? "now" : `${mins}m`;
     }
-    return `${hoursAgo}h`;
+    if (hours < 24) return `${hours}h`;
+    const days = Math.floor(hours / 24);
+    return `${days}d`;
   };
 
-  // Start progress animation - FIXED: Removed dependency on isLoading
-  const startProgressAnimation = useCallback((fromValue: number = 0) => {
-    if (!currentFrame || !visible) return;
-    
-    const duration = currentFrame.media_kind === "video" ? 15000 : 5000;
-    const remainingDuration = duration * (1 - fromValue);
-    
-    progressAnim.setValue(fromValue);
-    
-    animationRef.current = Animated.timing(progressAnim, {
-      toValue: 1,
-      duration: remainingDuration,
-      useNativeDriver: false,
-    });
-    
-    animationRef.current.start(({ finished }) => {
-      if (finished && !isPaused) {
-        // Move to next frame or close
-        if (currentIndex < frames.length - 1) {
-          moveToNextFrame();
-        } else {
-          onClose();
+  // load frames when modal opens
+  useEffect(() => {
+    if (visible) {
+      setFrameList(frames || []);
+      setCurrentIndex(0);
+      progressAnim.setValue(0);
+      setIsLoading(true);
+      setMediaError(false);
+      setIsPaused(false);
+      pausedProgressValue.current = 0;
+      setMenuVisible(false);
+    }
+  }, [visible, frames, progressAnim]);
+
+  // load main avatar from user_photos where is_main = true
+  useEffect(() => {
+    if (!visible) return;
+    let isMounted = true;
+
+    const loadAvatar = async () => {
+      try {
+        const { data: auth } = await supabase.auth.getUser();
+        const userId = auth?.user?.id;
+        if (!userId) return;
+
+        const { data, error } = await supabase
+          .from("user_photos")
+          .select("photo_url")
+          .eq("user_id", userId)
+          .eq("is_main", true)
+          .maybeSingle();
+
+        if (error) {
+          console.error("Error loading main photo:", error);
+          return;
         }
+
+        const rawUrl = (data as any)?.photo_url ?? null;
+        if (!rawUrl) return;
+
+        const signed = await signPath(toStoragePath(rawUrl));
+        if (isMounted) {
+          setAvatarUrl(signed ?? rawUrl);
+        }
+      } catch (e) {
+        console.error("Avatar load error:", e);
       }
+    };
+
+    loadAvatar();
+    return () => {
+      isMounted = false;
+    };
+  }, [visible]);
+
+  // 15s progress animation
+  const moveToNextFrame = useCallback(() => {
+    setCurrentIndex((prev) => {
+      const next = Math.min(prev + 1, Math.max(frameList.length - 1, 0));
+      return next;
     });
-  }, [currentFrame, currentIndex, frames.length, isPaused, visible, onClose]);
-
-  // Helper function to move to next frame
-  const moveToNextFrame = () => {
-    setCurrentIndex(prev => prev + 1);
     progressAnim.setValue(0);
     setIsLoading(true);
     setMediaError(false);
-  };
+    pausedProgressValue.current = 0;
+  }, [frameList.length, progressAnim]);
 
-  // Helper function to move to previous frame
-  const moveToPreviousFrame = () => {
-    setCurrentIndex(prev => prev - 1);
+  const moveToPreviousFrame = useCallback(() => {
+    setCurrentIndex((prev) => Math.max(prev - 1, 0));
     progressAnim.setValue(0);
     setIsLoading(true);
     setMediaError(false);
-  };
+    pausedProgressValue.current = 0;
+  }, [progressAnim]);
 
-  // Handle pause
+  const startProgressAnimation = useCallback(
+    (fromValue: number = 0) => {
+      if (!currentFrame || !visible || frameList.length === 0) return;
+
+      const duration = 15000; // 15s photo & video
+      const remainingDuration = duration * (1 - fromValue);
+
+      progressAnim.setValue(fromValue);
+
+      if (animationRef.current) {
+        animationRef.current.stop();
+      }
+
+      animationRef.current = Animated.timing(progressAnim, {
+        toValue: 1,
+        duration: remainingDuration,
+        useNativeDriver: false,
+      });
+
+      animationRef.current.start(({ finished }) => {
+        if (finished && !isPaused) {
+          if (currentIndex < frameList.length - 1) {
+            moveToNextFrame();
+          } else {
+            onClose();
+          }
+        }
+      });
+    },
+    [currentFrame, visible, frameList.length, isPaused, currentIndex, moveToNextFrame, onClose, progressAnim]
+  );
+
+  // pause / resume (long press)
   const handlePause = useCallback(() => {
     if (isPaused) return;
-    
     setIsPaused(true);
-    
-    // Save current progress
+
     progressAnim.stopAnimation((value) => {
       pausedProgressValue.current = value;
     });
-    
-    // Pause video if playing
+
     if (currentFrame?.media_kind === "video" && videoRef.current) {
       videoRef.current.pauseAsync();
     }
-  }, [isPaused, currentFrame]);
+  }, [isPaused, currentFrame, progressAnim]);
 
-  // Handle resume
   const handleResume = useCallback(() => {
     if (!isPaused) return;
-    
     setIsPaused(false);
-    
-    // Resume video if needed
+
     if (currentFrame?.media_kind === "video" && videoRef.current) {
       videoRef.current.playAsync();
     }
-    
-    // Resume animation from saved position
+
     startProgressAnimation(pausedProgressValue.current);
   }, [isPaused, currentFrame, startProgressAnimation]);
 
-  // Pan responder for swipe down
+  // swipe down to close
   const panResponder = useRef(
     PanResponder.create({
-      onMoveShouldSetPanResponder: (_, gestureState) => {
-        return gestureState.dy > 10 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
-      },
+      onMoveShouldSetPanResponder: (_, gestureState) =>
+        gestureState.dy > 10 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx),
       onPanResponderMove: (_, gestureState) => {
         if (gestureState.dy > 0) {
           translateY.setValue(gestureState.dy);
@@ -193,7 +291,6 @@ export default function ActiveFramesModal({ visible, onClose, frames }: ActiveFr
     })
   ).current;
 
-  // Handle tap navigation
   const handleTapLeft = () => {
     if (currentIndex > 0) {
       moveToPreviousFrame();
@@ -201,78 +298,116 @@ export default function ActiveFramesModal({ visible, onClose, frames }: ActiveFr
   };
 
   const handleTapRight = () => {
-    if (currentIndex < frames.length - 1) {
+    if (currentIndex < frameList.length - 1) {
       moveToNextFrame();
     } else {
       onClose();
     }
   };
 
-  // Handle media load success
+  // media events
   const handleMediaLoaded = useCallback(() => {
-    console.log("Media loaded successfully for frame:", currentFrame?.id);
     setIsLoading(false);
     setMediaError(false);
-    // Start animation immediately after media loads
     if (!isPaused) {
       startProgressAnimation(0);
     }
-  }, [currentFrame, isPaused, startProgressAnimation]);
+  }, [isPaused, startProgressAnimation]);
 
-  // Handle media load error
-  const handleMediaError = useCallback((error?: any) => {
-    console.error("Media failed to load:", currentFrame?.media_url, error);
-    setIsLoading(false);
-    setMediaError(true);
-    // Still start the animation to move to next frame after timeout
-    if (!isPaused) {
-      startProgressAnimation(0);
-    }
-  }, [currentFrame, isPaused, startProgressAnimation]);
+  const handleMediaError = useCallback(
+    (error?: any) => {
+      console.error("Media failed to load:", currentFrame?.media_url, error);
+      setIsLoading(false);
+      setMediaError(true);
+      if (!isPaused) {
+        startProgressAnimation(0);
+      }
+    },
+    [currentFrame, isPaused, startProgressAnimation]
+  );
 
-  // Start animation when frame changes or modal opens - FIXED: Now depends on media loading
   useEffect(() => {
-    // Stop any existing animation when frame changes
     if (animationRef.current) {
       animationRef.current.stop();
     }
     progressAnim.setValue(0);
-    
     return () => {
       if (animationRef.current) {
         animationRef.current.stop();
       }
     };
-  }, [currentIndex, visible]);
+  }, [currentIndex, visible, progressAnim]);
 
-  // Reset when modal opens/closes
-  useEffect(() => {
-    if (visible) {
-      setCurrentIndex(0);
+  if (!currentFrame || frameList.length === 0) return null;
+
+  // delete helpers
+  const removeFrameLocally = (id: string) => {
+    setFrameList((prev) => {
+      const updated = prev.filter((f) => f.id !== id);
+      if (updated.length === 0) {
+        onClose();
+        return updated;
+      }
+
+      const deletedIndex = prev.findIndex((f) => f.id === id);
+      const nextIndex =
+        deletedIndex >= updated.length ? updated.length - 1 : deletedIndex;
+
+      setCurrentIndex(nextIndex);
       progressAnim.setValue(0);
       setIsLoading(true);
       setMediaError(false);
-      setIsPaused(false);
       pausedProgressValue.current = 0;
-      console.log("Modal opened with frames:", frames.length);
-    }
-  }, [visible]);
 
-  // Debug logging
-  useEffect(() => {
-    if (currentFrame) {
-      console.log("Current frame:", {
-        id: currentFrame.id,
-        media_kind: currentFrame.media_kind,
-        media_url: currentFrame.media_url,
-        caption: currentFrame.caption,
-        isLoading,
-        mediaError
-      });
-    }
-  }, [currentFrame, isLoading, mediaError]);
+      return updated;
+    });
+  };
 
-  if (!currentFrame || frames.length === 0) return null;
+  const handleDeleteFrame = () => {
+    if (!currentFrame) return;
+    Alert.alert("Delete frame?", "This frame will be removed permanently.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            const { error } = await supabase
+              .from("frames")
+              .delete()
+              .eq("id", currentFrame.id);
+            if (error) {
+              console.error("Failed to delete frame:", error);
+              Alert.alert("Error", "Could not delete frame. Please try again.");
+              return;
+            }
+            setMenuVisible(false);
+            removeFrameLocally(currentFrame.id);
+            onDeleted?.(currentFrame.id);
+          } catch (e) {
+            console.error("Delete frame exception:", e);
+            Alert.alert("Error", "Could not delete frame. Please try again.");
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleEditFrame = () => {
+    if (!currentFrame) return;
+    setMenuVisible(false);
+    handlePause();
+
+    // go back to editor (or caption page if you change it)
+    router.push({
+      pathname: "/(frames)/frame_editor",
+      params: {
+        frameId: currentFrame.id,
+      },
+    });
+
+    onEdit?.(currentFrame);
+  };
 
   return (
     <Modal
@@ -283,139 +418,196 @@ export default function ActiveFramesModal({ visible, onClose, frames }: ActiveFr
       onRequestClose={onClose}
     >
       <StatusBar barStyle="light-content" />
-      
-      <Animated.View
-        style={[
-          styles.container,
-          {
-            opacity,
-            transform: [{ translateY }],
-          },
-        ]}
-      >
-        {/* Background */}
-        <View style={styles.background} />
-        
-        {/* Progress Bars */}
-        <View style={styles.progressContainer}>
-          {frames.map((_, index) => (
-            <View key={index} style={styles.progressSegment}>
-              <View style={styles.progressTrack}>
-                {index < currentIndex && (
-                  <View style={[styles.progressFill, { width: "100%" }]} />
-                )}
-                {index === currentIndex && (
-                  <Animated.View
-                    style={[
-                      styles.progressFill,
-                      {
-                        width: progressAnim.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: ["0%", "100%"],
-                        }),
-                      },
-                    ]}
+      <SafeAreaView style={styles.safeContainer} edges={["top"]}>
+        <Animated.View
+          style={[
+            styles.container,
+            {
+              opacity,
+              transform: [{ translateY }],
+            },
+          ]}
+        >
+          <View style={styles.background} />
+
+          {/* TOP overlay: progress + avatar in top-left */}
+          <View style={styles.topOverlay}>
+            <View style={styles.progressContainer}>
+              {frameList.map((_, index) => (
+                <View key={index} style={styles.progressSegment}>
+                  <View style={styles.progressTrack}>
+                    {index < currentIndex && (
+                      <View style={[styles.progressFill, { width: "100%" }]} />
+                    )}
+                    {index === currentIndex && (
+                      <Animated.View
+                        style={[
+                          styles.progressFill,
+                          {
+                            width: progressAnim.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: ["0%", "100%"],
+                            }),
+                          },
+                        ]}
+                      />
+                    )}
+                  </View>
+                </View>
+              ))}
+            </View>
+
+            <View style={styles.topUserRow}>
+              <View style={styles.avatarWrapper}>
+                {avatarUrl ? (
+                  <Image
+                    source={{ uri: avatarUrl }}
+                    style={styles.avatar}
+                    resizeMode="cover"
                   />
+                ) : (
+                  <View style={styles.avatarPlaceholder} />
                 )}
               </View>
+              <View style={styles.headerTextColumn}>
+                <Text style={styles.headerName}>You</Text>
+                <Text style={styles.headerTime}>
+                  {getTimeAgo(currentFrame.created_at)}
+                </Text>
+              </View>
             </View>
-          ))}
-        </View>
+          </View>
 
-        {/* Header */}
-        <View style={styles.header}>
-          <BlurView intensity={80} tint="dark" style={styles.headerBlur}>
-            <View style={styles.headerContent}>
-              <Text style={styles.timestamp}>{getTimeAgo(currentFrame.created_at)}</Text>
-              <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                <Text style={styles.closeIcon}>✕</Text>
-              </TouchableOpacity>
-            </View>
-          </BlurView>
-        </View>
+          {/* media */}
+          <View style={styles.mediaWrapper} {...panResponder.panHandlers}>
+            <Pressable
+              style={styles.mediaPressable}
+              onLongPress={handlePause}
+              onPressOut={handleResume}
+              delayLongPress={120}
+            >
+              {isLoading && (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color="#FFFFFF" />
+                  <Text style={styles.loadingText}>Loading frame...</Text>
+                </View>
+              )}
 
-        {/* Media Content with gesture wrapper */}
-        <View style={styles.mediaWrapper} {...panResponder.panHandlers}>
-          <Pressable
-            style={styles.mediaContainer}
-            onLongPress={handlePause}
-            onPressOut={handleResume}
-            delayLongPress={200}
-          >
-            {/* Show loading indicator while media is loading */}
-            {isLoading && (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#FFFFFF" />
-                <Text style={styles.loadingText}>Loading frame...</Text>
+              {mediaError && !isLoading && (
+                <View style={styles.errorContainer}>
+                  <Text style={styles.errorText}>Failed to load media</Text>
+                  <Text style={styles.errorSubtext}>
+                    Moving to next frame…
+                  </Text>
+                </View>
+              )}
+
+              {currentFrame.media_kind === "image" ? (
+                <Image
+                  source={{ uri: currentFrame.media_url }}
+                  style={[
+                    styles.media,
+                    { opacity: isLoading || mediaError ? 0 : 1 },
+                  ]}
+                  resizeMode="contain"
+                  onLoad={handleMediaLoaded}
+                  onError={handleMediaError}
+                />
+              ) : (
+                <Video
+                  ref={videoRef}
+                  source={{ uri: currentFrame.media_url }}
+                  style={[
+                    styles.media,
+                    { opacity: isLoading || mediaError ? 0 : 1 },
+                  ]}
+                  resizeMode={ResizeMode.CONTAIN}
+                  shouldPlay={visible && !isPaused && !isLoading}
+                  isLooping={false}
+                  volume={1.0}
+                  onLoad={handleMediaLoaded}
+                  onError={handleMediaError}
+                  onPlaybackStatusUpdate={(status: AVPlaybackStatus) => {
+                    if (
+                      status.isLoaded &&
+                      status.didJustFinish &&
+                      !isPaused
+                    ) {
+                      handleTapRight();
+                    }
+                  }}
+                />
+              )}
+
+              {/* caption pill, centered text */}
+              {(currentFrame.caption || "").trim().length > 0 &&
+                !isLoading &&
+                !mediaError && (
+                  <View style={styles.bottomOverlay}>
+                    <View style={styles.captionCard}>
+                      <Text style={styles.captionText}>
+                        {currentFrame.caption}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
+              {/* tap zones */}
+              <View style={styles.tapZones} pointerEvents="box-none">
+                <Pressable style={styles.tapLeft} onPress={handleTapLeft} />
+                <Pressable style={styles.tapRight} onPress={handleTapRight} />
+              </View>
+            </Pressable>
+          </View>
+
+          {/* bottom-right 3-dots menu */}
+          <View style={styles.bottomMenu}>
+            {menuVisible && (
+              <View style={styles.menuDropdown}>
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  activeOpacity={0.85}
+                  onPress={handleEditFrame}
+                >
+                  <Text style={styles.menuItemText}>Edit frame</Text>
+                </TouchableOpacity>
+                <View style={styles.menuDivider} />
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  activeOpacity={0.85}
+                  onPress={handleDeleteFrame}
+                >
+                  <Text style={[styles.menuItemText, styles.menuDelete]}>
+                    Delete frame
+                  </Text>
+                </TouchableOpacity>
               </View>
             )}
 
-            {/* Show error state if media failed to load */}
-            {mediaError && !isLoading && (
-              <View style={styles.errorContainer}>
-                <Text style={styles.errorText}>Failed to load media</Text>
-                <Text style={styles.errorSubtext}>Moving to next frame...</Text>
-              </View>
-            )}
-
-            {/* Media content */}
-            {currentFrame.media_kind === "image" ? (
-              <Image
-                source={{ uri: currentFrame.media_url }}
-                style={[styles.media, { opacity: isLoading || mediaError ? 0 : 1 }]}
-                resizeMode="contain"
-                onLoad={handleMediaLoaded}
-                onError={handleMediaError}
-              />
-            ) : (
-              <Video
-                ref={videoRef}
-                source={{ uri: currentFrame.media_url }}
-                style={[styles.media, { opacity: isLoading || mediaError ? 0 : 1 }]}
-                resizeMode={ResizeMode.CONTAIN}
-                shouldPlay={visible && !isPaused && !isLoading}
-                isLooping={false}
-                volume={1.0}
-                onLoad={handleMediaLoaded}
-                onError={handleMediaError}
-                onPlaybackStatusUpdate={(status: AVPlaybackStatus) => {
-                  if (status.isLoaded && status.didJustFinish && !isPaused) {
-                    handleTapRight();
-                  }
-                }}
-              />
-            )}
-            
-            {/* Caption Overlay */}
-            {currentFrame.caption && !isLoading && !mediaError && (
-              <LinearGradient
-                colors={["transparent", "rgba(0,0,0,0.7)"]}
-                style={styles.captionGradient}
-              >
-                <Text style={styles.captionText}>{currentFrame.caption}</Text>
-              </LinearGradient>
-            )}
-          </Pressable>
-
-          {/* Tap zones for navigation */}
-          <View style={styles.tapZones} pointerEvents="box-none">
-            <Pressable style={styles.tapLeft} onPress={handleTapLeft} />
-            <Pressable style={styles.tapRight} onPress={handleTapRight} />
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={() => {
+                setMenuVisible((v) => !v);
+                handlePause();
+              }}
+              style={styles.menuButton}
+            >
+              <Ionicons name="ellipsis-horizontal" size={18} color="#FFFFFF" />
+            </TouchableOpacity>
           </View>
-        </View>
-
-        {/* Pause indicator */}
-        {isPaused && (
-          <View style={styles.pausedIndicator}>
-            <Text style={styles.pausedText}>PAUSED</Text>
-          </View>
-        )}
-      </Animated.View>
+        </Animated.View>
+      </SafeAreaView>
     </Modal>
   );
-}
+};
+
+export default ActiveFramesModal;
 
 const styles = StyleSheet.create({
+  safeContainer: {
+    flex: 1,
+    backgroundColor: "#000000",
+  },
   container: {
     flex: 1,
     backgroundColor: "#000000",
@@ -424,14 +616,21 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "#000000",
   },
-  progressContainer: {
+
+  // top overlay
+  topOverlay: {
     position: "absolute",
-    top: verticalScale(50),
-    left: scale(16),
-    right: scale(16),
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingTop: verticalScale(8),
+    paddingHorizontal: scale(10),
+    zIndex: 20,
+  },
+  progressContainer: {
     flexDirection: "row",
     gap: scale(4),
-    zIndex: 10,
+    marginBottom: verticalScale(6),
   },
   progressSegment: {
     flex: 1,
@@ -439,54 +638,100 @@ const styles = StyleSheet.create({
   progressTrack: {
     height: verticalScale(3),
     backgroundColor: "rgba(255,255,255,0.3)",
-    borderRadius: scale(2),
+    borderRadius: scale(999),
     overflow: "hidden",
   },
   progressFill: {
     height: "100%",
     backgroundColor: "#FFFFFF",
-    borderRadius: scale(2),
+    borderRadius: scale(999),
   },
-  header: {
-    position: "absolute",
-    top: verticalScale(60),
-    left: 0,
-    right: 0,
-    zIndex: 10,
-  },
-  headerBlur: {
-    borderRadius: scale(12),
-    overflow: "hidden",
-    marginHorizontal: scale(16),
-  },
-  headerContent: {
+  topUserRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: scale(16),
-    paddingVertical: verticalScale(12),
+    paddingHorizontal: scale(2),
   },
-  timestamp: {
-    fontSize: moderateScale(14),
-    fontFamily: Fonts.bold,
-    color: "#FFFFFF",
-  },
-  closeButton: {
+
+  // avatar + name/time (top-left)
+  avatarWrapper: {
     width: scale(32),
     height: scale(32),
     borderRadius: scale(16),
-    backgroundColor: "rgba(255,255,255,0.2)",
-    alignItems: "center",
+    overflow: "hidden",
+    marginRight: scale(8),
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.7)",
+  },
+  avatar: {
+    width: "100%",
+    height: "100%",
+  },
+  avatarPlaceholder: {
+    flex: 1,
+    backgroundColor: "rgba(255,255,255,0.15)",
+  },
+  headerTextColumn: {
     justifyContent: "center",
   },
-  closeIcon: {
-    fontSize: moderateScale(18),
+  headerName: {
+    fontFamily: Fonts.bold,
+    fontSize: moderateScale(15),
     color: "#FFFFFF",
   },
+  headerTime: {
+    fontFamily: Fonts.primary,
+    fontSize: moderateScale(11),
+    color: "rgba(255,255,255,0.7)",
+  },
+
+  // bottom-right menu
+  bottomMenu: {
+    position: "absolute",
+    right: scale(20),
+    bottom: verticalScale(32),
+    zIndex: 25,
+    alignItems: "flex-end",
+  },
+  menuButton: {
+    paddingHorizontal: scale(10),
+    paddingVertical: verticalScale(8),
+    borderRadius: scale(18),
+    backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  menuDropdown: {
+    position: "absolute",
+    bottom: verticalScale(40),
+    right: 0,
+    width: scale(160),
+    backgroundColor: "rgba(0,0,0,0.92)",
+    borderRadius: scale(14),
+    paddingVertical: verticalScale(4),
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.15)",
+  },
+  menuItem: {
+    paddingVertical: verticalScale(8),
+    paddingHorizontal: scale(12),
+  },
+  menuItemText: {
+    fontFamily: Fonts.primary,
+    fontSize: moderateScale(13),
+    color: "#FFFFFF",
+  },
+  menuDelete: {
+    color: "#FF4D4F",
+  },
+  menuDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: "rgba(255,255,255,0.25)",
+    marginHorizontal: scale(6),
+  },
+
+  // media
   mediaWrapper: {
     flex: 1,
   },
-  mediaContainer: {
+  mediaPressable: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
@@ -496,6 +741,7 @@ const styles = StyleSheet.create({
     height: SCREEN_HEIGHT,
     position: "absolute",
   },
+
   loadingContainer: {
     position: "absolute",
     alignItems: "center",
@@ -527,22 +773,31 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.primary,
     color: "rgba(255,255,255,0.7)",
   },
-  captionGradient: {
+
+  // bottom caption pill
+  bottomOverlay: {
     position: "absolute",
-    bottom: 0,
     left: 0,
     right: 0,
-    paddingTop: verticalScale(60),
-    paddingBottom: verticalScale(100),
+    bottom: verticalScale(80), // a bit higher so it doesn't overlap 3-dots
+    alignItems: "center",
     paddingHorizontal: scale(20),
+  },
+  captionCard: {
+    minHeight: verticalScale(36),
+    paddingHorizontal: scale(18),
+    borderRadius: scale(20),
+    backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   captionText: {
     fontSize: moderateScale(16),
     fontFamily: Fonts.primary,
     color: "#FFFFFF",
     textAlign: "center",
-    lineHeight: verticalScale(22),
   },
+
   tapZones: {
     ...StyleSheet.absoluteFillObject,
     flexDirection: "row",
@@ -552,19 +807,5 @@ const styles = StyleSheet.create({
   },
   tapRight: {
     flex: 1,
-  },
-  pausedIndicator: {
-    position: "absolute",
-    top: "50%",
-    alignSelf: "center",
-    backgroundColor: "rgba(0,0,0,0.7)",
-    paddingHorizontal: scale(20),
-    paddingVertical: verticalScale(10),
-    borderRadius: scale(8),
-  },
-  pausedText: {
-    color: "#FFFFFF",
-    fontFamily: Fonts.bold,
-    fontSize: moderateScale(14),
   },
 });
