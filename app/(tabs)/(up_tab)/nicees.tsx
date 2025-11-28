@@ -3,12 +3,7 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FlatList,
   Image,
@@ -29,7 +24,7 @@ const BG = Colors.BG;
 const INK = Colors.INK;
 const BLUE = Colors.BLUE;
 
-type FilterKey = "recent" | "your_type" | "last_active" | "nearby";
+type FilterKey = "recent" | "last_active" | "nearby";
 
 type NiiceMatch = {
   id: string;
@@ -41,34 +36,6 @@ type NiiceMatch = {
   last_message_preview: string | null;
   distance_km: number | null;
 };
-
-// Set to true while backend is not ready so you see something
-const USE_DEMO_MATCHES = true;
-
-const DEMO_MATCHES: NiiceMatch[] = [
-  {
-    id: "demo-1",
-    other_user_id: "demo-user-1",
-    full_name: "Alex",
-    age: 24,
-    main_photo_url:
-      "https://images.pexels.com/photos/415829/pexels-photo-415829.jpeg",
-    last_active_at: new Date().toISOString(),
-    last_message_preview: "“You have a cool vibe.”",
-    distance_km: 3,
-  },
-  {
-    id: "demo-2",
-    other_user_id: "demo-user-2",
-    full_name: "Mia",
-    age: 22,
-    main_photo_url:
-      "https://images.pexels.com/photos/733872/pexels-photo-733872.jpeg",
-    last_active_at: new Date().toISOString(),
-    last_message_preview: null,
-    distance_km: 5,
-  },
-];
 
 function NiceesScreen() {
   const [matches, setMatches] = useState<NiiceMatch[]>([]);
@@ -83,17 +50,14 @@ function NiceesScreen() {
       const { data: auth } = await supabase.auth.getUser();
       const userId = auth?.user?.id;
 
-      // If user not logged in yet – just show demo or empty
+      // If no user – no matches
       if (!userId) {
-        setMatches(USE_DEMO_MATCHES ? DEMO_MATCHES : []);
+        setMatches([]);
         return;
       }
 
-      // ⬇️ IMPORTANT:
-      // Replace "matches_view" + column list with your real table / view.
-      // Idea: one row per match for this user + info about the OTHER profile.
       const { data, error } = await supabase
-        .from("matches_view") // TODO: change to your table / view
+        .from("matches_view") // backend view/table
         .select(
           "id, user_id, other_user_id, full_name, age, main_photo_url, last_active_at, last_message_preview, distance_km"
         )
@@ -102,16 +66,11 @@ function NiceesScreen() {
 
       if (error) {
         console.log("Error loading niices:", error.message);
-        setMatches(USE_DEMO_MATCHES ? DEMO_MATCHES : []);
+        setMatches([]);
         return;
       }
 
       const rows = (data || []) as any[];
-
-      if (!rows.length && USE_DEMO_MATCHES) {
-        setMatches(DEMO_MATCHES);
-        return;
-      }
 
       const mapped: NiiceMatch[] = rows.map((row) => ({
         id: row.id,
@@ -127,7 +86,7 @@ function NiceesScreen() {
       setMatches(mapped);
     } catch (err) {
       console.log("Unexpected error loading niices:", err);
-      setMatches(USE_DEMO_MATCHES ? DEMO_MATCHES : []);
+      setMatches([]);
     } finally {
       setLoading(false);
     }
@@ -171,55 +130,37 @@ function NiceesScreen() {
     <SafeAreaView style={styles.container} edges={["top"]}>
       {/* Header */}
       <View style={styles.header}>
-        <View>
-          
-          <View style={styles.headerSubtitleRow}>
-            <Text style={styles.headerSubtitle}>
-              Mutual likes show up sooner
-            </Text>
-            <Ionicons
-              name="information-circle-outline"
-              size={16}
-              color="rgba(10,14,26,0.6)"
-              style={{ marginLeft: scale(4) }}
-            />
-          </View>
+        <View style={styles.headerSubtitleRow}>
+          <Text style={styles.headerSubtitle}>Mutual likes show up sooner</Text>
+          <Ionicons
+            name="information-circle-outline"
+            size={16}
+            color="rgba(10,14,26,0.6)"
+            style={{ marginLeft: scale(4) }}
+          />
         </View>
       </View>
 
-      {/* Filters row (Hinge-style) */}
+      {/* Filters row */}
       <View style={styles.filtersRow}>
-        <View style={styles.filtersLeft}>
-          <TouchableOpacity style={styles.sortButton} activeOpacity={0.7}>
-            <MaterialCommunityIcons
-              name="swap-vertical"
-              size={18}
-              color={INK}
-            />
-          </TouchableOpacity>
+        <TouchableOpacity style={styles.sortButton} activeOpacity={0.7}>
+          <MaterialCommunityIcons name="swap-vertical" size={18} color={INK} />
+        </TouchableOpacity>
 
+        <View style={styles.filtersChipsRow}>
           <FilterPill
             label="Recent"
             active={activeFilter === "recent"}
             onPress={() => setActiveFilter("recent")}
           />
-          <FilterPill
-            label="Your type"
-            active={activeFilter === "your_type"}
-            onPress={() => setActiveFilter("your_type")}
-          />
-        </View>
-
-        <View style={styles.filtersRight}>
+          
           <FilterPill
             label="Last active"
-            small
             active={activeFilter === "last_active"}
             onPress={() => setActiveFilter("last_active")}
           />
           <FilterPill
             label="Nearby"
-            small
             active={activeFilter === "nearby"}
             onPress={() => setActiveFilter("nearby")}
           />
@@ -255,7 +196,7 @@ function NiceesScreen() {
           loading={loading}
           onPrimaryPress={() => {
             // TODO: connect to boost flow when you build it
-            router.push("/(tabs)/map");
+            router.push("/in_progress");
           }}
           onSecondaryPress={() => {
             // TODO: connect to paywall / premium when you have it
@@ -271,31 +212,17 @@ type FilterPillProps = {
   label: string;
   active: boolean;
   onPress: () => void;
-  small?: boolean;
 };
 
-const FilterPill: React.FC<FilterPillProps> = ({
-  label,
-  active,
-  onPress,
-  small,
-}) => {
+const FilterPill: React.FC<FilterPillProps> = ({ label, active, onPress }) => {
   return (
     <TouchableOpacity
-      style={[
-        styles.filterPill,
-        small && styles.filterPillSmall,
-        active && styles.filterPillActive,
-      ]}
+      style={[styles.filterPill, active && styles.filterPillActive]}
       onPress={onPress}
-      activeOpacity={0.8}
+      activeOpacity={0.85}
     >
       <Text
-        style={[
-          styles.filterPillText,
-          small && styles.filterPillTextSmall,
-          active && styles.filterPillTextActive,
-        ]}
+        style={[styles.filterPillText, active && styles.filterPillTextActive]}
       >
         {label}
       </Text>
@@ -316,7 +243,6 @@ const EmptyNiicesState: React.FC<EmptyProps> = ({
 }) => {
   return (
     <View style={styles.emptyContainer}>
-      {/* Simple illustration instead of SVG to keep it light */}
       <View style={styles.emptyIllustration}>
         <View style={styles.emptyCircle}>
           <Ionicons name="heart-outline" size={40} color={BLUE} />
@@ -324,10 +250,10 @@ const EmptyNiicesState: React.FC<EmptyProps> = ({
       </View>
 
       <Text style={styles.emptyTitle}>
-        {loading ? "Loading your niices..." : "You're new, no niices yet"}
+        {loading ? "Loading your niices..." : "No Niices… yet!"}
       </Text>
       <Text style={styles.emptySubtitle}>
-        When a like is mutual, you’ll be able to chat with your niices here.
+        When you both like each other, the niice will land here and you can talk
       </Text>
 
       <TouchableOpacity
@@ -341,7 +267,7 @@ const EmptyNiicesState: React.FC<EmptyProps> = ({
           color="#FFFFFF"
           style={{ marginRight: scale(6) }}
         />
-        <Text style={styles.primaryButtonText}>Boost your profile</Text>
+        <Text style={styles.primaryButtonText}>Push me to the top</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -350,7 +276,7 @@ const EmptyNiicesState: React.FC<EmptyProps> = ({
         onPress={onSecondaryPress}
       >
         <Text style={styles.secondaryButtonText}>
-          Upgrade for more visibility
+          Go Premium for more exposure
         </Text>
       </TouchableOpacity>
     </View>
@@ -363,13 +289,15 @@ type NiiceCardProps = {
 };
 
 const NiiceCard: React.FC<NiiceCardProps> = ({ match, onPress }) => {
+  const hasDistance = typeof match.distance_km === "number";
+  const hasLastActive = !!match.last_active_at;
+
   return (
     <TouchableOpacity
       style={styles.matchCard}
       activeOpacity={0.9}
       onPress={onPress}
     >
-      {/* Small bubble like “Liked your photo” */}
       <View style={styles.matchBubble}>
         <Text style={styles.matchBubbleText}>You matched</Text>
       </View>
@@ -406,14 +334,14 @@ const NiiceCard: React.FC<NiiceCardProps> = ({ match, onPress }) => {
           )}
 
           <View style={styles.matchMetaRow}>
-            {match.distance_km != null && (
+            {hasDistance && (
               <Text style={styles.matchMetaText}>
-                {`${match.distance_km.toFixed(0)} km away`}
+                {`${match.distance_km!.toFixed(0)} km away`}
               </Text>
             )}
-            {match.last_active_at && (
+            {hasLastActive && (
               <>
-                {match.distance_km != null && <View style={styles.metaDot} />}
+                {hasDistance && <View style={styles.metaDot} />}
                 <Text style={styles.matchMetaText}>Active recently</Text>
               </>
             )}
@@ -436,16 +364,9 @@ const styles = StyleSheet.create({
     paddingTop: verticalScale(8),
     paddingBottom: verticalScale(8),
   },
-  headerTitle: {
-    fontFamily: Fonts.bold,
-    fontSize: scale(28),
-    color: INK,
-    letterSpacing: 0.3,
-  },
   headerSubtitleRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: verticalScale(4),
   },
   headerSubtitle: {
     fontFamily: Fonts.primary,
@@ -453,62 +374,58 @@ const styles = StyleSheet.create({
     color: "rgba(10,14,26,0.6)",
   },
 
+  // Filters
   filtersRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: scale(20),
     paddingBottom: verticalScale(8),
-  },
-  filtersLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: scale(8),
-  },
-  filtersRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: scale(8),
+    columnGap: scale(10),
   },
   sortButton: {
-    width: scale(32),
-    height: scale(32),
-    borderRadius: scale(16),
+    width: scale(36),
+    height: scale(36),
+    borderRadius: scale(18),
     borderWidth: 1,
-    borderColor: "rgba(10,14,26,0.08)",
+    borderColor: "rgba(27,68,205,0.18)",
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#FFFFFF",
   },
+  filtersChipsRow: {
+  flex: 1,
+  flexDirection: "row",
+  alignItems: "center",
+  justifyContent: "flex-start",   // no more stretching
+  columnGap: scale(12),            // <-- controls distance between pills
+},
   filterPill: {
     borderRadius: scale(18),
     paddingHorizontal: scale(14),
-    paddingVertical: verticalScale(6),
-    backgroundColor: "#F1F3FA",
-  },
-  filterPillSmall: {
-    paddingHorizontal: scale(10),
+    paddingVertical: verticalScale(7),
+    backgroundColor: "rgba(27,68,205,0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(27,68,205,0.12)",
   },
   filterPillActive: {
-    backgroundColor: INK,
+    backgroundColor: BLUE,
+    borderColor: BLUE,
   },
   filterPillText: {
     fontFamily: Fonts.bold,
     fontSize: scale(13),
-    color: "rgba(10,14,26,0.8)",
-  },
-  filterPillTextSmall: {
-    fontSize: scale(12),
+    color: Colors.INK,
   },
   filterPillTextActive: {
     color: "#FFFFFF",
   },
 
+  // List
   listContent: {
     paddingHorizontal: scale(20),
     paddingTop: verticalScale(8),
     paddingBottom: verticalScale(24),
   },
-
   matchCard: {
     borderRadius: scale(18),
     padding: scale(14),
@@ -524,7 +441,7 @@ const styles = StyleSheet.create({
   },
   matchBubble: {
     alignSelf: "flex-start",
-    backgroundColor: "#F1F3FA",
+    backgroundColor: "rgba(27,68,205,0.06)",
     borderRadius: scale(14),
     paddingHorizontal: scale(10),
     paddingVertical: verticalScale(4),
@@ -594,6 +511,7 @@ const styles = StyleSheet.create({
     marginHorizontal: scale(6),
   },
 
+  // Empty state
   emptyContainer: {
     flex: 1,
     alignItems: "center",

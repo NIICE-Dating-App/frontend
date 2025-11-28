@@ -1,3 +1,4 @@
+//PROFILE.TSX
 import { Fonts } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
 import { scale, verticalScale } from "@/utils/responsive";
