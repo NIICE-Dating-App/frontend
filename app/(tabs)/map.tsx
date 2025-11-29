@@ -86,6 +86,21 @@ interface UserMapCard {
   approx_lng: number;
   main_photo_url: string | null;
   last_seen?: string; // 🔥 Track when user was last active
+  gender?: string; // 🔥 For gender filtering (needs backend RPC update)
+}
+
+interface FilterState {
+  ageMin: number;
+  ageMax: number;
+  distanceKm: number;
+  genders: ('man' | 'woman' | 'nonbinary')[];
+}
+
+interface UserPreferences {
+  ageMin: number;
+  ageMax: number;
+  distanceKm: number;
+  interestedIn: string[];
 }
 
 interface MatchStatus {
@@ -746,32 +761,35 @@ const UserProfileModal: React.FC<{
     if (!user || !currentUserId) return;
     
     try {
-      // Use extended version to get blind date details
-      const { data, error } = await supabase.rpc('get_match_status_extended', {
-        target_user_id: user.user_id,
-        p_mode: user.mode === 'friend' ? 'friend' : 'dating'
-      });
+      // Direct query - simple and reliable
+      const { data, error } = await supabase
+        .from('match_requests')
+        .select('id, status, connection_visibility, chat_allowed, requester_id, target_id, place_role, blind_meet_time, blind_location_name')
+        .or(`and(requester_id.eq.${currentUserId},target_id.eq.${user.user_id}),and(requester_id.eq.${user.user_id},target_id.eq.${currentUserId})`)
+        .eq('match_mode', user.mode === 'friend' ? 'friend' : 'dating')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
       
-      if (data && data.length > 0) {
-        setMatchStatus(data[0]);
-      } else {
-        // Fallback to basic version if extended doesn't exist
-        const { data: basicData } = await supabase.rpc('get_match_status', {
-          target_user_id: user.user_id,
-          p_mode: user.mode === 'friend' ? 'friend' : 'dating'
+      if (data && !error) {
+        setMatchStatus({
+          status: data.status,
+          connection_visibility: data.connection_visibility,
+          chat_allowed: data.chat_allowed,
+          is_requester: data.requester_id === currentUserId,
+          match_id: data.id,
+          place_role: data.place_role,
+          blind_meet_time: data.blind_meet_time,
+          blind_location_name: data.blind_location_name,
         });
-        
-        if (basicData && basicData.length > 0) {
-          setMatchStatus(basicData[0]);
-        } else {
-          setMatchStatus({
-            status: null,
-            connection_visibility: null,
-            chat_allowed: false,
-            is_requester: false,
-            match_id: null
-          });
-        }
+      } else {
+        setMatchStatus({
+          status: null,
+          connection_visibility: null,
+          chat_allowed: false,
+          is_requester: false,
+          match_id: null
+        });
       }
     } catch (error) {
       console.error("Error fetching match status:", error);
@@ -847,19 +865,22 @@ const UserProfileModal: React.FC<{
     }
   };
   
-  const handleLike = async (isBlindDate: boolean = false) => {
+  const handleLike = async (isBlindDate: boolean = false, placeRole: 'requester' | 'target' | null = null) => {
     if (!user || !currentUserId || loading) return;
+    
+    // Use passed placeRole or fall back to state
+    const effectivePlaceRole = placeRole || blindDateForm.placeRole;
     
     setLoading(true);
     try {
       let error: any = null;
       
-      if (isBlindDate && blindDateForm.placeRole) {
+      if (isBlindDate && effectivePlaceRole) {
         // Use RPC for blind date requests (handles geography point properly)
         const { error: rpcError } = await supabase.rpc('send_blind_date_request', {
           p_target_id: user.user_id,
           p_match_mode: user.mode === 'friend' ? 'friend' : 'dating',
-          p_place_role: blindDateForm.placeRole,
+          p_place_role: effectivePlaceRole,
           p_location_name: blindDateForm.locationName || null,
           p_latitude: blindDateForm.locationCoords?.lat || null,
           p_longitude: blindDateForm.locationCoords?.lng || null,
@@ -875,10 +896,10 @@ const UserProfileModal: React.FC<{
             match_mode: user.mode === 'friend' ? 'friend' : 'dating',
             connection_visibility: 'blind',
             status: 'pending',
-            place_role: blindDateForm.placeRole
+            place_role: effectivePlaceRole
           };
           
-          if (blindDateForm.placeRole === 'requester') {
+          if (effectivePlaceRole === 'requester') {
             if (blindDateForm.locationName) {
               insertData.blind_location_name = blindDateForm.locationName;
             }
@@ -1150,12 +1171,14 @@ const UserProfileModal: React.FC<{
   
   // Handle place role selection
   const handlePlaceRoleSelect = (role: 'requester' | 'target') => {
+    console.log('🔴🔴🔴 handlePlaceRoleSelect called with role:', role, '🔴🔴🔴');
     setBlindDateForm(prev => ({ ...prev, placeRole: role }));
     if (role === 'requester') {
       setBlindDateStep('details');
     } else {
-      // They pick the place, send request directly
-      handleLike(true);
+      // They pick the place, send request directly with role passed explicitly
+      console.log('🔴🔴🔴 Calling handleLike(true, target) 🔴🔴🔴');
+      handleLike(true, role);
     }
   };
   
@@ -1176,6 +1199,15 @@ const UserProfileModal: React.FC<{
   const isBlindConnection = matchStatus?.connection_visibility === 'blind';
   const hasFrames = userFrames.length > 0;
   const targetNeedsToPick = isBlindConnection && matchStatus?.place_role === 'target' && !isRequester;
+  
+  // DEBUG LOGGING - Remove after fixing
+  console.log('=== DEBUG MATCH STATUS ===');
+  console.log('matchStatus:', JSON.stringify(matchStatus, null, 2));
+  console.log('isBlindConnection:', isBlindConnection);
+  console.log('place_role:', matchStatus?.place_role);
+  console.log('isRequester:', isRequester);
+  console.log('targetNeedsToPick:', targetNeedsToPick);
+  console.log('========================');
   
   // Format looking for display
   const formatLookingFor = (values: string[] | null) => {
@@ -1238,6 +1270,12 @@ const UserProfileModal: React.FC<{
             {/* Grab Handle */}
             <View style={styles.modalHandle} />
             
+            <ScrollView 
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ paddingBottom: 16 }}
+            >
             {/* Header Row */}
             <View style={styles.userSheetHeader}>
               {/* Profile Photo with Frame Ring */}
@@ -1328,9 +1366,13 @@ const UserProfileModal: React.FC<{
             )}
             {isPending && !isRequester && (
               <View style={[styles.userSheetStatusBadge, { backgroundColor: "rgba(27, 68, 205, 0.08)" }]}>
-                <Ionicons name="mail-outline" size={16} color={BLUE} />
+                <Ionicons name={targetNeedsToPick ? "location-outline" : "mail-outline"} size={16} color={BLUE} />
                 <Text style={[styles.userSheetStatusText, { color: BLUE }]}>
-                  {isBlindConnection ? "Sent you a blind date request" : "Sent you a request"}
+                  {targetNeedsToPick 
+                    ? `${user.full_name} wants you to pick the spot` 
+                    : isBlindConnection 
+                      ? "Sent you a blind date request" 
+                      : "Sent you a request"}
                 </Text>
               </View>
             )}
@@ -1487,7 +1529,7 @@ const UserProfileModal: React.FC<{
                         styles.blindDateFlowSendBtn,
                         (!blindDateForm.locationName || !blindDateForm.locationCoords || !blindDateForm.meetTime) && { opacity: 0.5 }
                       ]}
-                      onPress={() => handleLike(true)}
+                      onPress={() => handleLike(true, 'requester')}
                       disabled={loading || !blindDateForm.locationName || !blindDateForm.locationCoords || !blindDateForm.meetTime}
                     >
                       <LinearGradient 
@@ -1629,7 +1671,7 @@ const UserProfileModal: React.FC<{
                 <View style={styles.userSheetIncomingActions}>
                   {targetNeedsToPick && (
                     <Text style={styles.targetPickHint}>
-                      They want you to pick the spot
+                      Pick a spot and time for your blind date
                     </Text>
                   )}
                   <View style={styles.userSheetIncomingBtns}>
@@ -1647,12 +1689,12 @@ const UserProfileModal: React.FC<{
                       disabled={loading}
                     >
                       <LinearGradient 
-                        colors={["#4CAF50", "#66BB6A"]}
+                        colors={targetNeedsToPick ? [BLUES.b50, BLUES.b70] : ["#4CAF50", "#66BB6A"]}
                         style={styles.userSheetAcceptBtnGradient}
                       >
-                        <Ionicons name="checkmark" size={24} color="#FFF" />
+                        <Ionicons name={targetNeedsToPick ? "location" : "checkmark"} size={24} color="#FFF" />
                         <Text style={styles.userSheetAcceptBtnText}>
-                          {targetNeedsToPick ? 'Pick Spot' : 'Accept'}
+                          {targetNeedsToPick ? 'Pick Spot & Accept' : 'Accept'}
                         </Text>
                       </LinearGradient>
                     </TouchableOpacity>
@@ -1660,6 +1702,7 @@ const UserProfileModal: React.FC<{
                 </View>
               )}
             </View>
+            </ScrollView>
             
             {/* Footer Links */}
             {!blindDateStep && (
@@ -1750,12 +1793,50 @@ const UserProfileModal: React.FC<{
         </View>
       </Modal>
       
-      {/* Date Time Picker */}
-      {showDatePicker && (
+      {/* Date Time Picker - Wrapped in Modal for iOS */}
+      {showDatePicker && Platform.OS === 'ios' && (
+        <Modal transparent animationType="fade" visible={showDatePicker}>
+          <View style={styles.datePickerOverlay}>
+            <Pressable style={styles.datePickerBackdrop} onPress={() => setShowDatePicker(false)} />
+            <View style={styles.datePickerContainer}>
+              <View style={styles.datePickerHeader}>
+                <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                  <Text style={styles.datePickerCancel}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => {
+                  if (showDatePickerMode === 'date') {
+                    setShowDatePickerMode('time');
+                  } else {
+                    setShowDatePicker(false);
+                    setShowDatePickerMode('date');
+                  }
+                }}>
+                  <Text style={styles.datePickerDone}>
+                    {showDatePickerMode === 'date' ? 'Next' : 'Done'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              <DateTimePicker
+                value={blindDateForm.meetTime || new Date()}
+                mode={showDatePickerMode}
+                display="spinner"
+                onChange={(event, date) => {
+                  if (date) {
+                    setBlindDateForm(prev => ({ ...prev, meetTime: date }));
+                  }
+                }}
+                minimumDate={new Date()}
+                style={{ height: 200 }}
+              />
+            </View>
+          </View>
+        </Modal>
+      )}
+      {showDatePicker && Platform.OS === 'android' && (
         <DateTimePicker
           value={blindDateForm.meetTime || new Date()}
           mode={showDatePickerMode}
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          display="default"
           onChange={handleDateTimeChange}
           minimumDate={new Date()}
         />
@@ -1982,6 +2063,282 @@ const EventDetailsModal: React.FC<{
   );
 };
 
+/* ===================== FILTER MODAL ===================== */
+const FilterModal: React.FC<{
+  visible: boolean;
+  onClose: () => void;
+  filters: FilterState;
+  onApply: (filters: FilterState) => void;
+  defaults: UserPreferences;
+}> = memo(({ visible, onClose, filters, onApply, defaults }) => {
+  const [tempFilters, setTempFilters] = useState<FilterState>(filters);
+  // Separate string state for age inputs to allow free typing
+  const [ageMinText, setAgeMinText] = useState(String(filters.ageMin));
+  const [ageMaxText, setAgeMaxText] = useState(String(filters.ageMax));
+  const scaleAnim = useRef(new RNAnimated.Value(0)).current;
+  const opacityAnim = useRef(new RNAnimated.Value(0)).current;
+
+  useEffect(() => {
+    if (visible) {
+      setTempFilters(filters);
+      setAgeMinText(String(filters.ageMin));
+      setAgeMaxText(String(filters.ageMax));
+      RNAnimated.parallel([
+        RNAnimated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, tension: 65, friction: 10 }),
+        RNAnimated.timing(opacityAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
+      ]).start();
+    } else {
+      RNAnimated.parallel([
+        RNAnimated.timing(scaleAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
+        RNAnimated.timing(opacityAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [visible, filters]);
+
+  const handleReset = useCallback(() => {
+    Keyboard.dismiss();
+    const newFilters = {
+      ageMin: defaults.ageMin,
+      ageMax: defaults.ageMax,
+      distanceKm: defaults.distanceKm,
+      genders: defaults.interestedIn as ('man' | 'woman' | 'nonbinary')[],
+    };
+    setTempFilters(newFilters);
+    setAgeMinText(String(defaults.ageMin));
+    setAgeMaxText(String(defaults.ageMax));
+  }, [defaults]);
+
+  const handleApply = useCallback(() => {
+    Keyboard.dismiss();
+    // Validate and clamp age values on apply
+    let finalAgeMin = parseInt(ageMinText) || 18;
+    let finalAgeMax = parseInt(ageMaxText) || 99;
+    
+    // Ensure valid range
+    finalAgeMin = Math.max(18, Math.min(99, finalAgeMin));
+    finalAgeMax = Math.max(18, Math.min(99, finalAgeMax));
+    
+    // Swap if min > max
+    if (finalAgeMin > finalAgeMax) {
+      [finalAgeMin, finalAgeMax] = [finalAgeMax, finalAgeMin];
+    }
+    
+    const finalFilters = {
+      ...tempFilters,
+      ageMin: finalAgeMin,
+      ageMax: finalAgeMax,
+    };
+    
+    onApply(finalFilters);
+    onClose();
+  }, [tempFilters, ageMinText, ageMaxText, onApply, onClose]);
+
+  const toggleGender = useCallback((g: 'man' | 'woman' | 'nonbinary') => {
+    Keyboard.dismiss();
+    setTempFilters(prev => {
+      const has = prev.genders.includes(g);
+      const newGenders = has ? prev.genders.filter(x => x !== g) : [...prev.genders, g];
+      // Don't allow deselecting all genders
+      if (newGenders.length === 0) return prev;
+      return { ...prev, genders: newGenders };
+    });
+  }, []);
+
+  const setDistance = useCallback((d: number) => {
+    Keyboard.dismiss();
+    setTempFilters(prev => ({ ...prev, distanceKm: d }));
+  }, []);
+
+  const handleClose = useCallback(() => {
+    Keyboard.dismiss();
+    onClose();
+  }, [onClose]);
+
+  // Handle age min input - allow free typing, validate on blur
+  const handleAgeMinChange = useCallback((text: string) => {
+    // Only allow numeric input
+    const numericText = text.replace(/[^0-9]/g, '');
+    setAgeMinText(numericText);
+  }, []);
+
+  const handleAgeMinBlur = useCallback(() => {
+    let value = parseInt(ageMinText) || 18;
+    value = Math.max(18, Math.min(99, value));
+    setAgeMinText(String(value));
+    setTempFilters(prev => ({ ...prev, ageMin: value }));
+  }, [ageMinText]);
+
+  // Handle age max input - allow free typing, validate on blur
+  const handleAgeMaxChange = useCallback((text: string) => {
+    // Only allow numeric input
+    const numericText = text.replace(/[^0-9]/g, '');
+    setAgeMaxText(numericText);
+  }, []);
+
+  const handleAgeMaxBlur = useCallback(() => {
+    let value = parseInt(ageMaxText) || 99;
+    value = Math.max(18, Math.min(99, value));
+    setAgeMaxText(String(value));
+    setTempFilters(prev => ({ ...prev, ageMax: value }));
+  }, [ageMaxText]);
+
+  const GENDER_LABELS: Record<string, string> = { man: 'Men', woman: 'Women', nonbinary: 'Non-binary' };
+
+  // Calculate display values for header
+  const displayAgeMin = parseInt(ageMinText) || tempFilters.ageMin;
+  const displayAgeMax = parseInt(ageMaxText) || tempFilters.ageMax;
+
+  if (!visible) return null;
+
+  return (
+    <Modal visible={visible} transparent animationType="none" onRequestClose={handleClose}>
+      <Pressable style={styles.filterBackdrop} onPress={handleClose}>
+        <RNAnimated.View style={{ opacity: opacityAnim, flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <Pressable onPress={() => Keyboard.dismiss()}>
+            <RNAnimated.View style={[styles.filterContainer, { transform: [{ scale: scaleAnim }] }]}>
+              <BlurView intensity={80} tint="light" style={StyleSheet.absoluteFillObject} />
+              <LinearGradient colors={["rgba(255,255,255,0.95)", "rgba(248,250,255,0.98)"]} style={StyleSheet.absoluteFillObject} />
+              
+              <View style={styles.filterHeader}>
+                <View style={styles.filterHeaderIcon}>
+                  <Ionicons name="options-outline" size={20} color={BLUE} />
+                </View>
+                <Text style={styles.filterTitle}>Filters</Text>
+                <Pressable onPress={handleClose} style={styles.filterCloseBtn} hitSlop={8}>
+                  <Ionicons name="close" size={22} color="rgba(10,14,26,0.5)" />
+                </Pressable>
+              </View>
+
+              <View style={styles.filterSection}>
+                <Text style={styles.filterSectionLabel}>Show me</Text>
+                <View style={styles.filterGenderRow}>
+                  {(['woman', 'man', 'nonbinary'] as const).map(g => {
+                    const active = tempFilters.genders.includes(g);
+                    return (
+                      <Pressable 
+                        key={g} 
+                        onPress={() => toggleGender(g)}
+                        style={({ pressed }) => [
+                          styles.filterGenderChip, 
+                          active && styles.filterGenderChipActive,
+                          pressed && { opacity: 0.8 }
+                        ]}
+                      >
+                        {active && <LinearGradient colors={[BLUES.b60, BLUES.b80]} style={StyleSheet.absoluteFillObject} />}
+                        <Text style={[styles.filterGenderText, active && styles.filterGenderTextActive]}>{GENDER_LABELS[g]}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+
+              <View style={styles.filterSection}>
+                <View style={styles.filterSectionHeader}>
+                  <Text style={styles.filterSectionLabel}>Age</Text>
+                  <Text style={styles.filterSectionValue}>{displayAgeMin} - {displayAgeMax}</Text>
+                </View>
+                <View style={styles.filterAgeRow}>
+                  <View style={styles.filterAgeInputWrap}>
+                    <TextInput 
+                      style={styles.filterAgeInput} 
+                      value={ageMinText} 
+                      keyboardType="number-pad" 
+                      maxLength={2}
+                      selectTextOnFocus
+                      onChangeText={handleAgeMinChange}
+                      onBlur={handleAgeMinBlur}
+                      returnKeyType="done"
+                      onSubmitEditing={Keyboard.dismiss}
+                    />
+                    <Text style={styles.filterAgeLabel}>min</Text>
+                  </View>
+                  <View style={styles.filterAgeDash} />
+                  <View style={styles.filterAgeInputWrap}>
+                    <TextInput 
+                      style={styles.filterAgeInput} 
+                      value={ageMaxText} 
+                      keyboardType="number-pad" 
+                      maxLength={2}
+                      selectTextOnFocus
+                      onChangeText={handleAgeMaxChange}
+                      onBlur={handleAgeMaxBlur}
+                      returnKeyType="done"
+                      onSubmitEditing={Keyboard.dismiss}
+                    />
+                    <Text style={styles.filterAgeLabel}>max</Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.filterSection}>
+                <View style={styles.filterSectionHeader}>
+                  <Text style={styles.filterSectionLabel}>Distance</Text>
+                  <Text style={styles.filterSectionValue}>{tempFilters.distanceKm < 1 ? `${Math.round(tempFilters.distanceKm * 1000)}m` : `${tempFilters.distanceKm}km`}</Text>
+                </View>
+                <View style={styles.filterDistanceRow}>
+                  {[0.5, 1, 2, 3, 4].map(d => {
+                    const active = tempFilters.distanceKm === d;
+                    return (
+                      <Pressable 
+                        key={d} 
+                        onPress={() => setDistance(d)}
+                        style={({ pressed }) => [
+                          styles.filterDistanceChip, 
+                          active && styles.filterDistanceChipActive,
+                          pressed && { opacity: 0.8 }
+                        ]}
+                      >
+                        {active && <LinearGradient colors={[BLUES.b60, BLUES.b80]} style={StyleSheet.absoluteFillObject} />}
+                        <Text style={[styles.filterDistanceText, active && styles.filterDistanceTextActive]}>{d < 1 ? `${d * 1000}m` : `${d}km`}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+
+              <View style={styles.filterActions}>
+                <Pressable 
+                  onPress={handleReset} 
+                  style={({ pressed }) => [styles.filterResetBtn, pressed && { opacity: 0.7 }]}
+                >
+                  <Text style={styles.filterResetText}>Reset</Text>
+                </Pressable>
+                <Pressable 
+                  onPress={handleApply} 
+                  style={({ pressed }) => [styles.filterApplyBtn, pressed && { opacity: 0.9 }]}
+                >
+                  <LinearGradient colors={[BLUES.b50, BLUES.b70]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.filterApplyGradient}>
+                    <Text style={styles.filterApplyText}>Apply</Text>
+                  </LinearGradient>
+                </Pressable>
+              </View>
+            </RNAnimated.View>
+          </Pressable>
+        </RNAnimated.View>
+      </Pressable>
+    </Modal>
+  );
+});
+
+const FilterButton: React.FC<{ onPress: () => void; hasActiveFilters: boolean }> = memo(({ onPress, hasActiveFilters }) => {
+  const pressScale = useRef(new RNAnimated.Value(1)).current;
+  const onIn = useCallback(() => RNAnimated.timing(pressScale, { toValue: 0.94, duration: 70, useNativeDriver: true }).start(), [pressScale]);
+  const onOut = useCallback(() => RNAnimated.spring(pressScale, { toValue: 1, friction: 4, tension: 300, useNativeDriver: true }).start(), [pressScale]);
+
+  return (
+    <Pressable onPress={onPress} onPressIn={onIn} onPressOut={onOut}>
+      <RNAnimated.View style={{ transform: [{ scale: pressScale }] }}>
+        <GlassSurface thickness="thick" blueTint={hasActiveFilters} radius={scale(22)}
+          style={[styles.filterBtn, hasActiveFilters && styles.filterBtnActive]}>
+          {hasActiveFilters && <LinearGradient colors={[BLUES.b60, BLUES.b80]} style={[StyleSheet.absoluteFillObject, { borderRadius: scale(22) }]} />}
+          <Ionicons name="options-outline" size={20} color={hasActiveFilters ? "#FFFFFF" : BLUES.b40} />
+          {hasActiveFilters && <View style={styles.filterBtnDot} />}
+        </GlassSurface>
+      </RNAnimated.View>
+    </Pressable>
+  );
+});
+
 /* ===================== MAIN SCREEN ===================== */
 export default function MapScreen() {
   const router = useRouter();
@@ -2006,6 +2363,15 @@ export default function MapScreen() {
   const [currentUserMode, setCurrentUserMode] = useState<'dating' | 'friend'>('dating');
   const [showFrameViewerMain, setShowFrameViewerMain] = useState(false);
   const [frameViewerFrames, setFrameViewerFrames] = useState<any[]>([]);
+  
+  // Filter state
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [userPrefs, setUserPrefs] = useState<UserPreferences>({
+    ageMin: 18, ageMax: 99, distanceKm: 4, interestedIn: ['man', 'woman', 'nonbinary'],
+  });
+  const [filters, setFilters] = useState<FilterState>({
+    ageMin: 18, ageMax: 99, distanceKm: 4, genders: ['man', 'woman', 'nonbinary'],
+  });
   
   // Events have a fixed 30km radius (separate from dating radius)
   const EVENT_RADIUS_METERS = 30000; // 30km
@@ -2093,6 +2459,29 @@ export default function MapScreen() {
             setUserProfilePhoto(signed ?? mainPhoto.photo_url);
           } else {
             setUserProfilePhoto(null);
+          }
+          
+          // Fetch user preferences for filters
+          const { data: profilePrefs } = await supabase
+            .from('profiles')
+            .select('age_pref_min, age_pref_max, distance_km, interested_in')
+            .eq('id', userId)
+            .single();
+          
+          if (profilePrefs) {
+            const prefs: UserPreferences = {
+              ageMin: profilePrefs.age_pref_min || 18,
+              ageMax: profilePrefs.age_pref_max || 99,
+              distanceKm: profilePrefs.distance_km || 4,
+              interestedIn: profilePrefs.interested_in || ['man', 'woman', 'nonbinary'],
+            };
+            setUserPrefs(prefs);
+            setFilters({
+              ageMin: prefs.ageMin,
+              ageMax: prefs.ageMax,
+              distanceKm: prefs.distanceKm,
+              genders: prefs.interestedIn as ('man' | 'woman' | 'nonbinary')[],
+            });
           }
         } else {
           console.log("❌ No session found");
@@ -2184,28 +2573,49 @@ export default function MapScreen() {
         return;
       }
       
-      if (data) {
+      if (data && data.length > 0) {
         console.log(`✅ Loaded ${data.length} user(s) on map`);
+        
+        // Fetch gender data for all users (since get_map_cards doesn't return it)
+        const userIds = data.map((u: any) => u.user_id);
+        const { data: genderData } = await supabase
+          .from('profiles')
+          .select('id, gender')
+          .in('id', userIds);
+        
+        // Create a map of userId -> gender
+        const genderMap: Record<string, string> = {};
+        genderData?.forEach((p: any) => {
+          genderMap[p.id] = p.gender?.toLowerCase() || '';
+        });
         
         // Debug: Log each user found
         data.forEach((u: any) => {
-          console.log(`   👤 ${u.full_name}, age ${u.age}, mode: ${u.mode}, lat: ${u.approx_lat?.toFixed(4)}, lng: ${u.approx_lng?.toFixed(4)}`);
+          console.log(`   👤 ${u.full_name}, age ${u.age}, gender: ${genderMap[u.user_id] || 'unknown'}, mode: ${u.mode}`);
         });
         
-        // Process photo URLs with signed URLs (bucket is not public)
-        const usersWithPhotos = await Promise.all(
+        // Process photo URLs with signed URLs and add gender
+        const usersWithPhotosAndGender = await Promise.all(
           data.map(async (user: any) => {
-            if (user.main_photo_url && !user.main_photo_url.startsWith('http')) {
+            let photoUrl = user.main_photo_url;
+            if (photoUrl && !photoUrl.startsWith('http')) {
               const { data: signedData } = await supabase.storage
                 .from("user_photos")
-                .createSignedUrl(user.main_photo_url, 3600);
-              return { ...user, main_photo_url: signedData?.signedUrl || null };
+                .createSignedUrl(photoUrl, 3600);
+              photoUrl = signedData?.signedUrl || null;
             }
-            return user;
+            return { 
+              ...user, 
+              main_photo_url: photoUrl,
+              gender: genderMap[user.user_id] || null 
+            };
           })
         );
         
-        setUsers(usersWithPhotos as UserMapCard[]);
+        setUsers(usersWithPhotosAndGender as UserMapCard[]);
+      } else if (data) {
+        console.log("📭 No users found on map");
+        setUsers([]);
       }
     } catch (error) {
       console.error("Exception in fetchUsers:", error);
@@ -2588,6 +2998,39 @@ export default function MapScreen() {
     return () => clearInterval(refreshInterval);
   }, [currentUserId, pos, fetchUsers]);
 
+  // Filter users based on current filter state
+  const filteredUsers = useMemo(() => {
+    if (!pos) return users;
+    
+    const filtered = users.filter(user => {
+      // Age filter
+      if (user.age < filters.ageMin || user.age > filters.ageMax) return false;
+      
+      // Distance filter
+      const distanceMeters = haversineMeters(pos, { lat: user.approx_lat, lng: user.approx_lng });
+      if (distanceMeters > filters.distanceKm * 1000) return false;
+      
+      // Gender filter (if user has gender data from backend)
+      if (user.gender && filters.genders.length > 0) {
+        const userGender = user.gender.toLowerCase();
+        if (!filters.genders.includes(userGender as 'man' | 'woman' | 'nonbinary')) {
+          return false;
+        }
+      }
+      
+      return true;
+    });
+    
+    console.log(`🔍 Filter applied: ${filtered.length}/${users.length} users shown (age: ${filters.ageMin}-${filters.ageMax}, dist: ${filters.distanceKm}km, genders: ${filters.genders.join(',')})`);
+    return filtered;
+  }, [users, filters, pos, haversineMeters]);
+  
+  const hasActiveFilters = useMemo(() => {
+    return filters.ageMin !== userPrefs.ageMin || filters.ageMax !== userPrefs.ageMax ||
+      filters.distanceKm !== userPrefs.distanceKm || filters.genders.length !== userPrefs.interestedIn.length ||
+      !filters.genders.every(g => userPrefs.interestedIn.includes(g));
+  }, [filters, userPrefs]);
+
   if (loading) return <IiLoader />;
 
   const fabSpin = fabRotation.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
@@ -2614,7 +3057,7 @@ export default function MapScreen() {
         )}
 
         {/* Other user markers */}
-        {users.map((user) => (
+        {filteredUsers.map((user) => (
           <Marker
             key={`user-${user.user_id}-${user.main_photo_url}`}
             coordinate={{ latitude: user.approx_lat, longitude: user.approx_lng }}
@@ -2677,7 +3120,9 @@ export default function MapScreen() {
         </RNAnimated.View>
 
         <View style={styles.chipsRow}>
-          <View style={styles.chipsLeft} />
+          <View style={styles.chipsLeft}>
+            <FilterButton onPress={() => setShowFilterModal(true)} hasActiveFilters={hasActiveFilters} />
+          </View>
           <PlusChipDiamondGlass ref={plusRef} onPress={startPlusReveal} />
         </View>
       </View>
@@ -2782,6 +3227,20 @@ export default function MapScreen() {
           );
         }}
         isOwnEvent={selectedEvent?.host_id === currentUserId}
+      />
+
+      {/* Filter Modal */}
+      <FilterModal
+        visible={showFilterModal}
+        onClose={() => setShowFilterModal(false)}
+        filters={filters}
+        onApply={(newFilters) => {
+          console.log("🎯 Applying new filters:", newFilters);
+          setFilters(newFilters);
+          // Trigger immediate refresh to get fresh data
+          fetchUsers(0);
+        }}
+        defaults={userPrefs}
       />
     </View>
   );
@@ -3286,7 +3745,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    maxHeight: SCREEN_H * 0.75,
+    maxHeight: SCREEN_H * 0.85,
   },
   // Blind Date Flow Styles
   blindDateFlow: {
@@ -3479,5 +3938,262 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.primary,
     color: "rgba(10, 14, 26, 0.4)",
     marginTop: 4,
+  },
+  // Date Picker Overlay Styles (iOS)
+  datePickerOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  datePickerBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
+  },
+  datePickerContainer: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: 34,
+  },
+  datePickerHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(0, 0, 0, 0.1)",
+  },
+  datePickerCancel: {
+    fontSize: 16,
+    fontFamily: Fonts.primary,
+    color: "#9E9E9E",
+  },
+  datePickerDone: {
+    fontSize: 16,
+    fontFamily: Fonts.bold,
+    color: BLUE,
+  },
+  
+  // Filter Modal Styles
+  filterBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  filterContainer: {
+    width: SCREEN_W - scale(48),
+    maxWidth: scale(380),
+    borderRadius: scale(24),
+    overflow: "hidden",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.25,
+    shadowRadius: 32,
+    elevation: 20,
+  },
+  filterHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: scale(20),
+    paddingTop: verticalScale(20),
+    paddingBottom: verticalScale(16),
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(27, 68, 205, 0.08)",
+  },
+  filterHeaderIcon: {
+    width: scale(36),
+    height: scale(36),
+    borderRadius: scale(18),
+    backgroundColor: "rgba(27, 68, 205, 0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: scale(12),
+  },
+  filterTitle: {
+    flex: 1,
+    fontSize: scale(20),
+    fontFamily: Fonts.bold,
+    color: "#0A0E1A",
+    letterSpacing: 0.3,
+  },
+  filterCloseBtn: {
+    width: scale(36),
+    height: scale(36),
+    borderRadius: scale(18),
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(10, 14, 26, 0.05)",
+  },
+  filterSection: {
+    paddingHorizontal: scale(20),
+    paddingTop: verticalScale(20),
+  },
+  filterSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: verticalScale(12),
+  },
+  filterSectionLabel: {
+    fontSize: scale(14),
+    fontFamily: Fonts.bold,
+    color: "#0A0E1A",
+    letterSpacing: 0.3,
+    marginBottom: verticalScale(12),
+  },
+  filterSectionValue: {
+    fontSize: scale(14),
+    fontFamily: Fonts.bold,
+    color: BLUE,
+  },
+  filterGenderRow: {
+    flexDirection: "row",
+    gap: scale(10),
+  },
+  filterGenderChip: {
+    flex: 1,
+    paddingVertical: verticalScale(12),
+    borderRadius: scale(14),
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(27, 68, 205, 0.06)",
+    borderWidth: 1.5,
+    borderColor: "rgba(27, 68, 205, 0.15)",
+    overflow: "hidden",
+  },
+  filterGenderChipActive: {
+    borderColor: "transparent",
+  },
+  filterGenderText: {
+    fontSize: scale(14),
+    fontFamily: Fonts.bold,
+    color: BLUES.b40,
+  },
+  filterGenderTextActive: {
+    color: "#FFFFFF",
+  },
+  filterAgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: scale(16),
+  },
+  filterAgeInputWrap: {
+    alignItems: "center",
+    gap: verticalScale(6),
+  },
+  filterAgeInput: {
+    width: scale(72),
+    height: verticalScale(48),
+    borderRadius: scale(14),
+    backgroundColor: "rgba(27, 68, 205, 0.06)",
+    borderWidth: 1.5,
+    borderColor: "rgba(27, 68, 205, 0.15)",
+    textAlign: "center",
+    fontSize: scale(18),
+    fontFamily: Fonts.bold,
+    color: "#0A0E1A",
+  },
+  filterAgeLabel: {
+    fontSize: scale(12),
+    fontFamily: Fonts.primary,
+    color: "rgba(10, 14, 26, 0.5)",
+  },
+  filterAgeDash: {
+    width: scale(20),
+    height: 2,
+    backgroundColor: "rgba(27, 68, 205, 0.2)",
+    borderRadius: 1,
+  },
+  filterDistanceRow: {
+    flexDirection: "row",
+    gap: scale(8),
+  },
+  filterDistanceChip: {
+    flex: 1,
+    paddingVertical: verticalScale(12),
+    borderRadius: scale(12),
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(27, 68, 205, 0.06)",
+    borderWidth: 1.5,
+    borderColor: "rgba(27, 68, 205, 0.15)",
+    overflow: "hidden",
+  },
+  filterDistanceChipActive: {
+    borderColor: "transparent",
+  },
+  filterDistanceText: {
+    fontSize: scale(13),
+    fontFamily: Fonts.bold,
+    color: BLUES.b40,
+  },
+  filterDistanceTextActive: {
+    color: "#FFFFFF",
+  },
+  filterActions: {
+    flexDirection: "row",
+    paddingHorizontal: scale(20),
+    paddingTop: verticalScale(24),
+    paddingBottom: verticalScale(20),
+    gap: scale(12),
+  },
+  filterResetBtn: {
+    flex: 1,
+    paddingVertical: verticalScale(14),
+    borderRadius: scale(14),
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(10, 14, 26, 0.05)",
+  },
+  filterResetText: {
+    fontSize: scale(15),
+    fontFamily: Fonts.bold,
+    color: "rgba(10, 14, 26, 0.5)",
+  },
+  filterApplyBtn: {
+    flex: 1,
+    borderRadius: scale(14),
+    overflow: "hidden",
+  },
+  filterApplyGradient: {
+    paddingVertical: verticalScale(14),
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  filterApplyText: {
+    fontSize: scale(15),
+    fontFamily: Fonts.bold,
+    color: "#FFFFFF",
+    letterSpacing: 0.3,
+  },
+  filterBtn: {
+    width: scale(44),
+    height: scale(44),
+    borderRadius: scale(22),
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(27, 68, 205, 0.28)",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  filterBtnActive: {
+    borderColor: "transparent",
+  },
+  filterBtnDot: {
+    position: "absolute",
+    top: scale(6),
+    right: scale(6),
+    width: scale(10),
+    height: scale(10),
+    borderRadius: scale(5),
+    backgroundColor: "#FF4757",
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
   },
 });
