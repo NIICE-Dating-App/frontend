@@ -114,6 +114,8 @@ interface MatchStatus {
   blind_location_name?: string | null;
   blind_lat?: number | null;
   blind_lng?: number | null;
+  sender_message?: string | null;
+  response_message?: string | null;
 }
 
 type EventCategory = 
@@ -703,13 +705,15 @@ const UserProfileModal: React.FC<{
   }>({ sexual_orientation: null, looking_for: null });
   
   // Blind date flow states
-  const [blindDateStep, setBlindDateStep] = useState<'initial' | 'place_role' | 'details' | 'accept_location' | null>(null);
+  const [blindDateStep, setBlindDateStep] = useState<'initial' | 'place_role' | 'details' | 'message_only' | 'accept_location' | 'accept_simple' | null>(null);
   const [blindDateForm, setBlindDateForm] = useState<{
     placeRole: 'requester' | 'target' | null;
     locationName: string;
     locationCoords: { lat: number; lng: number } | null;
     meetTime: Date | null;
-  }>({ placeRole: null, locationName: '', locationCoords: null, meetTime: null });
+    message: string;
+  }>({ placeRole: null, locationName: '', locationCoords: null, meetTime: null, message: '' });
+  const [responseMessage, setResponseMessage] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showDatePickerMode, setShowDatePickerMode] = useState<'date' | 'time'>('date');
   const [showLocationPicker, setShowLocationPicker] = useState(false);
@@ -737,7 +741,8 @@ const UserProfileModal: React.FC<{
       fetchUserFrames();
       setProfilePhoto(user.main_photo_url);
       setBlindDateStep(null);
-      setBlindDateForm({ placeRole: null, locationName: '', locationCoords: null, meetTime: null });
+      setBlindDateForm({ placeRole: null, locationName: '', locationCoords: null, meetTime: null, message: '' });
+      setResponseMessage('');
       setShowLocationPicker(false);
       setTempPickedLocation(null);
       
@@ -764,7 +769,7 @@ const UserProfileModal: React.FC<{
       // Direct query - simple and reliable
       const { data, error } = await supabase
         .from('match_requests')
-        .select('id, status, connection_visibility, chat_allowed, requester_id, target_id, place_role, blind_meet_time, blind_location_name')
+        .select('id, status, connection_visibility, chat_allowed, requester_id, target_id, place_role, blind_meet_time, blind_location_name, sender_message, response_message')
         .or(`and(requester_id.eq.${currentUserId},target_id.eq.${user.user_id}),and(requester_id.eq.${user.user_id},target_id.eq.${currentUserId})`)
         .eq('match_mode', user.mode === 'friend' ? 'friend' : 'dating')
         .order('created_at', { ascending: false })
@@ -781,6 +786,8 @@ const UserProfileModal: React.FC<{
           place_role: data.place_role,
           blind_meet_time: data.blind_meet_time,
           blind_location_name: data.blind_location_name,
+          sender_message: data.sender_message,
+          response_message: data.response_message,
         });
       } else {
         setMatchStatus({
@@ -884,7 +891,8 @@ const UserProfileModal: React.FC<{
           p_location_name: blindDateForm.locationName || null,
           p_latitude: blindDateForm.locationCoords?.lat || null,
           p_longitude: blindDateForm.locationCoords?.lng || null,
-          p_meet_time: blindDateForm.meetTime?.toISOString() || null
+          p_meet_time: blindDateForm.meetTime?.toISOString() || null,
+          p_sender_message: blindDateForm.message || null
         });
         
         if (rpcError) {
@@ -896,7 +904,9 @@ const UserProfileModal: React.FC<{
             match_mode: user.mode === 'friend' ? 'friend' : 'dating',
             connection_visibility: 'blind',
             status: 'pending',
-            place_role: effectivePlaceRole
+            place_role: effectivePlaceRole,
+            chat_allowed: false,
+            sender_message: blindDateForm.message || null
           };
           
           if (effectivePlaceRole === 'requester') {
@@ -942,7 +952,8 @@ const UserProfileModal: React.FC<{
         );
         await fetchMatchStatus();
         setBlindDateStep(null);
-        setBlindDateForm({ placeRole: null, locationName: '', locationCoords: null, meetTime: null });
+        setBlindDateForm({ placeRole: null, locationName: '', locationCoords: null, meetTime: null, message: '' });
+        setResponseMessage('');
       } else if (error.code === '23505') {
         Alert.alert("Already sent", "You've already sent a request to this person");
       } else {
@@ -983,10 +994,15 @@ const UserProfileModal: React.FC<{
   const handleAcceptRequest = async () => {
     if (!matchStatus?.match_id || !currentUserId || loading) return;
     
-    // Check if this is a blind date where target needs to provide location
-    if (matchStatus.connection_visibility === 'blind' && matchStatus.place_role === 'target') {
-      // Target needs to provide location and time - show the accept_location flow
-      setBlindDateStep('accept_location');
+    // Check if this is a blind date
+    if (matchStatus.connection_visibility === 'blind') {
+      if (matchStatus.place_role === 'target') {
+        // Target needs to provide location and time - show the accept_location flow
+        setBlindDateStep('accept_location');
+      } else {
+        // Requester already provided location - show simple accept with message
+        setBlindDateStep('accept_simple');
+      }
       return;
     }
     
@@ -1031,7 +1047,8 @@ const UserProfileModal: React.FC<{
         p_location_name: blindDateForm.locationName,
         p_latitude: blindDateForm.locationCoords.lat,
         p_longitude: blindDateForm.locationCoords.lng,
-        p_meet_time: blindDateForm.meetTime.toISOString()
+        p_meet_time: blindDateForm.meetTime.toISOString(),
+        p_response_message: responseMessage || null
       });
       
       if (rpcError) {
@@ -1044,6 +1061,7 @@ const UserProfileModal: React.FC<{
             responded_at: new Date().toISOString(),
             blind_location_name: blindDateForm.locationName,
             blind_meet_time: blindDateForm.meetTime.toISOString(),
+            response_message: responseMessage || null,
           })
           .eq('id', matchStatus.match_id)
           .eq('target_id', currentUserId);
@@ -1053,7 +1071,49 @@ const UserProfileModal: React.FC<{
       
       Alert.alert("Success", "Blind date accepted! You've set the meeting spot.");
       setBlindDateStep(null);
-      setBlindDateForm({ placeRole: null, locationName: '', locationCoords: null, meetTime: null });
+      setBlindDateForm({ placeRole: null, locationName: '', locationCoords: null, meetTime: null, message: '' });
+      setResponseMessage('');
+      await fetchMatchStatus();
+    } catch (error) {
+      console.error("Error accepting blind date:", error);
+      Alert.alert("Error", "Failed to accept blind date");
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Accept blind date simple (when requester already provided location)
+  const handleAcceptBlindDateSimple = async () => {
+    if (!matchStatus?.match_id || !currentUserId || loading) return;
+    
+    setLoading(true);
+    try {
+      const { error: rpcError } = await supabase.rpc('accept_blind_date_simple', {
+        p_match_id: matchStatus.match_id,
+        p_response_message: responseMessage || null
+      });
+      
+      if (rpcError) {
+        // Fallback to direct update
+        console.log("RPC not available, using direct update");
+        const { error } = await supabase
+          .from('match_requests')
+          .update({
+            status: 'accepted',
+            responded_at: new Date().toISOString(),
+            response_message: responseMessage || null,
+          })
+          .eq('id', matchStatus.match_id)
+          .eq('target_id', currentUserId)
+          .eq('status', 'pending');
+        
+        if (error) throw error;
+      }
+      
+      Alert.alert("Success", "Blind date accepted!");
+      setBlindDateStep(null);
+      setBlindDateForm({ placeRole: null, locationName: '', locationCoords: null, meetTime: null, message: '' });
+      setResponseMessage('');
       await fetchMatchStatus();
     } catch (error) {
       console.error("Error accepting blind date:", error);
@@ -1176,9 +1236,8 @@ const UserProfileModal: React.FC<{
     if (role === 'requester') {
       setBlindDateStep('details');
     } else {
-      // They pick the place, send request directly with role passed explicitly
-      console.log('🔴🔴🔴 Calling handleLike(true, target) 🔴🔴🔴');
-      handleLike(true, role);
+      // They pick the place - show message step first
+      setBlindDateStep('message_only');
     }
   };
   
@@ -1376,6 +1435,13 @@ const UserProfileModal: React.FC<{
                 </Text>
               </View>
             )}
+            {/* Show sender's message if exists */}
+            {isPending && !isRequester && matchStatus?.sender_message && (
+              <View style={styles.senderMessageBubble}>
+                <Ionicons name="chatbubble" size={14} color={BLUE} />
+                <Text style={styles.senderMessageText}>"{matchStatus.sender_message}"</Text>
+              </View>
+            )}
             
             {/* Action Buttons */}
             <View style={styles.userSheetActions}>
@@ -1514,6 +1580,19 @@ const UserProfileModal: React.FC<{
                       </Text>
                       <Ionicons name="chevron-forward" size={18} color="rgba(10, 14, 26, 0.3)" />
                     </TouchableOpacity>
+                    
+                    {/* Message Input */}
+                    <View style={styles.blindDateFlowInputWrap}>
+                      <Ionicons name="chatbubble-outline" size={20} color={BLUE} style={{ marginRight: 10 }} />
+                      <TextInput
+                        style={[styles.blindDateFlowInput, { flex: 1 }]}
+                        placeholder="Say something... (optional)"
+                        placeholderTextColor="rgba(10, 14, 26, 0.4)"
+                        value={blindDateForm.message}
+                        onChangeText={(text) => setBlindDateForm(prev => ({ ...prev, message: text }))}
+                        maxLength={200}
+                      />
+                    </View>
                   </View>
                   
                   <View style={styles.blindDateFlowActions}>
@@ -1531,6 +1610,61 @@ const UserProfileModal: React.FC<{
                       ]}
                       onPress={() => handleLike(true, 'requester')}
                       disabled={loading || !blindDateForm.locationName || !blindDateForm.locationCoords || !blindDateForm.meetTime}
+                    >
+                      <LinearGradient 
+                        colors={[BLUES.b50, BLUES.b70]}
+                        style={styles.blindDateFlowSendGradient}
+                      >
+                        <Text style={styles.blindDateFlowSendText}>
+                          {loading ? 'Sending...' : 'Send Request'}
+                        </Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  </View>
+                  
+                  <TouchableOpacity 
+                    style={styles.blindDateFlowCancel}
+                    onPress={() => setBlindDateStep(null)}
+                  >
+                    <Text style={styles.blindDateFlowCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+              
+              {/* Message Only Step - When sender chooses "They pick" */}
+              {blindDateStep === 'message_only' && (
+                <View style={styles.blindDateFlow}>
+                  <Text style={styles.blindDateFlowTitle}>Add a message</Text>
+                  <Text style={styles.blindDateFlowDesc}>
+                    Send a message with your blind date request
+                  </Text>
+                  
+                  <View style={styles.blindDateFlowInputs}>
+                    <View style={styles.blindDateFlowInputWrap}>
+                      <Ionicons name="chatbubble-outline" size={20} color={BLUE} style={{ marginRight: 10 }} />
+                      <TextInput
+                        style={[styles.blindDateFlowInput, { flex: 1 }]}
+                        placeholder="Say something... (optional)"
+                        placeholderTextColor="rgba(10, 14, 26, 0.4)"
+                        value={blindDateForm.message}
+                        onChangeText={(text) => setBlindDateForm(prev => ({ ...prev, message: text }))}
+                        maxLength={200}
+                      />
+                    </View>
+                  </View>
+                  
+                  <View style={styles.blindDateFlowActions}>
+                    <TouchableOpacity 
+                      style={styles.blindDateFlowBackBtn}
+                      onPress={() => setBlindDateStep('place_role')}
+                    >
+                      <Text style={styles.blindDateFlowBackText}>Back</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                      style={styles.blindDateFlowSendBtn}
+                      onPress={() => handleLike(true, 'target')}
+                      disabled={loading}
                     >
                       <LinearGradient 
                         colors={[BLUES.b50, BLUES.b70]}
@@ -1607,6 +1741,19 @@ const UserProfileModal: React.FC<{
                       </Text>
                       <Ionicons name="chevron-forward" size={18} color="rgba(10, 14, 26, 0.3)" />
                     </TouchableOpacity>
+                    
+                    {/* Response Message Input */}
+                    <View style={styles.blindDateFlowInputWrap}>
+                      <Ionicons name="chatbubble-outline" size={20} color={BLUE} style={{ marginRight: 10 }} />
+                      <TextInput
+                        style={[styles.blindDateFlowInput, { flex: 1 }]}
+                        placeholder="Reply to their message... (optional)"
+                        placeholderTextColor="rgba(10, 14, 26, 0.4)"
+                        value={responseMessage}
+                        onChangeText={setResponseMessage}
+                        maxLength={200}
+                      />
+                    </View>
                   </View>
                   
                   <View style={styles.blindDateFlowActions}>
@@ -1638,16 +1785,100 @@ const UserProfileModal: React.FC<{
                 </View>
               )}
               
+              {/* Accept Simple - When requester already provided location */}
+              {blindDateStep === 'accept_simple' && (
+                <View style={styles.blindDateFlow}>
+                  <Text style={styles.blindDateFlowTitle}>Accept blind date</Text>
+                  <Text style={styles.blindDateFlowDesc}>
+                    They've already set the spot - just send a reply!
+                  </Text>
+                  
+                  {matchStatus?.blind_location_name && (
+                    <View style={styles.blindDateInfoBox}>
+                      <Ionicons name="location" size={16} color={BLUE} />
+                      <Text style={styles.blindDateInfoText}>{matchStatus.blind_location_name}</Text>
+                    </View>
+                  )}
+                  
+                  <View style={styles.blindDateFlowInputs}>
+                    <View style={styles.blindDateFlowInputWrap}>
+                      <Ionicons name="chatbubble-outline" size={20} color={BLUE} style={{ marginRight: 10 }} />
+                      <TextInput
+                        style={[styles.blindDateFlowInput, { flex: 1 }]}
+                        placeholder="Reply to their message... (optional)"
+                        placeholderTextColor="rgba(10, 14, 26, 0.4)"
+                        value={responseMessage}
+                        onChangeText={setResponseMessage}
+                        maxLength={200}
+                      />
+                    </View>
+                  </View>
+                  
+                  <View style={styles.blindDateFlowActions}>
+                    <TouchableOpacity 
+                      style={styles.blindDateFlowBackBtn}
+                      onPress={() => setBlindDateStep(null)}
+                    >
+                      <Text style={styles.blindDateFlowBackText}>Cancel</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                      style={styles.blindDateFlowSendBtn}
+                      onPress={handleAcceptBlindDateSimple}
+                      disabled={loading}
+                    >
+                      <LinearGradient 
+                        colors={["#4CAF50", "#66BB6A"]}
+                        style={styles.blindDateFlowSendGradient}
+                      >
+                        <Text style={styles.blindDateFlowSendText}>
+                          {loading ? 'Accepting...' : 'Accept Date'}
+                        </Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+              
               {/* Matched Actions */}
               {isMatched && (
                 <View style={styles.userSheetMatchedActions}>
-                  <TouchableOpacity 
-                    style={styles.userSheetSecondaryBtn}
-                    onPress={handleViewProfile}
-                  >
-                    <Ionicons name="person-outline" size={20} color={BLUE} />
-                    <Text style={styles.userSheetSecondaryBtnText}>View Profile</Text>
-                  </TouchableOpacity>
+                  {/* Show blind date info for blind connections */}
+                  {isBlindConnection && (
+                    <View style={styles.blindDateMatchedInfo}>
+                      <Ionicons name="eye-off" size={18} color={BLUE} />
+                      <Text style={styles.blindDateMatchedText}>
+                        Profile hidden until after your date
+                      </Text>
+                      {matchStatus?.blind_location_name && (
+                        <View style={styles.blindDateMatchedDetail}>
+                          <Ionicons name="location" size={14} color="rgba(27, 68, 205, 0.7)" />
+                          <Text style={styles.blindDateMatchedDetailText}>{matchStatus.blind_location_name}</Text>
+                        </View>
+                      )}
+                      {matchStatus?.blind_meet_time && (
+                        <View style={styles.blindDateMatchedDetail}>
+                          <Ionicons name="calendar" size={14} color="rgba(27, 68, 205, 0.7)" />
+                          <Text style={styles.blindDateMatchedDetailText}>
+                            {new Date(matchStatus.blind_meet_time).toLocaleString(undefined, {
+                              weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                            })}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  )}
+                  
+                  {/* Only show View Profile for non-blind connections */}
+                  {!isBlindConnection && (
+                    <TouchableOpacity 
+                      style={styles.userSheetSecondaryBtn}
+                      onPress={handleViewProfile}
+                    >
+                      <Ionicons name="person-outline" size={20} color={BLUE} />
+                      <Text style={styles.userSheetSecondaryBtnText}>View Profile</Text>
+                    </TouchableOpacity>
+                  )}
                   
                   {matchStatus?.chat_allowed && (
                     <TouchableOpacity 
@@ -3867,6 +4098,62 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: Fonts.bold,
     color: "#FFFFFF",
+  },
+  senderMessageBubble: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    backgroundColor: "rgba(27, 68, 205, 0.08)",
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 8,
+    gap: 8,
+  },
+  senderMessageText: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: Fonts.primary,
+    color: "#0A0E1A",
+    fontStyle: "italic",
+    lineHeight: 20,
+  },
+  blindDateInfoBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(27, 68, 205, 0.06)",
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+    gap: 8,
+  },
+  blindDateInfoText: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: Fonts.bold,
+    color: BLUE,
+  },
+  blindDateMatchedInfo: {
+    alignItems: "center",
+    padding: 16,
+    backgroundColor: "rgba(27, 68, 205, 0.06)",
+    borderRadius: 16,
+    gap: 8,
+    width: "100%",
+  },
+  blindDateMatchedText: {
+    fontSize: 14,
+    fontFamily: Fonts.bold,
+    color: BLUE,
+    textAlign: "center",
+  },
+  blindDateMatchedDetail: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  blindDateMatchedDetailText: {
+    fontSize: 13,
+    fontFamily: Fonts.primary,
+    color: "rgba(27, 68, 205, 0.7)",
   },
   // Location Picker Modal Styles
   locationPickerContainer: {
