@@ -4,13 +4,14 @@ import { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { BlurView } from "expo-blur";
 import { Tabs } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Image, Pressable, StyleSheet, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Animated, Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 // THEME (match profile.tsx values)
 const BG = "#FFFFFF";
 const INK = "#000910";
 const BLUE = "#1B44CD";
+const HEADER_BG = "#FAFBFF"; // top bar background
 
 // -------- Unread chat stub --------
 function useHasUnreadChat() {
@@ -44,36 +45,64 @@ function TabItem({ route, isFocused, onPress, navigation, hasUnread }: any) {
 
   const animateIn = () => {
     Animated.parallel([
-      Animated.spring(scaleAnim, { toValue: 0.88, useNativeDriver: true, friction: 6, tension: 80 }),
-      Animated.timing(opacityAnim, { toValue: 0.6, duration: 100, useNativeDriver: true }),
+      Animated.spring(scaleAnim, {
+        toValue: 0.88,
+        useNativeDriver: true,
+        friction: 6,
+        tension: 80,
+      }),
+      Animated.timing(opacityAnim, {
+        toValue: 0.6,
+        duration: 100,
+        useNativeDriver: true,
+      }),
     ]).start();
   };
 
   const animateOut = () => {
     Animated.parallel([
-      Animated.spring(scaleAnim, { toValue: isFocused ? 1.12 : 1, useNativeDriver: true, friction: 5, tension: 100 }),
-      Animated.timing(opacityAnim, { toValue: 1, duration: 150, useNativeDriver: true }),
+      Animated.spring(scaleAnim, {
+        toValue: isFocused ? 1.12 : 1,
+        useNativeDriver: true,
+        friction: 5,
+        tension: 100,
+      }),
+      Animated.timing(opacityAnim, {
+        toValue: 1,
+        duration: 150,
+        useNativeDriver: true,
+      }),
     ]).start();
   };
 
   useEffect(() => {
-    Animated.spring(scaleAnim, { toValue: isFocused ? 1.12 : 1, useNativeDriver: true, friction: 5, tension: 100 }).start();
+    Animated.spring(scaleAnim, {
+      toValue: isFocused ? 1.12 : 1,
+      useNativeDriver: true,
+      friction: 5,
+      tension: 100,
+    }).start();
   }, [isFocused]);
 
   const tail = String(route.name).split("/").pop();
 
   const source = (() => {
     switch (tail) {
-      case "profile": return require("../../assets/images/icon_profile.png");
-      case "map": return require("../../assets/images/icon_map.png");
-      case "nicees": return require("../../assets/images/niices_icon.png");
+      case "profile":
+        return require("../../assets/images/icon_profile.png");
+      case "map":
+        return require("../../assets/images/icon_map.png");
+      case "nicees":
+        return require("../../assets/images/niices_icon.png");
       case "event":
-      case "events": return require("../../assets/images/event_icon.png");
+      case "events":
+        return require("../../assets/images/event_icon.png");
       case "chat":
         return hasUnread
           ? require("../../assets/images/icon_chat_message.png")
           : require("../../assets/images/icon_chat.png");
-      default: return undefined;
+      default:
+        return undefined;
     }
   })();
 
@@ -82,12 +111,16 @@ function TabItem({ route, isFocused, onPress, navigation, hasUnread }: any) {
       onPress={onPress}
       onPressIn={animateIn}
       onPressOut={animateOut}
-      onLongPress={() => navigation.emit({ type: "tabLongPress", target: route.key })}
+      onLongPress={() =>
+        navigation.emit({ type: "tabLongPress", target: route.key })
+      }
       accessibilityRole="button"
       accessibilityState={isFocused ? { selected: true } : {}}
       style={styles.tab}
     >
-      <Animated.View style={{ transform: [{ scale: scaleAnim }], opacity: opacityAnim }}>
+      <Animated.View
+        style={{ transform: [{ scale: scaleAnim }], opacity: opacityAnim }}
+      >
         <Image source={source} resizeMode="contain" style={styles.icon} />
       </Animated.View>
     </Pressable>
@@ -112,14 +145,25 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   }, [state.routes]);
 
   return (
-    <View style={[styles.bottomContainer, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+    <View
+      style={[
+        styles.bottomContainer,
+        { paddingBottom: Math.max(insets.bottom, 8) },
+      ]}
+    >
       <BlurView intensity={95} tint="light" style={styles.blurBackground} />
       <View style={styles.tintOverlay} pointerEvents="none" />
       {filteredRoutes.map((route, index) => {
         const isFocused = state.index === index;
         const onPress = () => {
-          const event = navigation.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
-          if (!isFocused && !event.defaultPrevented) navigation.navigate(route.name as never);
+          const event = navigation.emit({
+            type: "tabPress",
+            target: route.key,
+            canPreventDefault: true,
+          });
+          if (!isFocused && !event.defaultPrevented) {
+            navigation.navigate(route.name as never);
+          }
         };
         return (
           <TabItem
@@ -136,28 +180,31 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   );
 }
 
-// -------- Header identical to profile.tsx (minus right buttons) --------
+// -------- Header cloned from profile.tsx (with Friend pill) --------
 function ProfileLikeHeader() {
   return (
-    <View style={styles.topBarContainer}>
-      <BlurView intensity={95} tint="light" style={styles.blurView} />
+    <SafeAreaView edges={["top"]} style={styles.headerSafeArea}>
       <View style={styles.topBar}>
-        <Image
-          source={require("../../assets/images/niice_logo_icon.png")}
-          resizeMode="contain"
-          style={styles.logo}
-        />
-        <View style={{ width: scale(38) }} />
+        <View style={styles.logoRow}>
+          <Image
+            source={require("../../assets/images/niice_logo_icon.png")}
+            resizeMode="contain"
+            style={styles.logo}
+          />
+          <View style={styles.modePill}>
+            <Text style={styles.modePillText}>Friend</Text>
+          </View>
+        </View>
+        {/* Spacer to mimic place of edit + settings buttons */}
+        <View style={styles.headerRightSpacer} />
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
 // -------- Main Tabs layout --------
 export default function TabsLayout() {
-  const insets = useSafeAreaInsets();
   const WITH_HEADER = new Set(["chat", "nicees", "event", "events"]);
-  const RESERVED_HEADER_HEIGHT = verticalScale(6 + 12 + 42) + insets.top * 0.5;
 
   return (
     <View style={{ flex: 1, backgroundColor: BG }}>
@@ -170,8 +217,6 @@ export default function TabsLayout() {
             headerShown: showHeader,
             headerTransparent: false,
             headerTitle: "",
-            headerStyle: { height: RESERVED_HEADER_HEIGHT, backgroundColor: "transparent" },
-            headerBackgroundContainerStyle: { backgroundColor: "transparent" },
             header: showHeader ? () => <ProfileLikeHeader /> : undefined,
             tabBarShowLabel: false,
             tabBarStyle: { display: "none" },
@@ -184,7 +229,7 @@ export default function TabsLayout() {
         <Tabs.Screen name="map" options={{ title: "Map" }} />
         <Tabs.Screen name="(up_tab)/event" options={{ title: "Events" }} />
         <Tabs.Screen name="(up_tab)/nicees" options={{ title: "Niice's" }} />
-        <Tabs.Screen name="(up_tab)/chat" options={{ title: "Chat" }} />
+        <Tabs.Screen name="chat" options={{ title: "Chat" }} />
       </Tabs>
     </View>
   );
@@ -192,6 +237,7 @@ export default function TabsLayout() {
 
 // -------- Styles --------
 const styles = StyleSheet.create({
+  // bottom tab bar
   bottomContainer: {
     position: "relative",
     flexDirection: "row",
@@ -229,24 +275,49 @@ const styles = StyleSheet.create({
   },
   icon: { width: 32, height: 32 },
 
-  topBarContainer: { position: "relative", zIndex: 10 },
-  blurView: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: -verticalScale(20),
-    zIndex: 1,
+  // header
+  headerSafeArea: {
+    backgroundColor: HEADER_BG,
   },
   topBar: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: scale(22),
-    paddingTop: verticalScale(6),
+    paddingHorizontal: scale(20),
+    paddingTop: verticalScale(10),
     paddingBottom: verticalScale(12),
-    zIndex: 2,
-    backgroundColor: "transparent",
+    backgroundColor: HEADER_BG,
   },
-  logo: { width: scale(120), height: verticalScale(42) },
+
+  logoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  logo: {
+    width: scale(110),
+    height: verticalScale(38),
+    marginTop: verticalScale(1.38),
+  },
+
+  modePill: {
+    marginLeft: scale(10),
+    paddingHorizontal: scale(14),
+    paddingVertical: verticalScale(6),
+    borderRadius: verticalScale(18),
+    backgroundColor: BLUE,
+    borderWidth: 1.5,
+    borderColor: INK,
+  },
+  modePillText: {
+    color: "#FFFFFF",
+    fontSize: scale(12),
+    fontWeight: "700",
+    fontFamily: "Kadwa-Bold",
+  },
+
+  headerRightSpacer: {
+    // roughly the space taken by editButton + settingsBtn in profile.tsx
+    width: scale(40 + 12 + 40),
+  },
 });

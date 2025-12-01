@@ -45,7 +45,7 @@ const BG = Colors.BG;
 const INK = Colors.INK;
 const BLUE = Colors.BLUE;
 
-const AVATAR_SIZE = scale(150);
+const AVATAR_SIZE = scale(120);
 
 // Utils
 const toTitleCase = (str: string | null | undefined): string =>
@@ -67,11 +67,11 @@ const formatLifestyleValue = (key: string, value: string | null | undefined): st
 };
 
 const getNameFontSize = (len: number): number => {
-  if (len <= 7) return scale(26);
-  if (len <= 12) return scale(24);
-  if (len <= 17) return scale(22);
-  if (len <= 20) return scale(20);
-  return scale(18);
+  if (len <= 8) return scale(24);
+  if (len <= 12) return scale(22);
+  if (len <= 16) return scale(20);
+  if (len <= 20) return scale(18);
+  return scale(16);
 };
 
 const toStoragePath = (urlOrPath: string | null): string | null => {
@@ -92,54 +92,52 @@ const signPath = async (path: string | null): Promise<string | null> => {
   return data?.signedUrl ?? null;
 };
 
-// ========== ADD THIS FUNCTION HERE ==========
-// Combination display logic for "What I'm Looking For"
+// ========== Combination display logic for FRIEND MODE "What I'm Looking For" ==========
 const getCombinedLookingFor = (options: string[]): string => {
   if (!options || options.length === 0) return "";
   if (options.length === 1) return options[0];
-  
+
+  // Keys are built from alphabetically sorted display labels joined with "|||"
   const combinations: Record<string, string> = {
-    // Marriage combinations (alphabetically first)
-    "Figuring it out|||Marriage": "Marriage, figuring it out",
-    "Fun, casual dates|||Marriage": "Marriage, open to casual",
-    "Intimacy|||Marriage": "Marriage, open to intimacy",
-    "Life partner|||Marriage": "Marriage or life partner",
-    "Long-term relationship|||Marriage": "Marriage or long-term",
-    "Marriage|||Short-term relationship": "Marriage, open to short-term",
-    
-    // Life partner combinations
-    "Figuring it out|||Life partner": "Life partner, figuring it out",
-    "Fun, casual dates|||Life partner": "Life partner, open to casual",
-    "Intimacy|||Life partner": "Life partner, open to intimacy",
-    "Life partner|||Long-term relationship": "Life partner or long-term",
-    "Life partner|||Short-term relationship": "Life partner, open to short-term",
-    
-    // Long-term relationship combinations
-    "Figuring it out|||Long-term relationship": "Long-term, figuring it out",
-    "Fun, casual dates|||Long-term relationship": "Long-term, open to casual",
-    "Intimacy|||Long-term relationship": "Long-term, open to intimacy",
-    "Long-term relationship|||Short-term relationship": "Long-term, open to short-term",
-    
-    // Short-term relationship combinations
-    "Figuring it out|||Short-term relationship": "Short-term, figuring it out",
-    "Fun, casual dates|||Short-term relationship": "Short-term or casual dates",
-    "Intimacy|||Short-term relationship": "Short-term, open to intimacy",
-    
-    // Fun, casual dates combinations
-    "Figuring it out|||Fun, casual dates": "Casual dates, figuring it out",
-    "Fun, casual dates|||Intimacy": "Casual dates, open to intimacy",
-    
-    // Intimacy combinations
-    "Figuring it out|||Intimacy": "Intimacy, figuring it out",
+    // Activity / hobby partners combos
+    "Activity/hobby partners|||Casual hangouts": "Hobby partners & casual hangouts",
+    "Activity/hobby partners|||Close friendships": "Close friends for hobbies",
+    "Activity/hobby partners|||New friends nearby": "New local hobby friends",
+    "Activity/hobby partners|||Professional networking": "Networking through shared hobbies",
+    "Activity/hobby partners|||Travel companions": "Travel & hobby buddies",
+    "Activity/hobby partners|||Workout/fitness buddy": "Active hobby & workout buddies",
+
+    // Casual hangouts combos
+    "Casual hangouts|||Close friendships": "Close friends & casual hangouts",
+    "Casual hangouts|||New friends nearby": "New friends for casual hangouts",
+    "Casual hangouts|||Professional networking": "Networking & hangouts",
+    "Casual hangouts|||Travel companions": "Travel & casual hangouts",
+    "Casual hangouts|||Workout/fitness buddy": "Workout & casual hangouts",
+
+    // Close friendships combos
+    "Close friendships|||New friends nearby": "Close local friends",
+    "Close friendships|||Professional networking": "Close friends & networking",
+    "Close friendships|||Travel companions": "Close friends to travel with",
+    "Close friendships|||Workout/fitness buddy": "Close friends & workout buddies",
+
+    // New friends nearby combos
+    "New friends nearby|||Professional networking": "Local friends & networking",
+    "New friends nearby|||Travel companions": "Local travel buddies",
+    "New friends nearby|||Workout/fitness buddy": "Local workout friends",
+
+    // Travel / networking / workout combos
+    "Professional networking|||Travel companions": "Network & travel buddies",
+    "Professional networking|||Workout/fitness buddy": "Workout & networking",
+    "Travel companions|||Workout/fitness buddy": "Active travel & workout buddies",
   };
-  
-  // Sort alphabetically and join
-  const sorted = [...options].sort();
+
+  // Sort alphabetically, trim, and join into key
+  const sorted = [...options].map((s) => s.trim()).sort();
   const key = sorted.join("|||");
-  
+
   return combinations[key] || sorted.join(" · ");
 };
-// ========== END OF NEW FUNCTION ==========
+// ========== END OF FRIEND MODE COMBINATIONS ==========
 
 // Lifestyle icon mapping
 const getLifestyleIcon = (key: string) => {
@@ -294,29 +292,29 @@ export default function ProfileTop() {
   const [permission, requestPermission] = useCameraPermissions();
 
   const handleTakeMedia = async () => {
-  console.log("Take photo/video clicked");
-  setShowFrameActionSheet(false);
+    console.log("Take photo/video clicked");
+    setShowFrameActionSheet(false);
 
-  setTimeout(async () => {
-    try {
-      const { status } = await requestPermission();
-      if (status !== "granted") {
-        Alert.alert(
-          "Permission Required",
-          "Camera access is required to take photos and videos."
-        );
-        return;
+    setTimeout(async () => {
+      try {
+        const { status } = await requestPermission();
+        if (status !== "granted") {
+          Alert.alert(
+            "Permission Required",
+            "Camera access is required to take photos and videos."
+          );
+          return;
+        }
+
+        // Navigate to the custom camera screen
+        router.push("/(frames)/camera");
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : "Unknown error occurred";
+        Alert.alert("Error", "Camera permission check failed: " + errorMessage);
       }
-
-      // Navigate to the custom camera screen
-      router.push("/(frames)/camera");
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error occurred";
-      Alert.alert("Error", "Camera permission check failed: " + errorMessage);
-    }
-  }, 300);
-};
+    }, 300);
+  };
 
 
   const handleChooseLibrary = async () => {
@@ -327,7 +325,7 @@ export default function ProfileTop() {
       try {
         console.log("Opening library picker...");
         const result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ['images', 'videos'],
+          mediaTypes: ['images', 'videos'] as any,
           allowsEditing: false,
           aspect: [16, 9],
           quality: 0.8,
@@ -405,170 +403,179 @@ export default function ProfileTop() {
   };
 
   // Wrap data loading in useCallback
-const loadProfileData = useCallback(async () => {
-  try {
-    const { data: auth } = await supabase.auth.getUser();
-    const userId = auth?.user?.id;
-    if (!userId) return;
+  const loadProfileData = useCallback(async () => {
+    try {
+      const { data: auth } = await supabase.auth.getUser();
+      const userId = auth?.user?.id;
+      if (!userId) return;
 
-    await fetchActiveFrames(userId);
+      await fetchActiveFrames(userId);
 
-    const [profRes, lifeRes, mainRes, othersRes, modesRes, hobbiesRes] = await Promise.all([
-      supabase.from("profiles").select("full_name, age, bio, gender_subtype, height_cm, education, sexual_orientation, institution, prompt_answers").eq("id", userId).single(),
-      supabase.from("lifestyle").select("drinking, smoking, zodiac, religion, politics, workout, communication, love_language, pets, kids, communities").eq("user_id", userId).maybeSingle(),
-      supabase.from("user_photos").select("photo_url").eq("user_id", userId).eq("is_main", true).maybeSingle(),
-      supabase.from("user_photos").select("photo_url, created_at, is_main").eq("user_id", userId).neq("is_main", true).order("created_at",{ ascending: true }),
-      supabase.from("user_modes").select("looking_for_date, value_date").eq("user_id", userId).maybeSingle(),
-      supabase.from("user_hobbies").select("hobbies_master(label)").eq("user_id", userId),
-    ]);
+      const [profRes, lifeRes, mainRes, othersRes, modesRes, hobbiesRes] = await Promise.all([
+        supabase.from("profiles").select("full_name, age, bio, gender_subtype, height_cm, education, sexual_orientation, institution, prompt_answers").eq("id", userId).single(),
+        supabase.from("lifestyle").select("drinking, smoking, zodiac, religion, politics, workout, communication, love_language, pets, kids, communities").eq("user_id", userId).maybeSingle(),
+        supabase.from("user_photos").select("photo_url").eq("user_id", userId).eq("is_main", true).maybeSingle(),
+        supabase.from("user_photos").select("photo_url, created_at, is_main").eq("user_id", userId).neq("is_main", true).order("created_at",{ ascending: true }),
+        // FRIEND MODE: use friend columns and restrict to mode = 'friend'
+        supabase
+          .from("user_modes")
+          .select("looking_for_friend, value_friend")
+          .eq("user_id", userId)
+          .eq("mode", "friend")
+          .maybeSingle(),
+        supabase.from("user_hobbies").select("hobbies_master(label)").eq("user_id", userId),
+      ]);
 
-    const p = (profRes as any).data || {};
-    const promptsRaw = Array.isArray(p?.prompt_answers) ? p.prompt_answers : null;
-    const prompts: PromptAnswer[] | null = promptsRaw
-      ? [...promptsRaw]
-          .filter((x: any) => x && typeof x === "object")
-          .sort((a, b) => (a.slot ?? 0) - (b.slot ?? 0))
-          .slice(0, 3)
-      : null;
+      const p = (profRes as any).data || {};
+      const promptsRaw = Array.isArray(p?.prompt_answers) ? p.prompt_answers : null;
+      const prompts: PromptAnswer[] | null = promptsRaw
+        ? [...promptsRaw]
+            .filter((x: any) => x && typeof x === "object")
+            .sort((a, b) => (a.slot ?? 0) - (b.slot ?? 0))
+            .slice(0, 3)
+        : null;
 
-    setProfile(prev => ({
-      ...prev,
-      fullName: p.full_name ?? "",
-      age: p.age ?? null,
-      bio: p.bio ?? null,
-      genderSubtype: p.gender_subtype ?? null,
-      heightCm: p.height_cm ?? null,
-      education: p.education ?? null,
-      sexualOrientation: p.sexual_orientation ?? null,
-      institution: p.institution ?? null,
-      promptAnswers: prompts,
-    }));
+      setProfile(prev => ({
+        ...prev,
+        fullName: p.full_name ?? "",
+        age: p.age ?? null,
+        bio: p.bio ?? null,
+        genderSubtype: p.gender_subtype ?? null,
+        heightCm: p.height_cm ?? null,
+        education: p.education ?? null,
+        sexualOrientation: p.sexual_orientation ?? null,
+        institution: p.institution ?? null,
+        promptAnswers: prompts,
+      }));
 
-    const l = (lifeRes as any).data || {};
-    setLifestyle({
-      drinking: l.drinking ?? null, smoking: l.smoking ?? null, zodiac: l.zodiac ?? null, religion: l.religion ?? null,
-      politics: l.politics ?? null, workout: l.workout ?? null, communication: l.communication ?? null,
-      love_language: l.love_language ?? null, pets: l.pets ?? null, kids: l.kids ?? null
-    });
-
-    // ========== COMMUNITY OPTIONS ==========
-    const COMMUNITY_OPTIONS = [
-      "🌿 Environmentalism",
-      "✊ Social justice",
-      "🏳️‍🌈 LGBTQIA+",
-      "♀️ Feminism",
-      "🧠 Mental health awareness",
-      "✊🏾 Black community",
-      "🧧 Asian community",
-      "🪅 Latino/Hispanic community",
-      "✡️ Jewish community",
-      "☪️ Muslim community",
-      "♿ Disability awareness",
-      "💖 Body positivity",
-      "🐾 Animal rights",
-      "🌍 Climate action",
-    ];
-
-    const stripEmoji = (s: string) => s.replace(/^[^\w\s]+\s*/, '').trim();
-    const normalizeLabel = (s: string) => stripEmoji(s).toLowerCase().trim();
-
-    // Load communities from lifestyle and match with emoji versions
-    const communityList = Array.isArray(l.communities) ? l.communities : [];
-    const matchedCommunities: string[] = [];
-
-    communityList.forEach((comm: string) => {
-      const normalized = normalizeLabel(comm);
-      COMMUNITY_OPTIONS.forEach(commWithEmoji => {
-        if (normalizeLabel(commWithEmoji) === normalized) {
-          matchedCommunities.push(commWithEmoji);
-        }
+      const l = (lifeRes as any).data || {};
+      setLifestyle({
+        drinking: l.drinking ?? null, smoking: l.smoking ?? null, zodiac: l.zodiac ?? null, religion: l.religion ?? null,
+        politics: l.politics ?? null, workout: l.workout ?? null, communication: l.communication ?? null,
+        love_language: l.love_language ?? null, pets: l.pets ?? null, kids: l.kids ?? null
       });
-    });
 
-    setCommunities(matchedCommunities);
+      // ========== COMMUNITY OPTIONS ==========
+      const COMMUNITY_OPTIONS = [
+        "🌿 Environmentalism",
+        "✊ Social justice",
+        "🏳️‍🌈 LGBTQIA+",
+        "♀️ Feminism",
+        "🧠 Mental health awareness",
+        "✊🏾 Black community",
+        "🧧 Asian community",
+        "🪅 Latino/Hispanic community",
+        "✡️ Jewish community",
+        "☪️ Muslim community",
+        "♿ Disability awareness",
+        "💖 Body positivity",
+        "🐾 Animal rights",
+        "🌍 Climate action",
+      ];
 
-    // ========== PHOTOS ==========
-    const avatarUrl = (mainRes as any)?.data?.photo_url || null;
-    const others = (othersRes as any)?.data || [];
-    const [first, second, third] = others;
-    const [avatarSigned, firstSigned, secondSigned, thirdSigned] = await Promise.all([
-      signPath(toStoragePath(avatarUrl)),
-      signPath(toStoragePath(first?.photo_url ?? null)),
-      signPath(toStoragePath(second?.photo_url ?? null)),
-      signPath(toStoragePath(third?.photo_url ?? null)),
-    ]);
-    setPhotos({
-      avatar: avatarSigned ?? avatarUrl,
-      first: firstSigned ?? first?.photo_url ?? null,
-      second: secondSigned ?? second?.photo_url ?? null,
-      third: thirdSigned ?? third?.photo_url ?? null,
-    });
+      const stripEmoji = (s: string) => s.replace(/^[^\w\s]+\s*/, '').trim();
+      const normalizeLabel = (s: string) => stripEmoji(s).toLowerCase().trim();
 
-    // ========== MODES (LOOKING FOR + VALUES) ==========
-    const m = (modesRes as any)?.data || {};
+      // Load communities from lifestyle and match with emoji versions
+      const communityList = Array.isArray(l.communities) ? l.communities : [];
+      const matchedCommunities: string[] = [];
 
-    // Map for enum to display format
-    const LOOKING_FOR_DISPLAY: Record<string, string> = {
-      "marriage": "Marriage",
-      "life_partner": "Life partner",
-      "long_term_relationship": "Long-term relationship",
-      "short_term_relationship": "Short-term relationship",
-      "casual_dates": "Fun, casual dates",
-      "intimacy": "Intimacy",
-      "new_friends": "New friends",
-      "figuring_it_out": "Figuring it out",
-    };
+      communityList.forEach((comm: string) => {
+        const normalized = normalizeLabel(comm);
+        COMMUNITY_OPTIONS.forEach(commWithEmoji => {
+          if (normalizeLabel(commWithEmoji) === normalized) {
+            matchedCommunities.push(commWithEmoji);
+          }
+        });
+      });
 
-    // Load looking_for_date with exact display format
-    const lookingForEnums: string[] = Array.isArray(m.looking_for_date) 
-      ? m.looking_for_date 
-      : [];
-    const lookingForDisplay = lookingForEnums
-      .map(e => LOOKING_FOR_DISPLAY[e])
-      .filter(Boolean);
+      setCommunities(matchedCommunities);
 
-    // Combine using display format
-    const combinedLooking = lookingForDisplay.length === 2 
-      ? getCombinedLookingFor(lookingForDisplay)
-      : lookingForDisplay.length === 1 
-        ? lookingForDisplay[0] 
-        : "";
+      // ========== PHOTOS ==========
+      const avatarUrl = (mainRes as any)?.data?.photo_url || null;
+      const others = (othersRes as any)?.data || [];
+      const [first, second, third] = others;
+      const [avatarSigned, firstSigned, secondSigned, thirdSigned] = await Promise.all([
+        signPath(toStoragePath(avatarUrl)),
+        signPath(toStoragePath(first?.photo_url ?? null)),
+        signPath(toStoragePath(second?.photo_url ?? null)),
+        signPath(toStoragePath(third?.photo_url ?? null)),
+      ]);
+      setPhotos({
+        avatar: avatarSigned ?? avatarUrl,
+        first: firstSigned ?? first?.photo_url ?? null,
+        second: secondSigned ?? second?.photo_url ?? null,
+        third: thirdSigned ?? third?.photo_url ?? null,
+      });
 
-    // Helper function to parse lists for values
-    const parseListHelper = (raw: any): string[] => {
-      const list =
-        Array.isArray(raw)
-          ? raw.map((s) => humanize(String(s)))
-          : typeof raw === "string"
-          ? raw.split(/[,/&]| and /i).map((s: string) => humanize(s.trim()))
-          : [];
-      return Array.from(new Set(list.filter(Boolean)));
-    };
+      // ========== MODES (FRIEND "LOOKING FOR" + VALUES) ==========
+      const m = (modesRes as any)?.data || {};
 
-    setModes({ 
-      looking: combinedLooking ? [combinedLooking] : [], 
-      values: parseListHelper(m.value_date) 
-    });
+      // Friend-mode enum → display labels
+      const LOOKING_FOR_FRIEND_DISPLAY: Record<string, string> = {
+        new_friends_nearby: "New friends nearby",
+        workout_fitness_buddy: "Workout/fitness buddy",
+        travel_companions: "Travel companions",
+        activity_hobby_partners: "Activity/hobby partners",
+        casual_hangouts: "Casual hangouts",
+        professional_networking: "Professional networking",
+        close_friendships: "Close friendships",
+      };
 
-    // ========== HOBBIES ==========
-    const hs = (hobbiesRes as any)?.data || [];
-    setHobbies(hs.map((x: any) => x?.hobbies_master?.label).filter(Boolean).map(humanize));
-  } catch (e) {
-    console.log("Error loading profile:", e);
-  }
-}, []);
+      const lookingForEnums: string[] = Array.isArray(m.looking_for_friend)
+        ? m.looking_for_friend
+        : [];
 
-// Load on mount
-useEffect(() => {
-  loadProfileData();
-}, [loadProfileData]);
+      const lookingForDisplay = lookingForEnums
+        .map((e) => LOOKING_FOR_FRIEND_DISPLAY[e])
+        .filter(Boolean);
 
-// Reload whenever screen comes into focus (when navigating back from edit screen)
-useFocusEffect(
-  useCallback(() => {
+      // Combine into a single headline string for the hero chip
+      let combinedLooking = "";
+      if (lookingForDisplay.length === 1) {
+        combinedLooking = lookingForDisplay[0];
+      } else if (lookingForDisplay.length === 2) {
+        combinedLooking = getCombinedLookingFor(lookingForDisplay);
+      } else if (lookingForDisplay.length > 2) {
+        // If more than 2, use the first two to generate a sensible combo
+        combinedLooking = getCombinedLookingFor(lookingForDisplay.slice(0, 2));
+      }
+
+      // Helper function to parse lists for values
+      const parseListHelper = (raw: any): string[] => {
+        const list =
+          Array.isArray(raw)
+            ? raw.map((s) => humanize(String(s)))
+            : typeof raw === "string"
+            ? raw.split(/[,/&]| and /i).map((s: string) => humanize(s.trim()))
+            : [];
+        return Array.from(new Set(list.filter(Boolean)));
+      };
+
+      setModes({ 
+        looking: combinedLooking ? [combinedLooking] : [], 
+        values: parseListHelper(m.value_friend) 
+      });
+
+      // ========== HOBBIES ==========
+      const hs = (hobbiesRes as any)?.data || [];
+      setHobbies(hs.map((x: any) => x?.hobbies_master?.label).filter(Boolean).map(humanize));
+    } catch (e) {
+      console.log("Error loading profile:", e);
+    }
+  }, []);
+
+  // Load on mount
+  useEffect(() => {
     loadProfileData();
-  }, [loadProfileData])
-);
+  }, [loadProfileData]);
+
+  // Reload whenever screen comes into focus (when navigating back from edit screen)
+  useFocusEffect(
+    useCallback(() => {
+      loadProfileData();
+    }, [loadProfileData])
+  );
 
   const saveBio = async () => {
     try {
@@ -639,37 +646,48 @@ useFocusEffect(
       <StatusBar barStyle="dark-content" />
 
       {/* Top Bar */}
-<View style={styles.topBar}>
-  <Image 
-    source={require("../../assets/images/niice_logo_icon.png")} 
-    resizeMode="contain" 
-    style={styles.logo} 
-  />
-  <View style={styles.topRight}>
-    <TouchableOpacity 
-      style={styles.editButton} 
-      activeOpacity={0.75} 
-      onPress={() => router.push("/(edit_profile)/edit_main")}
-    >
-      <Ionicons 
-        name="create-outline" 
-        size={20} 
-        color="#FFFFFF" 
-      />
-    </TouchableOpacity>
-    <TouchableOpacity 
-      onPress={() => router.push("/in_progress")} 
-      activeOpacity={0.7} 
-      style={styles.settingsBtn}
-    >
-      <Ionicons 
-        name="settings-outline" 
-        size={24} 
-        color={INK} 
-      />
-    </TouchableOpacity>
-  </View>
-</View>
+      <View style={styles.topBar}>
+        <Image 
+          source={require("../../assets/images/niice_logo_icon.png")} 
+          resizeMode="contain" 
+          style={styles.logo} 
+        />
+        <View style={styles.topRight}>
+          <TouchableOpacity 
+            style={styles.editButton} 
+            activeOpacity={0.75} 
+            onPress={() => router.push("/(edit_profile)/edit_main")}
+          >
+            <Ionicons 
+              name="create-outline" 
+              size={20} 
+              color="#FFFFFF" 
+            />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            onPress={() => router.push("/(tabs_support)/requests")} 
+            activeOpacity={0.7} 
+            style={styles.requestsBtn}
+          >
+            <Ionicons 
+              name="mail-outline" 
+              size={22} 
+              color={INK} 
+            />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            onPress={() => router.push("/in_progress")} 
+            activeOpacity={0.7} 
+            style={styles.settingsBtn}
+          >
+            <Ionicons 
+              name="settings-outline" 
+              size={24} 
+              color={INK} 
+            />
+          </TouchableOpacity>
+        </View>
+      </View>
 
       <ScrollView 
         style={{ flex: 1 }} 
@@ -781,6 +799,24 @@ useFocusEffect(
                 </TouchableOpacity>
               </View>
             </RNAnimated.View>
+
+            {/* Events Button */}
+            <TouchableOpacity 
+              activeOpacity={0.9} 
+              onPress={() => router.push("/(tabs_support)/event_status_own")}
+              style={styles.eventsButtonWrapper}
+            >
+              <LinearGradient
+                colors={["#EEF4FF", "#E8F0FF"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.eventsButton}
+              >
+                <Ionicons name="calendar" size={16} color={BLUE} style={{ marginRight: scale(6) }} />
+                <Text style={styles.eventsButtonText}>Events</Text>
+                <Ionicons name="chevron-forward" size={16} color={BLUE} />
+              </LinearGradient>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -843,57 +879,65 @@ useFocusEffect(
           </LinearGradient>
         </View>
 
-        {/* What I'm Looking For */}
         {/* What I'm Looking For - Featured */}
-<View style={styles.section}>
-  <View style={styles.featuredCard}>
-    <LinearGradient
-      colors={["#FFFFFF", "#F8FAFF"]}
-      style={StyleSheet.absoluteFillObject}
-    />
-    
-    {/* Accent border */}
-    <View style={styles.featuredAccent} />
-    
-    <View style={styles.featuredContent}>
-      {/* Small label with icon */}
-      <View style={styles.featuredLabel}>
-        <MaterialCommunityIcons 
-          name="heart-outline" 
-          size={16} 
-          color={BLUE} 
-          style={{ marginRight: scale(6) }}
-        />
-        <Text style={styles.featuredLabelText}>What I'm Looking For</Text>
-      </View>
-      
-      {/* Large prominent chip */}
-      {modes.looking.length ? (
-        <View style={styles.featuredChipWrapper}>
-          <View style={styles.featuredChip}>
-  <MaterialCommunityIcons 
-    name="heart" 
-    size={24} 
-    color="rgba(255,255,255,0.9)" 
-    style={{ marginRight: scale(10) }}
+        <View style={styles.section}>
+          <View style={styles.featuredCard}>
+            <LinearGradient
+              colors={["#FFFFFF", "#F8FAFF"]}
+              style={StyleSheet.absoluteFillObject}
+            />
+            
+            {/* Accent border */}
+            <View style={styles.featuredAccent} />
+            
+            <View style={styles.featuredContent}>
+              {/* Small label with icon */}
+              <View style={styles.featuredLabel}>
+  <Ionicons
+    name="people-outline"
+    size={16}
+    color={BLUE}
+    style={{ marginRight: scale(6) }}
+  />
+  <Text style={styles.featuredLabelText}>What I'm Looking For</Text>
+</View>
+
+              
+              {/* Large prominent chip */}
+              {modes.looking.length ? (
+  <View style={styles.featuredChipWrapper}>
+    <View style={styles.featuredChip}>
+  <Ionicons
+    name="people"
+    size={20}
+    color="rgba(255,255,255,0.9)"
+    style={{ marginLeft: scale(10), marginRight: scale(10) }}
   />
   <Text style={styles.featuredChipText}>
     {modes.looking[0]}
   </Text>
 </View>
-        </View>
-      ) : (
-        <View style={styles.featuredChipWrapper}>
-          <View style={[styles.featuredChip, styles.featuredChipEmpty]}>
-            <Text style={styles.featuredChipEmptyText}>
-              + Set what you're looking for
-            </Text>
+
+
+  </View>
+) : (
+  <View style={styles.featuredChipWrapper}>
+    <TouchableOpacity
+      activeOpacity={0.9}
+      onPress={() => router.push("/(edit_profile)/what_im_looking_for_edit")}
+    >
+      <View style={[styles.featuredChip, styles.featuredChipEmpty]}>
+        <Text style={styles.featuredChipEmptyText}>
+          + Set what you're looking for
+        </Text>
+      </View>
+    </TouchableOpacity>
+  </View>
+)}
+
+            </View>
           </View>
         </View>
-      )}
-    </View>
-  </View>
-</View>
 
         {/* First Photo */}
         {photos.first && (
@@ -914,7 +958,7 @@ useFocusEffect(
             />
             <View style={styles.cardHeader}>
               <Ionicons name="sparkles-outline" size={22} color={BLUE} style={styles.cardIcon} />
-              <Text style={styles.cardTitle}>Values in a Partner</Text>
+              <Text style={styles.cardTitle}>Values in a Friend</Text>
             </View>
             <View style={styles.cardContent}>
               {modes.values.length ? (
@@ -1198,7 +1242,7 @@ const HeightPickerModal: React.FC<{
   const [selectedHeight, setSelectedHeight] = useState(170);
   const scrollRef = useRef<ScrollView>(null);
   const heights = useMemo(() => Array.from({ length: 101 }, (_, i) => 140 + i), []);
-  
+
   useEffect(() => {
     if (visible) {
       setTimeout(() => {
@@ -1208,7 +1252,7 @@ const HeightPickerModal: React.FC<{
         });
       }, 100);
     }
-  }, [visible]);
+  }, [visible, selectedHeight, heights]);
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -1308,21 +1352,24 @@ const styles = StyleSheet.create({
     gap: scale(12) 
   },
   editButton: { 
-  width: scale(40), 
-  height: scale(40), 
-  borderRadius: scale(20), 
-  backgroundColor: BLUE, 
-  alignItems: "center", 
-  justifyContent: "center",
-  shadowColor: BLUE,
-  shadowOpacity: 0.25,
-  shadowRadius: 6,
-  shadowOffset: { width: 0, height: 3 },
-  elevation: 4,
-},
-settingsBtn: { 
-  padding: scale(8) 
-},
+    width: scale(40), 
+    height: scale(40), 
+    borderRadius: scale(20), 
+    backgroundColor: BLUE, 
+    alignItems: "center", 
+    justifyContent: "center",
+    shadowColor: BLUE,
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
+  requestsBtn: { 
+    padding: scale(8) 
+  },
+  settingsBtn: { 
+    padding: scale(8) 
+  },
   scrollContent: { 
     paddingBottom: verticalScale(40) 
   },
@@ -1383,8 +1430,7 @@ settingsBtn: {
   },
   nameRow: { 
     flexDirection: "row", 
-    alignItems: "center", 
-    flexWrap: "wrap" 
+    alignItems: "baseline"
   },
   nameText: { 
     color: INK, 
@@ -1605,6 +1651,7 @@ settingsBtn: {
   chipsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
+    justifyContent: "center",
     gap: scale(8),
   },
   customChip: {
@@ -1954,154 +2001,175 @@ settingsBtn: {
     color: INK,
     letterSpacing: 0.4,
   },
-  // Hero Banner for "What I'm Looking For"
-heroBanner: {
-  borderRadius: scale(24),
-  overflow: "hidden",
-  minHeight: verticalScale(160),
-  shadowColor: BLUE,
-  shadowOffset: { width: 0, height: 8 },
-  shadowOpacity: 0.35,
-  shadowRadius: 16,
-  elevation: 12,
-  marginBottom: verticalScale(8),
-},
-heroBannerDecor: {
-  position: "absolute",
-  width: "100%",
-  height: "100%",
-},
-decorHeart1: {
-  position: "absolute",
-  right: scale(-20),
-  top: verticalScale(-30),
-  transform: [{ rotate: "15deg" }],
-},
-decorHeart2: {
-  position: "absolute",
-  left: scale(-15),
-  bottom: verticalScale(-20),
-  transform: [{ rotate: "-25deg" }],
-},
-heroBannerContent: {
-  padding: scale(24),
-  paddingVertical: verticalScale(28),
-  position: "relative",
-},
-heroBannerHeader: {
-  flexDirection: "row",
-  alignItems: "center",
-  marginBottom: verticalScale(12),
-},
-heroBannerIcon: {
-  marginRight: scale(8),
-},
-heroBannerLabel: {
-  fontSize: scale(15),
-  fontFamily: Fonts.bold,
-  color: "rgba(255,255,255,0.9)",
-  letterSpacing: 0.8,
-  textTransform: "uppercase",
-},
-heroBannerText: {
-  fontSize: scale(28),
-  fontFamily: Fonts.bold,
-  color: "#FFFFFF",
-  lineHeight: verticalScale(38),
-  letterSpacing: 0.3,
-  textShadowColor: "rgba(0,0,0,0.15)",
-  textShadowOffset: { width: 0, height: 2 },
-  textShadowRadius: 4,
-},
-heroBannerPlaceholder: {
-  fontSize: scale(24),
-  fontFamily: Fonts.primary,
-  color: "rgba(255,255,255,0.7)",
-  lineHeight: verticalScale(34),
-  letterSpacing: 0.3,
-  fontStyle: "italic",
-},
-heroBannerShine: {
-  position: "absolute",
-  top: 0,
-  left: 0,
-  right: 0,
-  height: "100%",
-  transform: [{ skewX: "-20deg" }],
-},
-// Featured "What I'm Looking For" Card
-featuredCard: {
-  borderRadius: scale(20),
-  overflow: "hidden",
-  shadowColor: "#000",
-  shadowOffset: { width: 0, height: 6 },
-  shadowOpacity: 0.08,
-  shadowRadius: 12,
-  elevation: 6,
-  borderWidth: 1,
-  borderColor: "rgba(27,68,205,0.15)",
-  marginBottom: verticalScale(8),
-},
-featuredAccent: {
-  position: "absolute",
-  left: 0,
-  top: 0,
-  bottom: 0,
-  width: scale(4),
-  backgroundColor: BLUE,
-},
-featuredContent: {
-  paddingHorizontal: scale(20),
-  paddingVertical: verticalScale(20),
-},
-featuredLabel: {
-  flexDirection: "row",
-  alignItems: "center",
-  justifyContent: "center",
-  marginBottom: verticalScale(14),
-},
-featuredLabelText: {
-  fontSize: scale(13),
-  fontFamily: Fonts.bold,
-  color: BLUE,
-  letterSpacing: 0.5,
-  textTransform: "uppercase",
-},
-featuredChipWrapper: {
-  alignItems: "center",
-},
-featuredChip: {
+
+  // Hero / Featured "What I'm Looking For"
+  heroBanner: {
+    borderRadius: scale(24),
+    overflow: "hidden",
+    minHeight: verticalScale(160),
+    shadowColor: BLUE,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 12,
+    marginBottom: verticalScale(8),
+  },
+  heroBannerDecor: {
+    position: "absolute",
+    width: "100%",
+    height: "100%",
+  },
+  decorHeart1: {
+    position: "absolute",
+    right: scale(-20),
+    top: verticalScale(-30),
+    transform: [{ rotate: "15deg" }],
+  },
+  decorHeart2: {
+    position: "absolute",
+    left: scale(-15),
+    bottom: verticalScale(-20),
+    transform: [{ rotate: "-25deg" }],
+  },
+  heroBannerContent: {
+    padding: scale(24),
+    paddingVertical: verticalScale(28),
+    position: "relative",
+  },
+  heroBannerHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: verticalScale(12),
+  },
+  heroBannerIcon: {
+    marginRight: scale(8),
+  },
+  heroBannerLabel: {
+    fontSize: scale(15),
+    fontFamily: Fonts.bold,
+    color: "rgba(255,255,255,0.9)",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+  },
+  heroBannerText: {
+    fontSize: scale(28),
+    fontFamily: Fonts.bold,
+    color: "#FFFFFF",
+    lineHeight: verticalScale(38),
+    letterSpacing: 0.3,
+    textShadowColor: "rgba(0,0,0,0.15)",
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
+  heroBannerPlaceholder: {
+    fontSize: scale(24),
+    fontFamily: Fonts.primary,
+    color: "rgba(255,255,255,0.7)",
+    lineHeight: verticalScale(34),
+    letterSpacing: 0.3,
+    fontStyle: "italic",
+  },
+  heroBannerShine: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: "100%",
+    transform: [{ skewX: "-20deg" }],
+  },
+
+  // Featured "What I'm Looking For" Card
+  featuredCard: {
+    borderRadius: scale(20),
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 6,
+    borderWidth: 1,
+    borderColor: "rgba(27,68,205,0.15)",
+    marginBottom: verticalScale(8),
+  },
+  featuredAccent: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: scale(4),
+    backgroundColor: BLUE,
+  },
+  featuredContent: {
+    paddingHorizontal: scale(20),
+    paddingVertical: verticalScale(14),
+  },
+  featuredLabel: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: verticalScale(14),
+  },
+  featuredLabelText: {
+    fontSize: scale(12),
+    fontFamily: Fonts.bold,
+    color: BLUE,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+  },
+  featuredChipWrapper: {
+    alignItems: "center",
+  },
+  featuredChip: {
   flexDirection: "row",
   alignItems: "center",
   justifyContent: "center",
   backgroundColor: BLUE,
   borderRadius: scale(28),
-  paddingVertical: verticalScale(14),
-  paddingHorizontal: scale(24),
-  minWidth: "85%",
+  paddingVertical: verticalScale(10),
+  paddingHorizontal: scale(20),
+  minWidth: "80%",
   shadowColor: BLUE,
   shadowOffset: { width: 0, height: 4 },
   shadowOpacity: 0.25,
   shadowRadius: 8,
   elevation: 6,
 },
-featuredChipText: {
-  fontSize: scale(20),
+eventsButtonWrapper: { marginTop: verticalScale(8) },
+eventsButton: {
+  flexDirection: "row",
+  alignItems: "center",
+  justifyContent: "center",
+  paddingVertical: verticalScale(10),
+  paddingHorizontal: scale(16),
+  borderRadius: scale(12),
+  borderWidth: 1,
+  borderColor: "rgba(27,68,205,0.15)",
+},
+eventsButtonText: {
+  fontFamily: Fonts.bold,
+  fontSize: scale(14),
+  color: BLUE,
+  flex: 1,
+},
+
+  featuredChipText: {
+  fontSize: scale(14),
   fontFamily: Fonts.bold,
   color: "#FFFFFF",
   letterSpacing: 0.3,
   textAlign: "center",
 },
-featuredChipEmpty: {
-  backgroundColor: "#EEF4FF",
-  borderWidth: 1.5,
-  borderColor: "rgba(27,68,205,0.2)",
-  borderStyle: "dashed",
-},
-featuredChipEmptyText: {
-  fontSize: scale(16),
-  fontFamily: Fonts.bold,
-  color: "rgba(27,68,205,0.6)",
-  letterSpacing: 0.3,
-},
+
+  featuredChipEmpty: {
+    backgroundColor: "#EEF4FF",
+    borderWidth: 1.5,
+    borderColor: "rgba(27,68,205,0.2)",
+    borderStyle: "dashed",
+  },
+  featuredChipEmptyText: {
+    fontSize: scale(16),
+    fontFamily: Fonts.bold,
+    color: "rgba(27,68,205,0.6)",
+    letterSpacing: 0.3,
+  },
 });

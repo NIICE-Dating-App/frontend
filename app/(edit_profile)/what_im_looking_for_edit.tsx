@@ -1,3 +1,4 @@
+// frontend/app/(edit_profile)/what_im_looking_for_edit.tsx
 import { Fonts } from "@/constants/theme";
 import { scale, verticalScale } from "@/utils/responsive";
 import { Ionicons } from "@expo/vector-icons";
@@ -6,80 +7,81 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
-    Alert,
-    Animated,
-    Keyboard,
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableWithoutFeedback,
-    View,
+  Alert,
+  Animated,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableWithoutFeedback,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import {
-    Colors,
-    FloatingHeader,
-} from "@/components";
-
+import { Colors, FloatingHeader } from "@/components";
 import { supabase } from "@/lib/supabase";
 
+// 🟢 FRIEND MODE: options must match friend onboarding
+
+// What I'm hoping to find in friends
 const LOOKING_FOR_OPTIONS = [
-  "Marriage",
-  "Life partner",
-  "Long-term relationship",
-  "Short-term relationship",
-  "Fun, casual dates",
-  "Intimacy",
-  "Figuring it out",
+  "New friends nearby",
+  "Workout/fitness buddy",
+  "Travel companions",
+  "Activity/hobby partners",
+  "Casual hangouts",
+  "Professional networking",
+  "Close friendships",
 ];
 
+// What I value in friendship
 const VALUE_OPTIONS = [
-  "Honesty",
-  "Kindness",
-  "Sense of humor",
-  "Good communication",
-  "Ambition",
   "Loyalty",
-  "Emotional intelligence",
-  "Adventurous spirit",
-  "Intelligence",
-  "Affectionate",
-  "Family-oriented",
-  "Open-mindedness",
-  "Active lifestyle",
+  "Trustworthy",
+  "Good listener",
+  "Sense of humor",
   "Supportive",
-  "Authenticity",
-  "Similar values",
-  "Confidence",
-  "Romantic",
-  "Financial stability",
+  "Non-judgmental",
+  "Honest",
+  "Reliable",
+  "Fun to be around",
+  "Authentic",
+  "Understanding",
   "Shared interests",
+  "Deep conversations",
+  "Adventurous",
+  "Positive energy",
+  "Low-maintenance",
+  "Makes time for me",
+  "Encouraging",
+  "Respectful of boundaries",
+  "Growth-minded",
 ];
 
+// UI → enum for looking_for_friend
 const ENUM_MAP: Record<string, string> = {
-  "Marriage": "marriage",
-  "Life partner": "life_partner",
-  "Long-term relationship": "long_term_relationship",
-  "Short-term relationship": "short_term_relationship",
-  "Fun, casual dates": "casual_dates",
-  "Intimacy": "intimacy",
-  "New friends": "new_friends",
-  "Figuring it out": "figuring_it_out",
+  "New friends nearby": "new_friends_nearby",
+  "Workout/fitness buddy": "workout_fitness_buddy",
+  "Travel companions": "travel_companions",
+  "Activity/hobby partners": "activity_hobby_partners",
+  "Casual hangouts": "casual_hangouts",
+  "Professional networking": "professional_networking",
+  "Close friendships": "close_friendships",
 };
 
+// enum → UI for looking_for_friend
 const REVERSE_ENUM_MAP: Record<string, string> = Object.fromEntries(
-  Object.entries(ENUM_MAP).map(([k, v]) => [v, k])
+  Object.entries(ENUM_MAP).map(([label, enumValue]) => [enumValue, label])
 );
 
-// Helper function to normalize value strings to match OPTIONS exactly
+// Helper: normalize a string and match to VALUE_OPTIONS exactly
 const normalizeToOption = (value: string): string | null => {
-  const normalized = value.toLowerCase().replace(/\s+/g, '').replace(/-/g, '');
-  const match = VALUE_OPTIONS.find(opt => 
-    opt.toLowerCase().replace(/\s+/g, '').replace(/-/g, '') === normalized
+  const normalized = value.toLowerCase().replace(/\s+/g, "").replace(/-/g, "");
+  const match = VALUE_OPTIONS.find(
+    (opt) => opt.toLowerCase().replace(/\s+/g, "").replace(/-/g, "") === normalized
   );
   return match || null;
 };
@@ -110,7 +112,9 @@ export default function WhatImLookingForEdit() {
 
   const loadCurrentData = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) return;
 
       const tempKey = `temp_looking_for_${user.id}`;
@@ -120,17 +124,21 @@ export default function WhatImLookingForEdit() {
         const parsed = JSON.parse(tempData);
         setFullName(parsed.fullName || "");
         setLookingFor(parsed.lookingFor || []);
-        
-        // Normalize partner values to match OPTIONS exactly
+
+        // Normalize partner values to match VALUE_OPTIONS exactly
         const normalizedPartnerValues = (parsed.partnerValues || [])
           .map(normalizeToOption)
           .filter(Boolean) as string[];
         setPartnerValues(normalizedPartnerValues);
-        
-        console.log("Loaded from temp storage - normalized partnerValues:", normalizedPartnerValues);
+
+        console.log(
+          "Loaded from temp storage - normalized friend partnerValues:",
+          normalizedPartnerValues
+        );
         return;
       }
 
+      // Load name
       const { data: profileData, error: profileError } = await supabase
         .from("profiles")
         .select("full_name")
@@ -138,67 +146,70 @@ export default function WhatImLookingForEdit() {
         .single();
 
       if (profileError) throw profileError;
-
       setFullName(profileData?.full_name || "");
 
+      // Load friend mode from user_modes
       const { data: modesData, error: modesError } = await supabase
         .from("user_modes")
-        .select("looking_for_date, value_date")
+        .select("looking_for_friend, value_friend")
         .eq("user_id", user.id)
+        .eq("mode", "friend")
         .maybeSingle();
 
       if (modesError && modesError.code !== "PGRST116") throw modesError;
 
       if (modesData) {
-        console.log("Raw data from Supabase:", modesData);
-        
-        // Load looking_for_date
-        const lookingForEnums: string[] = Array.isArray(modesData.looking_for_date) 
-          ? modesData.looking_for_date 
+        console.log("Friend-mode data from Supabase:", modesData);
+
+        // looking_for_friend: enum[] → UI labels
+        const lookingForEnums: string[] = Array.isArray(modesData.looking_for_friend)
+          ? modesData.looking_for_friend
           : [];
         const lookingForLabels = lookingForEnums
-          .map(e => REVERSE_ENUM_MAP[e])
+          .map((e) => REVERSE_ENUM_MAP[e])
           .filter(Boolean);
-        
         setLookingFor(lookingForLabels);
 
-        // Load value_date - ALL values (up to 5)
-        const valueEnums: string[] = Array.isArray(modesData.value_date)
-          ? modesData.value_date
+        // value_friend: enum[] → UI labels using VALUE_OPTIONS + normalizeToOption
+        const valueEnums: string[] = Array.isArray(modesData.value_friend)
+          ? modesData.value_friend
           : [];
-        
-        console.log("Value enums from DB:", valueEnums);
-        
-        // Convert database format to exact OPTIONS format
+
+        console.log("Friend value enums from DB:", valueEnums);
+
         const valueLabels = valueEnums
-          .map(e => {
-            // Convert snake_case to Title Case
-            const words = e.split('_');
-            const converted = words.map(word => 
-              word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-            ).join(' ');
+          .map((e) => {
+            // snake_case → "Title Case" string before matching
+            const words = String(e)
+              .split("_")
+              .map(
+                (word) =>
+                  word.charAt(0).toUpperCase() +
+                  word.slice(1).toLowerCase()
+              );
+            const converted = words.join(" ");
             return normalizeToOption(converted);
           })
           .filter(Boolean) as string[];
-        
-        console.log("Normalized value labels:", valueLabels);
-        console.log("Value labels count:", valueLabels.length);
-        
+
+        console.log("Normalized friend value labels:", valueLabels);
+        console.log("Friend value labels count:", valueLabels.length);
+
         setPartnerValues(valueLabels);
       } else {
-        console.log("No modesData found in database");
+        console.log("No friend-mode user_modes row found");
       }
     } catch (error) {
-      console.error("Error loading data:", error);
+      console.error("Error loading friend-mode data:", error);
       Alert.alert("Error", "Failed to load current data. Please try again.");
     }
   };
 
   const toggleLookingFor = (option: string) => {
     pulse(`looking-${option}`);
-    setLookingFor(prev => {
+    setLookingFor((prev) => {
       if (prev.includes(option)) {
-        return prev.filter(x => x !== option);
+        return prev.filter((x) => x !== option);
       } else {
         if (prev.length >= 2) {
           Alert.alert("Limit reached", "You can choose up to 2 options.");
@@ -211,9 +222,9 @@ export default function WhatImLookingForEdit() {
 
   const togglePartnerValue = (option: string) => {
     pulse(`value-${option}`);
-    setPartnerValues(prev => {
+    setPartnerValues((prev) => {
       if (prev.includes(option)) {
-        return prev.filter(x => x !== option);
+        return prev.filter((x) => x !== option);
       } else {
         if (prev.length >= 5) {
           Alert.alert("Limit reached", "You can select up to 5 values.");
@@ -232,31 +243,39 @@ export default function WhatImLookingForEdit() {
 
     try {
       setLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
       if (!user) {
         Alert.alert("Error", "Session not found. Please try again.");
         setLoading(false);
         return;
       }
 
-      const normalizedLookingFor = lookingFor.map(x => ENUM_MAP[x]);
-      const normalizedValues = partnerValues.map(s =>
+      // friend enums for looking_for_friend
+      const normalizedLookingFor = lookingFor.map((x) => ENUM_MAP[x]);
+
+      // friend enums for value_friend – standard snake_case
+      const normalizedValues = partnerValues.map((s) =>
         s.toLowerCase().replace(/\s+/g, "_").replace(/-/g, "_")
       );
 
       const tempKey = `temp_looking_for_${user.id}`;
-      await AsyncStorage.setItem(tempKey, JSON.stringify({
-        lookingFor,
-        partnerValues,
-        fullName,
-        normalizedLookingFor,
-        normalizedValues
-      }));
+      await AsyncStorage.setItem(
+        tempKey,
+        JSON.stringify({
+          lookingFor,
+          partnerValues,
+          fullName,
+          normalizedLookingFor,
+          normalizedValues,
+        })
+      );
 
       router.back();
     } catch (err) {
-      console.error("Update error:", err);
+      console.error("Friend-mode update error:", err);
       Alert.alert("Error", "Failed to save changes.");
     } finally {
       setLoading(false);
@@ -266,8 +285,8 @@ export default function WhatImLookingForEdit() {
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <FloatingHeader 
-          title="What I'm Looking For" 
+        <FloatingHeader
+          title="What I'm Looking For"
           fullName={fullName}
           onSave={handleSave}
         />
@@ -278,36 +297,36 @@ export default function WhatImLookingForEdit() {
           keyboardVerticalOffset={verticalScale(20)}
         >
           <ScrollView
-  style={styles.scrollView}
-  contentContainerStyle={styles.scrollContent}
-  showsVerticalScrollIndicator={false}
-  keyboardShouldPersistTaps="handled"
-  bounces
-  scrollEnabled={true}
-  nestedScrollEnabled={true}
->
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            bounces
+            scrollEnabled
+            nestedScrollEnabled
+          >
             <View pointerEvents="none">
-  <Text style={styles.sectionTitle}>What are you hoping to find?</Text>
-  <Text style={styles.sectionSubtitle}>Choose up to 2 options</Text>
-</View>
+              <Text style={styles.sectionTitle}>What are you hoping to find?</Text>
+              <Text style={styles.sectionSubtitle}>Choose up to 2 options</Text>
+            </View>
 
             <View style={styles.optionsContainer}>
-  {LOOKING_FOR_OPTIONS.map((option) => {
-    const anim = ensureAnim(`looking-${option}`);
-    const isSelected = lookingFor.includes(option);
+              {LOOKING_FOR_OPTIONS.map((option) => {
+                const anim = ensureAnim(`looking-${option}`);
+                const isSelected = lookingFor.includes(option);
 
-    return (
-      <Pressable 
-        key={option} 
-        onPress={() => toggleLookingFor(option)}
-        delayLongPress={70}
-      >
-        <Animated.View style={{ transform: [{ scale: anim }] }}>
+                return (
+                  <Pressable
+                    key={option}
+                    onPress={() => toggleLookingFor(option)}
+                    delayLongPress={70}
+                  >
+                    <Animated.View style={{ transform: [{ scale: anim }] }}>
                       <LinearGradient
                         colors={
                           isSelected
-                            ? ["#1B44CD", "#3C6FFF"] as const
-                            : ["#FFFFFF", "#F8FAFF"] as const
+                            ? (["#1B44CD", "#3C6FFF"] as const)
+                            : (["#FFFFFF", "#F8FAFF"] as const)
                         }
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 1 }}
@@ -325,7 +344,9 @@ export default function WhatImLookingForEdit() {
                           {option}
                         </Text>
                         <Ionicons
-                          name={isSelected ? "checkmark-circle" : "ellipse-outline"}
+                          name={
+                            isSelected ? "checkmark-circle" : "ellipse-outline"
+                          }
                           size={22}
                           color={isSelected ? "#FFFFFF" : Colors.BLUE}
                         />
@@ -339,27 +360,29 @@ export default function WhatImLookingForEdit() {
             <View style={styles.divider} pointerEvents="none" />
 
             <View pointerEvents="none">
-  <Text style={styles.sectionTitle}>What do you value in a partner?</Text>
-  <Text style={styles.sectionSubtitle}>Choose up to 5 values</Text>
-</View>
+              <Text style={styles.sectionTitle}>
+                What do you value in a friend?
+              </Text>
+              <Text style={styles.sectionSubtitle}>Choose up to 5 values</Text>
+            </View>
 
             <View style={styles.chipsContainer}>
-  {VALUE_OPTIONS.map((option) => {
-    const anim = ensureAnim(`value-${option}`);
-    const isSelected = partnerValues.includes(option);
+              {VALUE_OPTIONS.map((option) => {
+                const anim = ensureAnim(`value-${option}`);
+                const isSelected = partnerValues.includes(option);
 
-    return (
-      <Pressable 
-        key={option} 
-        onPress={() => togglePartnerValue(option)}
-        delayLongPress={70}
-      >
-        <Animated.View style={{ transform: [{ scale: anim }] }}>
+                return (
+                  <Pressable
+                    key={option}
+                    onPress={() => togglePartnerValue(option)}
+                    delayLongPress={70}
+                  >
+                    <Animated.View style={{ transform: [{ scale: anim }] }}>
                       <LinearGradient
                         colors={
                           isSelected
-                            ? ["#1B44CD", "#3C6FFF"] as const
-                            : ["#FFFFFF", "#F8FAFF"] as const
+                            ? (["#1B44CD", "#3C6FFF"] as const)
+                            : (["#FFFFFF", "#F8FAFF"] as const)
                         }
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 1 }}
@@ -384,16 +407,16 @@ export default function WhatImLookingForEdit() {
             </View>
 
             <View style={styles.infoNote} pointerEvents="none">
-  <Ionicons 
-    name="information-circle-outline" 
-    size={18} 
-    color="rgba(10,14,26,0.5)" 
-    style={{ marginRight: scale(8) }}
-  />
-  <Text style={styles.infoNoteText}>
-    This information helps us find compatible matches for you.
-  </Text>
-</View>
+              <Ionicons
+                name="information-circle-outline"
+                size={18}
+                color="rgba(10,14,26,0.5)"
+                style={{ marginRight: scale(8) }}
+              />
+              <Text style={styles.infoNoteText}>
+                These details help us show your friendship vibe more clearly.
+              </Text>
+            </View>
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>

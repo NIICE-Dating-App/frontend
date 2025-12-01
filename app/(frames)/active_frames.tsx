@@ -40,6 +40,7 @@ interface ActiveFramesModalProps {
   frames: Frame[];
   onDeleted?: (id: string) => void;
   onEdit?: (frame: Frame) => void;
+  isOwnProfile?: boolean; // NEW: hide edit/delete when viewing someone else's frames
 }
 
 // helpers for Supabase avatar
@@ -79,6 +80,7 @@ const ActiveFramesModal: React.FC<ActiveFramesModalProps> = ({
   frames,
   onDeleted,
   onEdit,
+  isOwnProfile = true, // Default to true for backward compatibility
 }) => {
   const [frameList, setFrameList] = useState<Frame[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -470,7 +472,7 @@ const ActiveFramesModal: React.FC<ActiveFramesModalProps> = ({
                 )}
               </View>
               <View style={styles.headerTextColumn}>
-                <Text style={styles.headerName}>You</Text>
+                <Text style={styles.headerName}>{isOwnProfile ? "You" : "Their Frame"}</Text>
                 <Text style={styles.headerTime}>
                   {getTimeAgo(currentFrame.created_at)}
                 </Text>
@@ -560,41 +562,43 @@ const ActiveFramesModal: React.FC<ActiveFramesModalProps> = ({
             </Pressable>
           </View>
 
-          {/* bottom-right 3-dots menu */}
-          <View style={styles.bottomMenu}>
-            {menuVisible && (
-              <View style={styles.menuDropdown}>
-                <TouchableOpacity
-                  style={styles.menuItem}
-                  activeOpacity={0.85}
-                  onPress={handleEditFrame}
-                >
-                  <Text style={styles.menuItemText}>Edit frame</Text>
-                </TouchableOpacity>
-                <View style={styles.menuDivider} />
-                <TouchableOpacity
-                  style={styles.menuItem}
-                  activeOpacity={0.85}
-                  onPress={handleDeleteFrame}
-                >
-                  <Text style={[styles.menuItemText, styles.menuDelete]}>
-                    Delete frame
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            )}
+          {/* bottom-right 3-dots menu - ONLY show for own profile */}
+          {isOwnProfile && (
+            <View style={styles.bottomMenu}>
+              {menuVisible && (
+                <View style={styles.menuDropdown}>
+                  <TouchableOpacity
+                    style={styles.menuItem}
+                    activeOpacity={0.85}
+                    onPress={handleEditFrame}
+                  >
+                    <Text style={styles.menuItemText}>Edit frame</Text>
+                  </TouchableOpacity>
+                  <View style={styles.menuDivider} />
+                  <TouchableOpacity
+                    style={styles.menuItem}
+                    activeOpacity={0.85}
+                    onPress={handleDeleteFrame}
+                  >
+                    <Text style={[styles.menuItemText, styles.menuDelete]}>
+                      Delete frame
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
 
-            <TouchableOpacity
-              activeOpacity={0.9}
-              onPress={() => {
-                setMenuVisible((v) => !v);
-                handlePause();
-              }}
-              style={styles.menuButton}
-            >
-              <Ionicons name="ellipsis-horizontal" size={18} color="#FFFFFF" />
-            </TouchableOpacity>
-          </View>
+              <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={() => {
+                  setMenuVisible((v) => !v);
+                  handlePause();
+                }}
+                style={styles.menuButton}
+              >
+                <Ionicons name="ellipsis-horizontal" size={18} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+          )}
         </Animated.View>
       </SafeAreaView>
     </Modal>

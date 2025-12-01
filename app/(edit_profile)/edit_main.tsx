@@ -29,7 +29,7 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View
+  View,
 } from "react-native";
 import DraggableFlatList, { RenderItemParams } from "react-native-draggable-flatlist";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -54,58 +54,59 @@ const EXTRA_GAP = scale(12);
 const H_PAD = scale(20);
 const EXTRA_SLOT_WIDTH = (SCREEN_WIDTH - H_PAD * 2 - EXTRA_GAP * 2) / 3;
 
-// Looking for combination display names
-// Add this helper function right after the EXTRA_SLOT_WIDTH definition
+// Friend-mode "What I'm looking for" combination display names
 const getLookingForDisplayText = (items: string[]): string => {
   if (items.length !== 2) return items[0] || "";
-  
+
   // Create normalized key (alphabetically sorted, trimmed)
-  const sorted = [...items].map(s => s.trim()).sort();
+  const sorted = [...items].map((s) => s.trim()).sort();
   const key = sorted.join("|||"); // Use unique separator
-  
-  // Define combinations with the same key format
+
+  // Define combinations with the same key format (friendship mode)
+    // Define combinations with the same key format
   const combinations: Record<string, string> = {
-    // Marriage combinations (alphabetically first)
-    "Figuring it out|||Marriage": "Marriage, figuring it out",
-    "Fun, casual dates|||Marriage": "Marriage, open to casual",
-    "Intimacy|||Marriage": "Marriage, open to intimacy",
-    "Life partner|||Marriage": "Marriage or life partner",
-    "Long-term relationship|||Marriage": "Marriage or long-term",
-    "Marriage|||Short-term relationship": "Marriage, open to short-term",
-    
-    // Life partner combinations
-    "Figuring it out|||Life partner": "Life partner, figuring it out",
-    "Fun, casual dates|||Life partner": "Life partner, open to casual",
-    "Intimacy|||Life partner": "Life partner, open to intimacy",
-    "Life partner|||Long-term relationship": "Life partner or long-term",
-    "Life partner|||Short-term relationship": "Life partner, open to short-term",
-    
-    // Long-term relationship combinations
-    "Figuring it out|||Long-term relationship": "Long-term, figuring it out",
-    "Fun, casual dates|||Long-term relationship": "Long-term, open to casual",
-    "Intimacy|||Long-term relationship": "Long-term, open to intimacy",
-    "Long-term relationship|||Short-term relationship": "Long-term, open to short-term",
-    
-    // Short-term relationship combinations
-    "Figuring it out|||Short-term relationship": "Short-term, figuring it out",
-    "Fun, casual dates|||Short-term relationship": "Short-term or casual dates",
-    "Intimacy|||Short-term relationship": "Short-term, open to intimacy",
-    
-    // Fun, casual dates combinations
-    "Figuring it out|||Fun, casual dates": "Casual dates, figuring it out",
-    "Fun, casual dates|||Intimacy": "Casual dates, open to intimacy",
-    
-    // Intimacy combinations
-    "Figuring it out|||Intimacy": "Intimacy, figuring it out",
-  };
-  
-  return combinations[key] || items.join(" · ");
+  // Activity / hobby partners combos
+  "Activity/hobby partners|||Casual hangouts": "Hobby partners & casual hangouts",
+  "Activity/hobby partners|||Close friendships": "Close friends for hobbies",
+  "Activity/hobby partners|||New friends nearby": "New local hobby friends",
+  "Activity/hobby partners|||Professional networking": "Networking through shared hobbies",
+  "Activity/hobby partners|||Travel companions": "Travel & hobby buddies",
+  "Activity/hobby partners|||Workout/fitness buddy": "Active hobby & workout buddies",
+
+  // Casual hangouts combos
+  "Casual hangouts|||Close friendships": "Close friends & casual hangouts",
+  "Casual hangouts|||New friends nearby": "New friends for casual hangouts",
+  "Casual hangouts|||Professional networking": "Networking & hangouts",
+  "Casual hangouts|||Travel companions": "Travel & casual hangouts",
+  "Casual hangouts|||Workout/fitness buddy": "Workout & casual hangouts",
+
+  // Close friendships combos
+  "Close friendships|||New friends nearby": "Close local friends",
+  "Close friendships|||Professional networking": "Close friends & networking",
+  "Close friendships|||Travel companions": "Close friends to travel with",
+  "Close friendships|||Workout/fitness buddy": "Close friends & workout buddies",
+
+  // New friends nearby combos
+  "New friends nearby|||Professional networking": "Local friends & networking",
+  "New friends nearby|||Travel companions": "Local travel buddies",
+  "New friends nearby|||Workout/fitness buddy": "Local workout friends",
+
+  // Travel / networking / workout combos
+  "Professional networking|||Travel companions": "Network & travel buddies",
+  "Professional networking|||Workout/fitness buddy": "Workout & networking",
+  "Travel companions|||Workout/fitness buddy": "Active travel & workout buddies",
 };
 
-type PhotoRow = { 
-  id: string; 
-  photo_url: string | null; 
-  is_main: boolean | null; 
+
+  return combinations[key] || items.join(" · ");
+
+
+};
+
+type PhotoRow = {
+  id: string;
+  photo_url: string | null;
+  is_main: boolean | null;
   created_at?: string | null;
 };
 
@@ -136,9 +137,12 @@ type LifestyleRow = {
 type ModesRow = { 
   looking_for_date?: string[] | string | null; 
   value_date?: string[] | string | null;
+  looking_for_friend?: string[] | string | null;
+  value_friend?: string[] | string | null;
 };
 
-type HobbyRow = { 
+
+type HobbyRow = {
   hobbies_master?: { label?: string | null } | null;
 };
 
@@ -158,7 +162,12 @@ export default function EditProfileScreen() {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const pan = useRef(new Animated.ValueXY()).current;
   const mainPhotoRef = useRef<View>(null);
-  const [mainPhotoLayout, setMainPhotoLayout] = useState({ x: 0, y: 0, width: 0, height: 0 });
+  const [mainPhotoLayout, setMainPhotoLayout] = useState({
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+  });
   const [fullName, setFullName] = useState("");
   const [heightCm, setHeightCm] = useState<number | null>(null);
   const [sexualOrientation, setSexualOrientation] = useState<string | null>(null);
@@ -181,24 +190,26 @@ export default function EditProfileScreen() {
     communication: string | null;
     love_language: string | null;
     pets: string | null;
-  }>({ 
-    drinking: null, 
-    smoking: null, 
-    workout: null, 
-    religion: null, 
-    politics: null, 
-    kids: null, 
-    zodiac: null, 
-    communication: null, 
-    love_language: null, 
-    pets: null 
+  }>({
+    drinking: null,
+    smoking: null,
+    workout: null,
+    religion: null,
+    politics: null,
+    kids: null,
+    zodiac: null,
+    communication: null,
+    love_language: null,
+    pets: null,
   });
 
-  const [slots, setSlots] = useState<SlotsState>({ 
-    main: {}, 
-    extra: [{}, {}, {}] as [Slot, Slot, Slot] 
+  const [slots, setSlots] = useState<SlotsState>({
+    main: {},
+    extra: [{}, {}, {}] as [Slot, Slot, Slot],
   });
-  const [uploadingSlot, setUploadingSlot] = useState<{ kind: "main" | "extra"; index?: number } | null>(null);
+  const [uploadingSlot, setUploadingSlot] = useState<{ kind: "main" | "extra"; index?: number } | null>(
+    null
+  );
 
   const [heightModalVisible, setHeightModalVisible] = useState(false);
   const [sheetVisible, setSheetVisible] = useState(false);
@@ -213,7 +224,12 @@ export default function EditProfileScreen() {
   const reloadPhotos = async (userId: string) => {
     try {
       const [mainRes, othersRes] = await Promise.all([
-        supabase.from("user_photos").select("id, photo_url, is_main").eq("user_id", userId).eq("is_main", true).maybeSingle(),
+        supabase
+          .from("user_photos")
+          .select("id, photo_url, is_main")
+          .eq("user_id", userId)
+          .eq("is_main", true)
+          .maybeSingle(),
         supabase
           .from("user_photos")
           .select("id, photo_url, is_main, created_at")
@@ -267,42 +283,43 @@ export default function EditProfileScreen() {
       if (!userId) return;
 
       const [profRes, lifeRes, modesRes, hobbiesRes] = await Promise.all([
-        supabase
-          .from("profiles")
-          .select("full_name, height_cm, sexual_orientation, education, institution, interested_in, prompt_answers")
-          .eq("id", userId)
-          .single(),
-        supabase
-          .from("lifestyle")
-          .select("drinking, smoking, workout, religion, politics, kids, communities, zodiac, communication, love_language, pets")
-          .eq("user_id", userId)
-          .maybeSingle(),
-        supabase
-          .from("user_modes")
-          .select("looking_for_date, value_date")
-          .eq("user_id", userId)
-          .maybeSingle(),
-        supabase
-          .from("user_hobbies")
-          .select("hobbies_master(label)")
-          .eq("user_id", userId),
-      ]);
+  supabase
+    .from("profiles")
+    .select("full_name, height_cm, sexual_orientation, education, institution, interested_in, prompt_answers")
+    .eq("id", userId)
+    .single(),
+  supabase
+    .from("lifestyle")
+    .select("drinking, smoking, workout, religion, politics, kids, communities, zodiac, communication, love_language, pets")
+    .eq("user_id", userId)
+    .maybeSingle(),
+  supabase
+    .from("user_modes")
+    .select("looking_for_friend, value_friend")
+    .eq("user_id", userId)
+    .eq("mode", "friend")
+    .maybeSingle(),
+  supabase
+    .from("user_hobbies")
+    .select("hobbies_master(label)")
+    .eq("user_id", userId),
+]);
 
       const p = (profRes?.data ?? {}) as ProfileRow;
-setFullName(toTitleCase((p.full_name ?? "").trim()));
+      setFullName(toTitleCase((p.full_name ?? "").trim()));
 
-// Check temp storage for background
-const tempBackgroundKey = `temp_background_${userId}`;
-const tempBackgroundData = await AsyncStorage.getItem(tempBackgroundKey);
+      // Check temp storage for background
+      const tempBackgroundKey = `temp_background_${userId}`;
+      const tempBackgroundData = await AsyncStorage.getItem(tempBackgroundKey);
 
-if (tempBackgroundData) {
-  const parsed = JSON.parse(tempBackgroundData);
-  setEducation(parsed.education || null);
-  setInstitution(parsed.institution || null);
-} else {
-  setEducation(p.education ?? null);
-  setInstitution(p.institution ?? null);
-}
+      if (tempBackgroundData) {
+        const parsed = JSON.parse(tempBackgroundData);
+        setEducation(parsed.education || null);
+        setInstitution(parsed.institution || null);
+      } else {
+        setEducation(p.education ?? null);
+        setInstitution(p.institution ?? null);
+      }
 
       // Height temp storage check
       const tempHeightKey = `temp_height_${userId}`;
@@ -358,57 +375,65 @@ if (tempBackgroundData) {
 
       // Lifestyle temp storage checks
       const tempCommunicationKey = `temp_communication_${userId}`;
-const tempCommunicationData = await AsyncStorage.getItem(tempCommunicationKey);
+      const tempCommunicationData = await AsyncStorage.getItem(tempCommunicationKey);
 
-const tempLoveLanguageKey = `temp_love_language_${userId}`;
-const tempLoveLanguageData = await AsyncStorage.getItem(tempLoveLanguageKey);
+      const tempLoveLanguageKey = `temp_love_language_${userId}`;
+      const tempLoveLanguageData = await AsyncStorage.getItem(tempLoveLanguageKey);
 
-const tempZodiacKey = `temp_zodiac_${userId}`;
-const tempZodiacData = await AsyncStorage.getItem(tempZodiacKey);
+      const tempZodiacKey = `temp_zodiac_${userId}`;
+      const tempZodiacData = await AsyncStorage.getItem(tempZodiacKey);
 
-const tempPetsKey = `temp_pets_${userId}`;
-const tempPetsData = await AsyncStorage.getItem(tempPetsKey);
+      const tempPetsKey = `temp_pets_${userId}`;
+      const tempPetsData = await AsyncStorage.getItem(tempPetsKey);
 
-const tempLifestyleKey = `temp_lifestyle_${userId}`;
-const tempLifestyleData = await AsyncStorage.getItem(tempLifestyleKey);
+      const tempLifestyleKey = `temp_lifestyle_${userId}`;
+      const tempLifestyleData = await AsyncStorage.getItem(tempLifestyleKey);
 
-const l = (lifeRes?.data ?? {}) as LifestyleRow;
+      const l = (lifeRes?.data ?? {}) as LifestyleRow;
 
-if (tempLifestyleData) {
-  const parsed = JSON.parse(tempLifestyleData);
-  const lifestyleSelected = parsed.selected || {};
-  
-  setLifestyle({
-    drinking: lifestyleSelected.drinking ?? (l.drinking ?? null),
-    smoking: lifestyleSelected.smoking ?? (l.smoking ?? null),
-    workout: lifestyleSelected.workout ?? (l.workout ?? null),
-    religion: lifestyleSelected.religion ?? (l.religion ?? null),
-    politics: lifestyleSelected.politics ?? (l.politics ?? null),
-    kids: lifestyleSelected.kids ?? (l.kids ?? null),
-    zodiac: tempZodiacData ? JSON.parse(tempZodiacData).selected : (l.zodiac ?? null),
-    communication: tempCommunicationData ? JSON.parse(tempCommunicationData).selected : (l.communication ?? null),
-    love_language: tempLoveLanguageData ? JSON.parse(tempLoveLanguageData).selected : (l.love_language ?? null),
-    pets: tempPetsData ? JSON.parse(tempPetsData).selected : (l.pets ?? null),
-  });
-} else {
-  setLifestyle({
-    drinking: l.drinking ?? null,
-    smoking: l.smoking ?? null,
-    workout: l.workout ?? null,
-    religion: l.religion ?? null,
-    politics: l.politics ?? null,
-    kids: l.kids ?? null,
-    zodiac: tempZodiacData ? JSON.parse(tempZodiacData).selected : (l.zodiac ?? null),
-    communication: tempCommunicationData ? JSON.parse(tempCommunicationData).selected : (l.communication ?? null),
-    love_language: tempLoveLanguageData ? JSON.parse(tempLoveLanguageData).selected : (l.love_language ?? null),
-    pets: tempPetsData ? JSON.parse(tempPetsData).selected : (l.pets ?? null),
-  });
-}
+      if (tempLifestyleData) {
+        const parsed = JSON.parse(tempLifestyleData);
+        const lifestyleSelected = parsed.selected || {};
 
-      
+        setLifestyle({
+          drinking: lifestyleSelected.drinking ?? (l.drinking ?? null),
+          smoking: lifestyleSelected.smoking ?? (l.smoking ?? null),
+          workout: lifestyleSelected.workout ?? (l.workout ?? null),
+          religion: lifestyleSelected.religion ?? (l.religion ?? null),
+          politics: lifestyleSelected.politics ?? (l.politics ?? null),
+          kids: lifestyleSelected.kids ?? (l.kids ?? null),
+          zodiac: tempZodiacData ? JSON.parse(tempZodiacData).selected : l.zodiac ?? null,
+          communication: tempCommunicationData
+            ? JSON.parse(tempCommunicationData).selected
+            : l.communication ?? null,
+          love_language: tempLoveLanguageData
+            ? JSON.parse(tempLoveLanguageData).selected
+            : l.love_language ?? null,
+          pets: tempPetsData ? JSON.parse(tempPetsData).selected : l.pets ?? null,
+        });
+      } else {
+        setLifestyle({
+          drinking: l.drinking ?? null,
+          smoking: l.smoking ?? null,
+          workout: l.workout ?? null,
+          religion: l.religion ?? null,
+          politics: l.politics ?? null,
+          kids: l.kids ?? null,
+          zodiac: tempZodiacData ? JSON.parse(tempZodiacData).selected : l.zodiac ?? null,
+          communication: tempCommunicationData
+            ? JSON.parse(tempCommunicationData).selected
+            : l.communication ?? null,
+          love_language: tempLoveLanguageData
+            ? JSON.parse(tempLoveLanguageData).selected
+            : l.love_language ?? null,
+          pets: tempPetsData ? JSON.parse(tempPetsData).selected : l.pets ?? null,
+        });
+      }
 
-      // What I'm Looking For temp storage check
-      const tempLookingForKey = `temp_looking_for_${userId}`;
+      // What I'm Looking For (friend mode) temp storage check
+      // What I'm Looking For (friend mode) temp storage check
+// What I'm Looking For (friend mode) temp storage check
+const tempLookingForKey = `temp_looking_for_${userId}`;
 const tempLookingForData = await AsyncStorage.getItem(tempLookingForKey);
 
 const m = (modesRes?.data ?? {}) as ModesRow;
@@ -418,88 +443,91 @@ if (tempLookingForData) {
   setLookingFor(parsed.lookingFor || []);
   setPartnerValues(parsed.partnerValues || []);
 } else {
-  // Map for enum to display format
-  const LOOKING_FOR_DISPLAY: Record<string, string> = {
-    "marriage": "Marriage",
-    "life_partner": "Life partner",
-    "long_term_relationship": "Long-term relationship",
-    "short_term_relationship": "Short-term relationship",
-    "casual_dates": "Fun, casual dates",
-    "intimacy": "Intimacy",
-    "new_friends": "New friends",
-    "figuring_it_out": "Figuring it out",
+  // Friend-mode enum → display labels
+  const LOOKING_FOR_FRIEND_DISPLAY: Record<string, string> = {
+    new_friends_nearby: "New friends nearby",
+    workout_fitness_buddy: "Workout/fitness buddy",
+    travel_companions: "Travel companions",
+    activity_hobby_partners: "Activity/hobby partners",
+    casual_hangouts: "Casual hangouts",
+    professional_networking: "Professional networking",
+    close_friendships: "Close friendships",
   };
-  
-  // Load looking_for_date with exact display format
-  const lookingForEnums: string[] = Array.isArray(m.looking_for_date) 
-    ? m.looking_for_date 
+
+  // Load looking_for_friend with exact display format
+  const lookingForEnums: string[] = Array.isArray(m.looking_for_friend)
+    ? m.looking_for_friend
     : [];
   const lookingForDisplay = lookingForEnums
-    .map(e => LOOKING_FOR_DISPLAY[e])
+    .map((e) => LOOKING_FOR_FRIEND_DISPLAY[e])
     .filter(Boolean);
   setLookingFor(lookingForDisplay);
-  
-  // Load value_date using parseList (it's fine for values)
-  setPartnerValues(parseList(m.value_date));
+
+  // Load value_friend with generic list parsing (e.g. "loyalty" → "Loyalty")
+  setPartnerValues(parseList(m.value_friend));
 }
+
+
 
       // Check temp storage for interests & hobbies
-// Check temp storage for interests & hobbies
-// Check temp storage for interests & hobbies
-const tempInterestsKey = `temp_interests_hobbies_${userId}`;
-const tempInterestsData = await AsyncStorage.getItem(tempInterestsKey);
+      const tempInterestsKey = `temp_interests_hobbies_${userId}`;
+      const tempInterestsData = await AsyncStorage.getItem(tempInterestsKey);
 
-const COMMUNITY_OPTIONS = [
-  "🌿 Environmentalism",
-  "✊ Social justice",
-  "🏳️‍🌈 LGBTQIA+",
-  "♀️ Feminism",
-  "🧠 Mental health awareness",
-  "✊🏾 Black community",
-  "🧧 Asian community",
-  "🪅 Latino/Hispanic community",
-  "✡️ Jewish community",
-  "☪️ Muslim community",
-  "♿ Disability awareness",
-  "💖 Body positivity",
-  "🐾 Animal rights",
-  "🌍 Climate action",
-];
+      const COMMUNITY_OPTIONS = [
+        "🌿 Environmentalism",
+        "✊ Social justice",
+        "🏳️‍🌈 LGBTQIA+",
+        "♀️ Feminism",
+        "🧠 Mental health awareness",
+        "✊🏾 Black community",
+        "🧧 Asian community",
+        "🪅 Latino/Hispanic community",
+        "✡️ Jewish community",
+        "☪️ Muslim community",
+        "♿ Disability awareness",
+        "💖 Body positivity",
+        "🐾 Animal rights",
+        "🌍 Climate action",
+      ];
 
-const stripEmoji = (s: string) => s.replace(/^[^\w\s]+\s*/, '').trim();
-const normalizeLabel = (s: string) => stripEmoji(s).toLowerCase().trim();
+      const stripEmoji = (s: string) => s.replace(/^[^\w\s]+\s*/, "").trim();
+      const normalizeLabel = (s: string) => stripEmoji(s).toLowerCase().trim();
 
-if (tempInterestsData) {
-  const parsed = JSON.parse(tempInterestsData);
-  
-  // Keep emojis for display (already in correct format from interests_and_hobbies_edit)
-  const hobbyLabels = parsed.hobbies || [];
-  setHobbies(hobbyLabels);
-  
-  const communityLabels = parsed.communities || [];
-  setCommunities(communityLabels);
-} else {
-  // Load hobbies from database
-  const hs = uniq(((hobbiesRes?.data as HobbyRow[] | null) ?? []).map((x) => x?.hobbies_master?.label).filter(Boolean) as string[]);
-  setHobbies(hs.map(humanize));
-  
-  // Load communities from lifestyle and match with emoji versions
-  const communityList = Array.isArray(l.communities) ? l.communities : [];
-  const matchedCommunities: string[] = [];
-  
-  communityList.forEach((comm: string) => {
-    const normalized = normalizeLabel(comm);
-    COMMUNITY_OPTIONS.forEach(commWithEmoji => {
-      if (normalizeLabel(commWithEmoji) === normalized) {
-        matchedCommunities.push(commWithEmoji);
+      if (tempInterestsData) {
+        const parsed = JSON.parse(tempInterestsData);
+
+        // Keep emojis for display (already in correct format from interests_and_hobbies_edit)
+        const hobbyLabels = parsed.hobbies || [];
+        setHobbies(hobbyLabels);
+
+        const communityLabels = parsed.communities || [];
+        setCommunities(communityLabels);
+      } else {
+        // Load hobbies from database
+        const hs = uniq(
+          ((hobbiesRes?.data as HobbyRow[] | null) ?? [])
+            .map((x) => x?.hobbies_master?.label)
+            .filter(Boolean) as string[]
+        );
+        setHobbies(hs.map(humanize));
+
+        // Load communities from lifestyle and match with emoji versions
+        const communityList = Array.isArray(l.communities) ? l.communities : [];
+        const matchedCommunities: string[] = [];
+
+        communityList.forEach((comm: string) => {
+          const normalized = normalizeLabel(comm);
+          COMMUNITY_OPTIONS.forEach((commWithEmoji) => {
+            if (normalizeLabel(commWithEmoji) === normalized) {
+              matchedCommunities.push(commWithEmoji);
+            }
+          });
+        });
+
+        setCommunities(matchedCommunities);
       }
-    });
-  });
-  
-  setCommunities(matchedCommunities);
-}
 
-await reloadPhotos(userId);
+      await reloadPhotos(userId);
     } catch (e) {
       console.log("Edit screen load error:", e);
     }
@@ -532,7 +560,7 @@ await reloadPhotos(userId);
       if (tempPromptsData) {
         const parsed = JSON.parse(tempPromptsData);
         const selected = parsed.selected || [];
-        
+
         const now = new Date().toISOString();
         const payloadArray = selected.map((s: any) => ({
           slot: s.slot,
@@ -548,7 +576,7 @@ await reloadPhotos(userId);
 
         updates.prompt_answers = payloadArray;
         updates.prompt = promptValue;
-        
+
         await AsyncStorage.removeItem(tempPromptsKey);
       }
 
@@ -583,178 +611,188 @@ await reloadPhotos(userId);
 
       // Lifestyle updates
       const tempCommunicationKey = `temp_communication_${userId}`;
-const tempCommunicationData = await AsyncStorage.getItem(tempCommunicationKey);
+      const tempCommunicationData = await AsyncStorage.getItem(tempCommunicationKey);
 
-const tempLoveLanguageKey = `temp_love_language_${userId}`;
-const tempLoveLanguageData = await AsyncStorage.getItem(tempLoveLanguageKey);
+      const tempLoveLanguageKey = `temp_love_language_${userId}`;
+      const tempLoveLanguageData = await AsyncStorage.getItem(tempLoveLanguageKey);
 
-const tempZodiacKey = `temp_zodiac_${userId}`;
-const tempZodiacData = await AsyncStorage.getItem(tempZodiacKey);
+      const tempZodiacKey = `temp_zodiac_${userId}`;
+      const tempZodiacData = await AsyncStorage.getItem(tempZodiacKey);
 
-const tempPetsKey = `temp_pets_${userId}`;
-const tempPetsData = await AsyncStorage.getItem(tempPetsKey);
+      const tempPetsKey = `temp_pets_${userId}`;
+      const tempPetsData = await AsyncStorage.getItem(tempPetsKey);
 
-const tempLifestyleKey = `temp_lifestyle_${userId}`;
-const tempLifestyleData = await AsyncStorage.getItem(tempLifestyleKey);
+      const tempLifestyleKey = `temp_lifestyle_${userId}`;
+      const tempLifestyleData = await AsyncStorage.getItem(tempLifestyleKey);
 
-if (tempCommunicationData || tempLoveLanguageData || tempZodiacData || tempPetsData || tempLifestyleData) {
-  const lifestyleUpdates: any = { user_id: userId };
-  
-  if (tempCommunicationData) {
-    const parsed = JSON.parse(tempCommunicationData);
-    lifestyleUpdates.communication = parsed.selected;
-  }
-  
-  if (tempLoveLanguageData) {
-    const parsed = JSON.parse(tempLoveLanguageData);
-    lifestyleUpdates.love_language = parsed.selected;
-  }
-  
-  if (tempZodiacData) {
-    const parsed = JSON.parse(tempZodiacData);
-    lifestyleUpdates.zodiac = parsed.selected;
-  }
-  
-  if (tempPetsData) {
-    const parsed = JSON.parse(tempPetsData);
-    lifestyleUpdates.pets = parsed.selected;
-  }
-  
-  if (tempLifestyleData) {
-    const parsed = JSON.parse(tempLifestyleData);
-    const lifestyleSelected = parsed.selected || {};
-    if (lifestyleSelected.drinking) lifestyleUpdates.drinking = lifestyleSelected.drinking;
-    if (lifestyleSelected.smoking) lifestyleUpdates.smoking = lifestyleSelected.smoking;
-    if (lifestyleSelected.workout) lifestyleUpdates.workout = lifestyleSelected.workout;
-    if (lifestyleSelected.religion) lifestyleUpdates.religion = lifestyleSelected.religion;
-    if (lifestyleSelected.politics) lifestyleUpdates.politics = lifestyleSelected.politics;
-    if (lifestyleSelected.kids) lifestyleUpdates.kids = lifestyleSelected.kids;
-  }
-  
-  const { error: lifestyleError } = await supabase
-    .from("lifestyle")
-    .upsert(lifestyleUpdates, { 
-      onConflict: "user_id" 
-    });
+      if (
+        tempCommunicationData ||
+        tempLoveLanguageData ||
+        tempZodiacData ||
+        tempPetsData ||
+        tempLifestyleData
+      ) {
+        const lifestyleUpdates: any = { user_id: userId };
 
-  if (lifestyleError) throw lifestyleError;
-  
-  if (tempCommunicationData) await AsyncStorage.removeItem(tempCommunicationKey);
-  if (tempLoveLanguageData) await AsyncStorage.removeItem(tempLoveLanguageKey);
-  if (tempZodiacData) await AsyncStorage.removeItem(tempZodiacKey);
-  if (tempPetsData) await AsyncStorage.removeItem(tempPetsKey);
-  if (tempLifestyleData) await AsyncStorage.removeItem(tempLifestyleKey);
-}
+        if (tempCommunicationData) {
+          const parsed = JSON.parse(tempCommunicationData);
+          lifestyleUpdates.communication = parsed.selected;
+        }
 
-      // What I'm Looking For
-      const tempLookingForKey = `temp_looking_for_${userId}`;
-      const tempLookingForData = await AsyncStorage.getItem(tempLookingForKey);
-      if (tempLookingForData) {
-        const parsed = JSON.parse(tempLookingForData);
-        
-        const { error: modesError } = await supabase
-          .from("user_modes")
-          .upsert({ 
-            user_id: userId,
-            mode: "dating",
-            looking_for_date: parsed.normalizedLookingFor,
-            value_date: parsed.normalizedValues,
-            updated_at: new Date(),
-          }, { 
-            onConflict: "user_id,mode" 
+        if (tempLoveLanguageData) {
+          const parsed = JSON.parse(tempLoveLanguageData);
+          lifestyleUpdates.love_language = parsed.selected;
+        }
+
+        if (tempZodiacData) {
+          const parsed = JSON.parse(tempZodiacData);
+          lifestyleUpdates.zodiac = parsed.selected;
+        }
+
+        if (tempPetsData) {
+          const parsed = JSON.parse(tempPetsData);
+          lifestyleUpdates.pets = parsed.selected;
+        }
+
+        if (tempLifestyleData) {
+          const parsed = JSON.parse(tempLifestyleData);
+          const lifestyleSelected = parsed.selected || {};
+          if (lifestyleSelected.drinking) lifestyleUpdates.drinking = lifestyleSelected.drinking;
+          if (lifestyleSelected.smoking) lifestyleUpdates.smoking = lifestyleSelected.smoking;
+          if (lifestyleSelected.workout) lifestyleUpdates.workout = lifestyleSelected.workout;
+          if (lifestyleSelected.religion) lifestyleUpdates.religion = lifestyleSelected.religion;
+          if (lifestyleSelected.politics) lifestyleUpdates.politics = lifestyleSelected.politics;
+          if (lifestyleSelected.kids) lifestyleUpdates.kids = lifestyleSelected.kids;
+        }
+
+        const { error: lifestyleError } = await supabase
+          .from("lifestyle")
+          .upsert(lifestyleUpdates, {
+            onConflict: "user_id",
           });
 
-        if (modesError) throw modesError;
-        await AsyncStorage.removeItem(tempLookingForKey);
+        if (lifestyleError) throw lifestyleError;
+
+        if (tempCommunicationData) await AsyncStorage.removeItem(tempCommunicationKey);
+        if (tempLoveLanguageData) await AsyncStorage.removeItem(tempLoveLanguageKey);
+        if (tempZodiacData) await AsyncStorage.removeItem(tempZodiacKey);
+        if (tempPetsData) await AsyncStorage.removeItem(tempPetsKey);
+        if (tempLifestyleData) await AsyncStorage.removeItem(tempLifestyleKey);
       }
 
-      // Update profiles table if there are any updates
-      // Interests & Hobbies
-const tempInterestsKey = `temp_interests_hobbies_${userId}`;
-const tempInterestsData = await AsyncStorage.getItem(tempInterestsKey);
-if (tempInterestsData) {
-  const parsed = JSON.parse(tempInterestsData);
-  
-  // Save hobbies
-  if (parsed.hobbies && parsed.hobbies.length > 0) {
-    const stripEmoji = (s: string) => s.replace(/^[^\w\s]+\s*/, '').trim();
-    const normalizeHobby = (s: string) => stripEmoji(s).toLowerCase().trim();
-    
-    const cleaned: string[] = Array.from(new Set(parsed.hobbies.map(normalizeHobby)));
+      // What I'm Looking For (friend mode)
+      // What I'm Looking For (friend mode)
+const tempLookingForKey = `temp_looking_for_${userId}`;
+const tempLookingForData = await AsyncStorage.getItem(tempLookingForKey);
+if (tempLookingForData) {
+  const parsed = JSON.parse(tempLookingForData);
 
-// Fetch the master IDs
-const { data: masters, error: selectError } = await supabase
-  .from("hobbies_master")
-  .select("id,label");
-if (selectError) throw selectError;
-
-// Build a label->id map
-const map: Record<string, number> = {};
-(masters ?? []).forEach((m: any) => {
-  const key = normalizeHobby(m.label);
-  if (!(key in map)) map[key] = m.id;
-});
-
-const found = cleaned
-  .map((c) => ({ c, id: map[c] }))
-  .filter((x) => !!x.id) as { c: string; id: number }[];
-    
-    // Clear old entries
-    const { error: delErr } = await supabase
-      .from("user_hobbies")
-      .delete()
-      .eq("user_id", userId);
-    if (delErr) throw delErr;
-    
-    // Insert new ones
-    if (found.length > 0) {
-      const rows = found.map((f) => ({ user_id: userId, hobby_id: f.id }));
-      const { error: insErr } = await supabase.from("user_hobbies").insert(rows);
-      if (insErr) throw insErr;
-    }
-  }
-  
-  // Save communities to lifestyle table
-  if (parsed.communities) {
-    const stripEmoji = (s: string) => s.replace(/^[^\w\s]+\s*/, '').trim();
-    const communityLabels = parsed.communities.map(stripEmoji);
-    
-    const { error: commError } = await supabase
-      .from("lifestyle")
-      .upsert({ 
+  const { error: modesError } = await supabase
+    .from("user_modes")
+    .upsert(
+      {
         user_id: userId,
-        communities: communityLabels.length > 0 ? communityLabels : null
-      }, { 
-        onConflict: "user_id" 
-      });
-    
-    if (commError) throw commError;
-  }
-  
-  await AsyncStorage.removeItem(tempInterestsKey);
+        mode: "friend",
+        looking_for_friend: parsed.normalizedLookingFor,
+        value_friend: parsed.normalizedValues,
+        updated_at: new Date(),
+      },
+      {
+        onConflict: "user_id,mode",
+      }
+    );
+
+  if (modesError) throw modesError;
+  await AsyncStorage.removeItem(tempLookingForKey);
 }
 
-// Background (Education & Institution)
-const tempBackgroundKey = `temp_background_${userId}`;
-const tempBackgroundData = await AsyncStorage.getItem(tempBackgroundKey);
-if (tempBackgroundData) {
-  const parsed = JSON.parse(tempBackgroundData);
-  if (parsed.education !== undefined) updates.education = parsed.education;
-  if (parsed.institution !== undefined) updates.institution = parsed.institution;
-  await AsyncStorage.removeItem(tempBackgroundKey);
-}
 
-if (Object.keys(updates).length > 0) {
-  const { error } = await supabase
-    .from("profiles")
-    .update(updates)
-    .eq("id", userId);
+      // Interests & Hobbies
+      const tempInterestsKey = `temp_interests_hobbies_${userId}`;
+      const tempInterestsData = await AsyncStorage.getItem(tempInterestsKey);
+      if (tempInterestsData) {
+        const parsed = JSON.parse(tempInterestsData);
 
-  if (error) throw error;
-}
+        // Save hobbies
+        if (parsed.hobbies && parsed.hobbies.length > 0) {
+          const stripEmoji = (s: string) => s.replace(/^[^\w\s]+\s*/, "").trim();
+          const normalizeHobby = (s: string) => stripEmoji(s).toLowerCase().trim();
 
-Alert.alert("Success", "Your profile has been updated!");
-router.back();
+          const cleaned: string[] = Array.from(new Set(parsed.hobbies.map(normalizeHobby)));
+
+          // Fetch the master IDs
+          const { data: masters, error: selectError } = await supabase
+            .from("hobbies_master")
+            .select("id,label");
+          if (selectError) throw selectError;
+
+          // Build a label->id map
+          const map: Record<string, number> = {};
+          (masters ?? []).forEach((m: any) => {
+            const key = normalizeHobby(m.label);
+            if (!(key in map)) map[key] = m.id;
+          });
+
+          const found = cleaned
+            .map((c) => ({ c, id: map[c] }))
+            .filter((x) => !!x.id) as { c: string; id: number }[];
+
+          // Clear old entries
+          const { error: delErr } = await supabase
+            .from("user_hobbies")
+            .delete()
+            .eq("user_id", userId);
+          if (delErr) throw delErr;
+
+          // Insert new ones
+          if (found.length > 0) {
+            const rows = found.map((f) => ({ user_id: userId, hobby_id: f.id }));
+            const { error: insErr } = await supabase.from("user_hobbies").insert(rows);
+            if (insErr) throw insErr;
+          }
+        }
+
+        // Save communities to lifestyle table
+        if (parsed.communities) {
+          const stripEmoji = (s: string) => s.replace(/^[^\w\s]+\s*/, "").trim();
+          const communityLabels = parsed.communities.map(stripEmoji);
+
+          const { error: commError } = await supabase
+            .from("lifestyle")
+            .upsert(
+              {
+                user_id: userId,
+                communities: communityLabels.length > 0 ? communityLabels : null,
+              },
+              {
+                onConflict: "user_id",
+              }
+            );
+
+          if (commError) throw commError;
+        }
+
+        await AsyncStorage.removeItem(tempInterestsKey);
+      }
+
+      // Background (Education & Institution)
+      const tempBackgroundKey = `temp_background_${userId}`;
+      const tempBackgroundData = await AsyncStorage.getItem(tempBackgroundKey);
+      if (tempBackgroundData) {
+        const parsed = JSON.parse(tempBackgroundData);
+        if (parsed.education !== undefined) updates.education = parsed.education;
+        if (parsed.institution !== undefined) updates.institution = parsed.institution;
+        await AsyncStorage.removeItem(tempBackgroundKey);
+      }
+
+      if (Object.keys(updates).length > 0) {
+        const { error } = await supabase.from("profiles").update(updates).eq("id", userId);
+
+        if (error) throw error;
+      }
+
+      Alert.alert("Success", "Your profile has been updated!");
+      router.back();
     } catch (error: any) {
       console.error("Save error:", error);
       Alert.alert("Error", error?.message ?? "Failed to save changes.");
@@ -825,11 +863,13 @@ router.back();
       const res = await fetch(localUri);
       const arrayBuffer = await res.arrayBuffer();
       const fileName = `${userId}/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
-      const { error } = await supabase.storage.from("user_photos").upload(fileName, arrayBuffer, {
-        contentType: "image/jpeg",
-        cacheControl: "3600",
-        upsert: false,
-      });
+      const { error } = await supabase.storage
+        .from("user_photos")
+        .upload(fileName, arrayBuffer, {
+          contentType: "image/jpeg",
+          cacheControl: "3600",
+          upsert: false,
+        });
       if (error) {
         Alert.alert("Upload Failed", "Unable to upload photo. Please try again.");
         return null;
@@ -864,17 +904,27 @@ router.back();
       if (kind === "main") {
         await supabase.from("user_photos").update({ is_main: false }).eq("user_id", userId);
         if (slots.main.id) {
-          await supabase.from("user_photos").update({ photo_url: uploaded.storagePath, is_main: true }).eq("id", slots.main.id);
+          await supabase
+            .from("user_photos")
+            .update({ photo_url: uploaded.storagePath, is_main: true })
+            .eq("id", slots.main.id);
         } else {
-          await supabase.from("user_photos").insert({ user_id: userId, photo_url: uploaded.storagePath, is_main: true });
+          await supabase
+            .from("user_photos")
+            .insert({ user_id: userId, photo_url: uploaded.storagePath, is_main: true });
         }
       } else {
         const i = index ?? 0;
         const target = slots.extra[i];
         if (target.id) {
-          await supabase.from("user_photos").update({ photo_url: uploaded.storagePath, is_main: false }).eq("id", target.id);
+          await supabase
+            .from("user_photos")
+            .update({ photo_url: uploaded.storagePath, is_main: false })
+            .eq("id", target.id);
         } else {
-          await supabase.from("user_photos").insert({ user_id: userId, photo_url: uploaded.storagePath, is_main: false });
+          await supabase
+            .from("user_photos")
+            .insert({ user_id: userId, photo_url: uploaded.storagePath, is_main: false });
         }
       }
 
@@ -980,10 +1030,10 @@ router.back();
       const { data: auth } = await supabase.auth.getUser();
       const userId = auth?.user?.id;
       if (!userId) return;
-      
+
       const tempKey = `temp_height_${userId}`;
       await AsyncStorage.setItem(tempKey, JSON.stringify({ height: h }));
-      
+
       setHeightCm(h);
       setHeightModalVisible(false);
     } catch (e) {
@@ -1020,7 +1070,7 @@ router.back();
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <FloatingHeader title="Edit Profile" fullName={fullName} onSave={handleSave} />
-      
+
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
@@ -1029,7 +1079,12 @@ router.back();
       >
         <View style={styles.photosSection}>
           <View style={styles.mainTitleRow}>
-            <Ionicons name="images-outline" size={22} color={Colors.BLUE} style={styles.mainTitleIcon} />
+            <Ionicons
+              name="images-outline"
+              size={22}
+              color={Colors.BLUE}
+              style={styles.mainTitleIcon}
+            />
             <Text style={styles.mainSectionTitle}>Photos</Text>
           </View>
           <Text style={styles.sectionHint}>Tap to add/change, drag to reorder</Text>
@@ -1052,7 +1107,10 @@ router.back();
           <View style={{ marginTop: verticalScale(8), marginHorizontal: -H_PAD }}>
             <DraggableFlatList
               horizontal
-              data={slots.extra.map((s, i) => ({ ...s, key: `extra-${i}-${s.id ?? "empty"}` }))}
+              data={slots.extra.map((s, i) => ({
+                ...s,
+                key: `extra-${i}-${s.id ?? "empty"}`,
+              }))}
               keyExtractor={(item) => item.key as string}
               containerStyle={{ paddingHorizontal: H_PAD }}
               contentContainerStyle={{ paddingRight: 0 }}
@@ -1072,7 +1130,12 @@ router.back();
                 const { item, drag, getIndex } = params;
                 const idx = (typeof getIndex === "function" ? getIndex() : 0) ?? 0;
                 return (
-                  <View style={{ width: EXTRA_SLOT_WIDTH, marginRight: idx < 2 ? EXTRA_GAP : 0 }}>
+                  <View
+                    style={{
+                      width: EXTRA_SLOT_WIDTH,
+                      marginRight: idx < 2 ? EXTRA_GAP : 0,
+                    }}
+                  >
                     <PhotoSlot
                       slot={item}
                       label={`Photo ${idx + 2}`}
@@ -1085,7 +1148,9 @@ router.back();
                       }}
                       onLongPress={() => (item?.signedUrl ? drag() : undefined)}
                       index={idx + 1}
-                      isUploading={uploadingSlot?.kind === "extra" && uploadingSlot.index === idx}
+                      isUploading={
+                        uploadingSlot?.kind === "extra" && uploadingSlot.index === idx
+                      }
                       width={EXTRA_SLOT_WIDTH}
                     />
                   </View>
@@ -1130,9 +1195,9 @@ router.back();
           <InfoRow
             label="Who I'd Like to Meet"
             value={
-              interestedIn.length === 3 && 
-              interestedIn.includes("Woman") && 
-              interestedIn.includes("Man") && 
+              interestedIn.length === 3 &&
+              interestedIn.includes("Woman") &&
+              interestedIn.includes("Man") &&
               interestedIn.includes("Nonbinary")
                 ? "All"
                 : summarizeList(interestedIn)
@@ -1154,7 +1219,9 @@ router.back();
         >
           <InfoRow
             label="Communication Style"
-            value={lifestyle.communication ? textOnly(lifestyle.communication) : "Add style"}
+            value={
+              lifestyle.communication ? textOnly(lifestyle.communication) : "Add style"
+            }
             onPress={() => router.push("/(edit_profile)/my_essentials/communication_edit")}
             showArrow
           />
@@ -1179,26 +1246,26 @@ router.back();
         </SectionCard>
 
         <SectionCard
-  title="What I'm Looking For"
-  icon={<MaterialCommunityIcons name="heart-outline" size={20} color={Colors.BLUE} />}
-  action={() => router.push("/(edit_profile)/what_im_looking_for_edit")}
->
-  <View style={styles.tagsList}>
-  {lookingFor.length ? (
-    lookingFor.length === 2 ? (
-      <TagChip 
-        key="looking-for-combined" 
-        label={getLookingForDisplayText(lookingFor)} 
-      />
-    ) : lookingFor.length === 1 ? (
-      <TagChip key={lookingFor[0]} label={lookingFor[0]} />
-    ) : (
-      lookingFor.map((v, i) => <TagChip key={`${v}-${i}`} label={v} />)
-    )
-  ) : (
-    <Text style={styles.emptyText}>Not specified</Text>
-  )}
-</View>
+          title="What I'm Looking For"
+          icon={<MaterialCommunityIcons name="heart-outline" size={20} color={Colors.BLUE} />}
+          action={() => router.push("/(edit_profile)/what_im_looking_for_edit")}
+        >
+          <View style={styles.tagsList}>
+            {lookingFor.length ? (
+              lookingFor.length === 2 ? (
+                <TagChip
+                  key="looking-for-combined"
+                  label={getLookingForDisplayText(lookingFor)}
+                />
+              ) : lookingFor.length === 1 ? (
+                <TagChip key={lookingFor[0]} label={lookingFor[0]} />
+              ) : (
+                lookingFor.map((v, i) => <TagChip key={`${v}-${i}`} label={v} />)
+              )
+            ) : (
+              <Text style={styles.emptyText}>Not specified</Text>
+            )}
+          </View>
           <Text style={styles.subSectionTitle}>Values in a Partner</Text>
           <View style={styles.tagsList}>
             {partnerValues.length ? (
@@ -1210,27 +1277,37 @@ router.back();
         </SectionCard>
 
         <SectionCard
-  title="Lifestyle"
-  icon={<Ionicons name="star-outline" size={20} color={Colors.BLUE} />}
-  action={() => router.push("/(edit_profile)/lifestyle_edit")}
->
+          title="Lifestyle"
+          icon={<Ionicons name="star-outline" size={20} color={Colors.BLUE} />}
+          action={() => router.push("/(edit_profile)/lifestyle_edit")}
+        >
           <View style={styles.lifestyleGrid}>
             <View style={styles.lifestyleRow}>
               {lifestyle.drinking && (
                 <LifestyleItem
-                  icon={<MaterialCommunityIcons name="glass-wine" size={30} color={Colors.BLUE} />}
+                  icon={
+                    <MaterialCommunityIcons
+                      name="glass-wine"
+                      size={30}
+                      color={Colors.BLUE}
+                    />
+                  }
                   value={textOnly(lifestyle.drinking)}
                 />
               )}
               {lifestyle.smoking && (
                 <LifestyleItem
-                  icon={<MaterialCommunityIcons name="smoking" size={30} color={Colors.BLUE} />}
+                  icon={
+                    <MaterialCommunityIcons name="smoking" size={30} color={Colors.BLUE} />
+                  }
                   value={textOnly(lifestyle.smoking)}
                 />
               )}
               {lifestyle.workout && (
                 <LifestyleItem
-                  icon={<MaterialCommunityIcons name="dumbbell" size={30} color={Colors.BLUE} />}
+                  icon={
+                    <MaterialCommunityIcons name="dumbbell" size={30} color={Colors.BLUE} />
+                  }
                   value={textOnly(lifestyle.workout)}
                 />
               )}
@@ -1238,19 +1315,33 @@ router.back();
             <View style={styles.lifestyleRow}>
               {lifestyle.religion && (
                 <LifestyleItem
-                  icon={<FontAwesome5 name="praying-hands" size={28} color={Colors.BLUE} />}
+                  icon={
+                    <FontAwesome5
+                      name="praying-hands"
+                      size={28}
+                      color={Colors.BLUE}
+                    />
+                  }
                   value={textOnly(lifestyle.religion)}
                 />
               )}
               {lifestyle.politics && (
                 <LifestyleItem
-                  icon={<MaterialCommunityIcons name="bank" size={30} color={Colors.BLUE} />}
+                  icon={
+                    <MaterialCommunityIcons name="bank" size={30} color={Colors.BLUE} />
+                  }
                   value={textOnly(lifestyle.politics)}
                 />
               )}
               {lifestyle.kids && (
                 <LifestyleItem
-                  icon={<MaterialCommunityIcons name="baby-face-outline" size={30} color={Colors.BLUE} />}
+                  icon={
+                    <MaterialCommunityIcons
+                      name="baby-face-outline"
+                      size={30}
+                      color={Colors.BLUE}
+                    />
+                  }
                   value={textOnly(lifestyle.kids)}
                 />
               )}
@@ -1259,10 +1350,10 @@ router.back();
         </SectionCard>
 
         <SectionCard
-  title="Interests & Hobbies"
-  icon={<MaterialCommunityIcons name="palette-outline" size={20} color={Colors.BLUE} />}
-  action={() => router.push("/(edit_profile)/interests_and_hobbies_edit")}
->
+          title="Interests & Hobbies"
+          icon={<MaterialCommunityIcons name="palette-outline" size={20} color={Colors.BLUE} />}
+          action={() => router.push("/(edit_profile)/interests_and_hobbies_edit")}
+        >
           <View style={styles.tagsList}>
             {hobbies.length ? (
               hobbies.map((h, i) => <TagChip key={`${h}-${i}`} label={h} />)
@@ -1325,61 +1416,61 @@ router.back();
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: Colors.BG 
+  container: {
+    flex: 1,
+    backgroundColor: Colors.BG,
   },
-  scrollView: { 
-    flex: 1 
+  scrollView: {
+    flex: 1,
   },
-  scrollContent: { 
-    paddingTop: verticalScale(100), 
-    paddingBottom: verticalScale(30) 
+  scrollContent: {
+    paddingTop: verticalScale(100),
+    paddingBottom: verticalScale(30),
   },
-  photosSection: { 
-    paddingHorizontal: H_PAD, 
-    paddingTop: verticalScale(-20), 
-    marginBottom: verticalScale(25) 
+  photosSection: {
+    paddingHorizontal: H_PAD,
+    paddingTop: verticalScale(-20),
+    marginBottom: verticalScale(25),
   },
-  mainTitleRow: { 
-    flexDirection: "row", 
-    alignItems: "center", 
-    marginBottom: verticalScale(4) 
+  mainTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: verticalScale(4),
   },
-  mainTitleIcon: { 
-    marginRight: scale(6) 
+  mainTitleIcon: {
+    marginRight: scale(6),
   },
-  mainSectionTitle: { 
-    fontSize: scale(22), 
-    fontFamily: Fonts.bold, 
-    color: Colors.INK 
+  mainSectionTitle: {
+    fontSize: scale(22),
+    fontFamily: Fonts.bold,
+    color: Colors.INK,
   },
-  sectionHint: { 
-    fontSize: scale(13), 
-    fontFamily: Fonts.primary, 
-    color: "rgba(10,14,26,0.45)", 
-    marginBottom: verticalScale(15), 
-    textAlign: "center" 
+  sectionHint: {
+    fontSize: scale(13),
+    fontFamily: Fonts.primary,
+    color: "rgba(10,14,26,0.45)",
+    marginBottom: verticalScale(15),
+    textAlign: "center",
   },
   mainPhotoWrapper: {
     alignItems: "center",
     marginTop: verticalScale(10),
     marginBottom: verticalScale(20),
   },
-  extraPhotosGrid: { 
-    paddingHorizontal: 0
+  extraPhotosGrid: {
+    paddingHorizontal: 0,
   },
-  promptsList: { 
-    gap: verticalScale(12) 
+  promptsList: {
+    gap: verticalScale(12),
   },
-  addPromptButton: { 
-    height: verticalScale(50), 
-    borderRadius: scale(14), 
-    alignItems: "center", 
-    justifyContent: "center", 
-    overflow: "hidden", 
-    borderWidth: 1.5, 
-    borderColor: "rgba(27,68,205,0.15)", 
+  addPromptButton: {
+    height: verticalScale(50),
+    borderRadius: scale(14),
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+    borderWidth: 1.5,
+    borderColor: "rgba(27,68,205,0.15)",
     borderStyle: "dashed",
     backgroundColor: "#EEF4FF",
   },
@@ -1387,35 +1478,35 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(220,232,255,0.3)",
   },
-  addPromptText: { 
-    fontSize: scale(15), 
-    fontFamily: Fonts.bold, 
-    color: Colors.BLUE 
+  addPromptText: {
+    fontSize: scale(15),
+    fontFamily: Fonts.bold,
+    color: Colors.BLUE,
   },
-  tagsList: { 
-    flexDirection: "row", 
-    flexWrap: "wrap", 
-    gap: scale(8), 
-    marginTop: verticalScale(8) 
+  tagsList: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: scale(8),
+    marginTop: verticalScale(8),
   },
-  subSectionTitle: { 
-    fontSize: scale(14), 
-    fontFamily: Fonts.bold, 
-    color: "rgba(10,14,26,0.6)", 
-    marginTop: verticalScale(16), 
-    marginBottom: verticalScale(8) 
+  subSectionTitle: {
+    fontSize: scale(14),
+    fontFamily: Fonts.bold,
+    color: "rgba(10,14,26,0.6)",
+    marginTop: verticalScale(16),
+    marginBottom: verticalScale(8),
   },
-  emptyText: { 
-    fontSize: scale(14), 
-    fontFamily: Fonts.primary, 
-    color: "rgba(10,14,26,0.4)", 
-    fontStyle: "italic" 
+  emptyText: {
+    fontSize: scale(14),
+    fontFamily: Fonts.primary,
+    color: "rgba(10,14,26,0.4)",
+    fontStyle: "italic",
   },
-  lifestyleGrid: { 
-    gap: verticalScale(12) 
+  lifestyleGrid: {
+    gap: verticalScale(12),
   },
-  lifestyleRow: { 
-    flexDirection: "row", 
-    gap: scale(12) 
+  lifestyleRow: {
+    flexDirection: "row",
+    gap: scale(12),
   },
 });

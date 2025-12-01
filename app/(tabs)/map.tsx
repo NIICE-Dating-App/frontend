@@ -452,7 +452,7 @@ const UserMarker: React.FC<{ user: UserMapCard; hasFrame: boolean }> = memo(({ u
             borderRadius: USER_MARKER_SIZE / 2,
             backgroundColor: "#fff",
             borderWidth: 2,
-            borderColor: user.mode === "dating" ? "#FF6B6B" : BLUES.b50,
+            borderColor: BLUES.b50,
             opacity: isOnline ? 1 : 0.7, // 🔥 Dim offline users
           }}
         />
@@ -461,9 +461,9 @@ const UserMarker: React.FC<{ user: UserMapCard; hasFrame: boolean }> = memo(({ u
           width: USER_MARKER_SIZE,
           height: USER_MARKER_SIZE,
           borderRadius: USER_MARKER_SIZE / 2,
-          backgroundColor: user.mode === "dating" ? "#FFE5E5" : BLUES.b120,
+          backgroundColor: BLUES.b120,
           borderWidth: 2,
-          borderColor: user.mode === "dating" ? "#FF6B6B" : BLUES.b50,
+          borderColor: BLUES.b50,
           alignItems: "center",
           justifyContent: "center",
           opacity: isOnline ? 1 : 0.7, // 🔥 Dim offline users
@@ -471,7 +471,7 @@ const UserMarker: React.FC<{ user: UserMapCard; hasFrame: boolean }> = memo(({ u
           <Text style={{
             fontSize: 16,
             fontFamily: Fonts.bold,
-            color: user.mode === "dating" ? "#FF6B6B" : BLUES.b50,
+            color: BLUES.b50,
           }}>
             {user.full_name?.charAt(0)?.toUpperCase() || "?"}
           </Text>
@@ -487,7 +487,7 @@ const UserMarker: React.FC<{ user: UserMapCard; hasFrame: boolean }> = memo(({ u
         paddingVertical: 2,
         borderRadius: 10,
         borderWidth: 1,
-        borderColor: user.mode === "dating" ? "#FF6B6B" : BLUES.b50,
+        borderColor: BLUES.b50,
       }}>
         <Text style={{
           fontSize: 10,
@@ -701,9 +701,9 @@ const UserProfileModal: React.FC<{
   // Preview data from RPC
   const [previewData, setPreviewData] = useState<{
     sexual_orientation: string | null;
-    looking_for: string[] | null;
-  }>({ sexual_orientation: null, looking_for: null });
-  
+    looking_for_friend: string[] | null;
+    value_friend: string[] | null;
+  }>({ sexual_orientation: null, looking_for_friend: null, value_friend: null });
   // Blind date flow states
   const [blindDateStep, setBlindDateStep] = useState<'initial' | 'place_role' | 'details' | 'message_only' | 'accept_location' | 'accept_simple' | null>(null);
   const [blindDateForm, setBlindDateForm] = useState<{
@@ -804,40 +804,60 @@ const UserProfileModal: React.FC<{
   };
   
   // Fetch preview data using RPC (bypasses RLS)
+
   const fetchUserPreview = async () => {
     if (!user) return;
     
+    // Fetch friend mode data using RPC (bypasses RLS)
+    let friendModeData: { looking_for_friend: string[] | null; value_friend: string[] | null } | null = null;
+    
     try {
-      // Try to get extended preview data
+      const { data, error } = await supabase.rpc('get_user_friend_mode', {
+        target_user_id: user.user_id
+      });
+      
+      if (error) {
+        console.log("❌ Error fetching friend mode data:", error);
+      } else if (data && data.length > 0) {
+        friendModeData = data[0];
+        console.log("✅ Friend mode data fetched:", JSON.stringify(friendModeData));
+      } else {
+        console.log("⚠️ No friend mode data found for user");
+      }
+    } catch (err) {
+      console.log("❌ Exception fetching friend mode data:", err);
+    }
+    
+    // Now try to get extended preview data (sexual_orientation)
+    let sexualOrientation: string | null = null;
+    
+    try {
       const { data, error } = await supabase.rpc('get_user_preview_extended', {
         target_user_id: user.user_id
       });
       
-      // RPC returns a table (array), get first row
       if (data && Array.isArray(data) && data.length > 0 && !error) {
-        const row = data[0];
-        console.log("Preview data received:", row);
-        setPreviewData({
-          sexual_orientation: row.sexual_orientation,
-          looking_for: row.looking_for
-        });
+        sexualOrientation = data[0].sexual_orientation || null;
+        console.log("✅ RPC preview data:", data[0]);
       } else if (data && !Array.isArray(data) && !error) {
-        // In case it returns a single object
-        console.log("Preview data (single):", data);
-        setPreviewData({
-          sexual_orientation: data.sexual_orientation,
-          looking_for: data.looking_for
-        });
+        sexualOrientation = data.sexual_orientation || null;
+        console.log("✅ RPC preview data (single):", data);
       } else {
-        // Fallback: RPC doesn't exist yet or returned empty
-        console.log("get_user_preview_extended: no data or error", error);
-        setPreviewData({ sexual_orientation: null, looking_for: null });
+        console.log("⚠️ RPC returned no data or error:", error);
       }
-    } catch (error) {
-      // RPC doesn't exist, that's okay
-      console.log("Preview RPC not available:", error);
-      setPreviewData({ sexual_orientation: null, looking_for: null });
+    } catch (err) {
+      console.log("⚠️ RPC not available (ok):", err);
     }
+    
+    // Set the preview data with whatever we got
+    const finalPreviewData = {
+      sexual_orientation: sexualOrientation,
+      looking_for_friend: friendModeData?.looking_for_friend || null,
+      value_friend: friendModeData?.value_friend || null
+    };
+    
+    console.log("📋 Final preview data being set:", JSON.stringify(finalPreviewData));
+    setPreviewData(finalPreviewData);
   };
   
   const fetchUserFrames = async () => {
@@ -945,10 +965,8 @@ const UserProfileModal: React.FC<{
         Alert.alert(
           "Success", 
           isBlindDate 
-            ? "Blind date request sent! They'll see your request without your full profile." 
-            : user.mode === 'friend' 
-              ? "Friend request sent!" 
-              : "Like sent!"
+            ? "Blind meeting request sent! They'll see your request without your full profile." 
+            : "Friend request sent!"
         );
         await fetchMatchStatus();
         setBlindDateStep(null);
@@ -1069,14 +1087,14 @@ const UserProfileModal: React.FC<{
         if (error) throw error;
       }
       
-      Alert.alert("Success", "Blind date accepted! You've set the meeting spot.");
+      Alert.alert("Success", "Blind meeting accepted! You've set the meetup spot.");
       setBlindDateStep(null);
       setBlindDateForm({ placeRole: null, locationName: '', locationCoords: null, meetTime: null, message: '' });
       setResponseMessage('');
       await fetchMatchStatus();
     } catch (error) {
       console.error("Error accepting blind date:", error);
-      Alert.alert("Error", "Failed to accept blind date");
+      Alert.alert("Error", "Failed to accept blind meeting");
     } finally {
       setLoading(false);
     }
@@ -1110,14 +1128,14 @@ const UserProfileModal: React.FC<{
         if (error) throw error;
       }
       
-      Alert.alert("Success", "Blind date accepted!");
+      Alert.alert("Success", "Blind meeting accepted!");
       setBlindDateStep(null);
       setBlindDateForm({ placeRole: null, locationName: '', locationCoords: null, meetTime: null, message: '' });
       setResponseMessage('');
       await fetchMatchStatus();
     } catch (error) {
       console.error("Error accepting blind date:", error);
-      Alert.alert("Error", "Failed to accept blind date");
+      Alert.alert("Error", "Failed to accept blind meeting");
     } finally {
       setLoading(false);
     }
@@ -1181,19 +1199,19 @@ const UserProfileModal: React.FC<{
     if (!user) return;
     onClose();
     router.push({
-      pathname: "/profile",
-      params: { userId: user.user_id }
+      pathname: "/(tabs_support)/other_profile",
+      params: { userId: user.user_id, matchId: matchStatus?.match_id || "" }
     });
   };
   
   const handleStartChat = () => {
-    if (!matchStatus?.match_id) return;
-    onClose();
-    router.push({
-      pathname: "/chat",
-      params: { matchId: matchStatus.match_id }
-    });
-  };
+  if (!matchStatus?.match_id) return;
+  onClose();
+  router.push({
+    pathname: "/(tabs_support)/chat_talk",
+    params: { matchId: matchStatus.match_id }
+  });
+};
   
   const handleBlock = async () => {
     if (!user || !currentUserId) return;
@@ -1269,19 +1287,83 @@ const UserProfileModal: React.FC<{
   console.log('========================');
   
   // Format looking for display
-  const formatLookingFor = (values: string[] | null) => {
+
+  
+  // Format looking for friend display
+  const formatLookingForFriend = (values: string[] | null) => {
     if (!values || values.length === 0) return null;
+    
+    // Enum to display label mapping
     const displayMap: Record<string, string> = {
-      'marriage': 'Marriage',
-      'life_partner': 'Life partner',
-      'long_term_relationship': 'Long-term',
-      'short_term_relationship': 'Short-term',
-      'casual_dates': 'Casual dates',
-      'intimacy': 'Intimacy',
-      'new_friends': 'New friends',
-      'figuring_it_out': 'Figuring it out',
+      'new_friends_nearby': 'New friends nearby',
+      'workout_fitness_buddy': 'Workout/fitness buddy',
+      'travel_companions': 'Travel companions',
+      'activity_hobby_partners': 'Activity/hobby partners',
+      'casual_hangouts': 'Casual hangouts',
+      'professional_networking': 'Professional networking',
+      'close_friendships': 'Close friendships',
     };
-    return values.slice(0, 2).map(v => displayMap[v] || v.replace(/_/g, ' ')).join(', ');
+    
+    // Convert enum values to display labels
+    const displayLabels = values.map(v => displayMap[v] || v.replace(/_/g, ' ')).filter(Boolean);
+    
+    if (displayLabels.length === 0) return null;
+    if (displayLabels.length === 1) return displayLabels[0];
+    
+    // Combination display names (same as edit_main.tsx)
+    const combinations: Record<string, string> = {
+      // Activity / hobby partners combos
+      "Activity/hobby partners|||Casual hangouts": "Hobby partners & casual hangouts",
+      "Activity/hobby partners|||Close friendships": "Close friends for hobbies",
+      "Activity/hobby partners|||New friends nearby": "New local hobby friends",
+      "Activity/hobby partners|||Professional networking": "Networking through shared hobbies",
+      "Activity/hobby partners|||Travel companions": "Travel & hobby buddies",
+      "Activity/hobby partners|||Workout/fitness buddy": "Active hobby & workout buddies",
+
+      // Casual hangouts combos
+      "Casual hangouts|||Close friendships": "Close friends & casual hangouts",
+      "Casual hangouts|||New friends nearby": "New friends for casual hangouts",
+      "Casual hangouts|||Professional networking": "Networking & hangouts",
+      "Casual hangouts|||Travel companions": "Travel & casual hangouts",
+      "Casual hangouts|||Workout/fitness buddy": "Workout & casual hangouts",
+
+      // Close friendships combos
+      "Close friendships|||New friends nearby": "Close local friends",
+      "Close friendships|||Professional networking": "Close friends & networking",
+      "Close friendships|||Travel companions": "Close friends to travel with",
+      "Close friendships|||Workout/fitness buddy": "Close friends & workout buddies",
+
+      // New friends nearby combos
+      "New friends nearby|||Professional networking": "Local friends & networking",
+      "New friends nearby|||Travel companions": "Local travel buddies",
+      "New friends nearby|||Workout/fitness buddy": "Local workout friends",
+
+      // Travel / networking / workout combos
+      "Professional networking|||Travel companions": "Network & travel buddies",
+      "Professional networking|||Workout/fitness buddy": "Workout & networking",
+      "Travel companions|||Workout/fitness buddy": "Active travel & workout buddies",
+    };
+    
+    // For 2 values, try to find combination
+    if (displayLabels.length === 2) {
+      const sorted = [...displayLabels].sort();
+      const key = sorted.join("|||");
+      return combinations[key] || displayLabels.join(" · ");
+    }
+    
+    // For more than 2, use first two for combination
+    const firstTwo = displayLabels.slice(0, 2).sort();
+    const key = firstTwo.join("|||");
+    return combinations[key] || displayLabels.slice(0, 2).join(" · ");
+  };
+  
+  // Format friend values display
+  const formatFriendValues = (values: string[] | null) => {
+    if (!values || values.length === 0) return null;
+    return values.slice(0, 3).map(v => {
+      const words = v.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1));
+      return words.join(' ');
+    }).join(', ');
   };
   
   // Format orientation display
@@ -1310,8 +1392,10 @@ const UserProfileModal: React.FC<{
     return `${distanceKm.toFixed(1)}km away`;
   };
   
-  const lookingForDisplay = formatLookingFor(previewData.looking_for);
+
   const orientationDisplay = formatOrientation(previewData.sexual_orientation);
+  const lookingForFriendDisplay = formatLookingForFriend(previewData.looking_for_friend);
+  const friendValuesDisplay = formatFriendValues(previewData.value_friend);
   
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
@@ -1383,12 +1467,12 @@ const UserProfileModal: React.FC<{
             </View>
             
             {/* Identity Chips */}
-            {(lookingForDisplay || orientationDisplay) && (
+            {(lookingForFriendDisplay || orientationDisplay) && (
               <View style={styles.userSheetChips}>
-                {lookingForDisplay && (
+                {lookingForFriendDisplay && (
                   <View style={styles.userSheetChip}>
-                    <Ionicons name="heart-outline" size={14} color={BLUE} />
-                    <Text style={styles.userSheetChipText}>{lookingForDisplay}</Text>
+                    <Ionicons name="people-outline" size={14} color={BLUE} />
+                    <Text style={styles.userSheetChipText}>{lookingForFriendDisplay}</Text>
                   </View>
                 )}
                 {orientationDisplay && (
@@ -1413,7 +1497,7 @@ const UserProfileModal: React.FC<{
               <View style={[styles.userSheetStatusBadge, { backgroundColor: "#E8F5E9" }]}>
                 <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
                 <Text style={[styles.userSheetStatusText, { color: "#4CAF50" }]}>
-                  {isBlindConnection ? "Blind date connected!" : "You're connected!"}
+                  {isBlindConnection ? "Blind meeting connected!" : "You're connected!"}
                 </Text>
               </View>
             )}
@@ -1430,8 +1514,8 @@ const UserProfileModal: React.FC<{
                   {targetNeedsToPick 
                     ? `${user.full_name} wants you to pick the spot` 
                     : isBlindConnection 
-                      ? "Sent you a blind date request" 
-                      : "Sent you a request"}
+                      ? "Sent you a blind meeting request" 
+                      : "Sent you a friend request"}
                 </Text>
               </View>
             )}
@@ -1447,47 +1531,44 @@ const UserProfileModal: React.FC<{
             <View style={styles.userSheetActions}>
               {!isMatched && !isPending && !isDenied && !blindDateStep && (
                 <>
-                  {/* Primary: Blind Date (for dating mode) */}
-                  {user.mode === 'dating' && (
-                    <TouchableOpacity 
-                      style={styles.userSheetPrimaryBtn}
-                      onPress={startBlindDateFlow}
-                      disabled={loading}
-                      activeOpacity={0.8}
+                  {/* Primary: Blind Meeting */}
+                  <TouchableOpacity 
+                    style={styles.userSheetPrimaryBtn}
+                    onPress={startBlindDateFlow}
+                    disabled={loading}
+                    activeOpacity={0.8}
+                  >
+                    <LinearGradient 
+                      colors={[BLUES.b50, BLUES.b70]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.userSheetPrimaryBtnGradient}
                     >
-                      <LinearGradient 
-                        colors={[BLUES.b50, BLUES.b70]}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={styles.userSheetPrimaryBtnGradient}
-                      >
-                        <Ionicons name="eye-off-outline" size={20} color="#FFF" />
-                        <Text style={styles.userSheetPrimaryBtnText}>Blind Date</Text>
-                      </LinearGradient>
-                    </TouchableOpacity>
-                  )}
+                      <Ionicons name="eye-off-outline" size={20} color="#FFF" />
+                      <Text style={styles.userSheetPrimaryBtnText}>Blind Meeting</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
                   
-                  {/* Secondary: Match Request */}
+                  {/* Secondary: Friend Request */}
                   <TouchableOpacity 
                     style={styles.userSheetSecondaryBtn}
                     onPress={() => handleLike(false)}
                     disabled={loading}
                     activeOpacity={0.8}
                   >
-                    <Ionicons name={user.mode === 'dating' ? "heart-outline" : "person-add-outline"} size={20} color={BLUE} />
-                    <Text style={styles.userSheetSecondaryBtnText}>
-                      {user.mode === 'dating' ? 'Send Match Request' : 'Send Friend Request'}
-                    </Text>
+                    <Ionicons name="person-add-outline" size={20} color={BLUE} />
+                    <Text style={styles.userSheetSecondaryBtnText}>Send Friend Request</Text>
                   </TouchableOpacity>
                 </>
               )}
               
               {/* Blind Date Step 1: Who picks the place? */}
+              {/* Blind Meeting Step 1: Who picks the place? */}
               {blindDateStep === 'place_role' && (
                 <View style={styles.blindDateFlow}>
                   <Text style={styles.blindDateFlowTitle}>Who picks the place?</Text>
                   <Text style={styles.blindDateFlowDesc}>
-                    Your profiles stay hidden until after you meet
+                    Your profiles stay hidden until after you meet up
                   </Text>
                   
                   <View style={styles.blindDateFlowOptions}>
@@ -1526,11 +1607,12 @@ const UserProfileModal: React.FC<{
               )}
               
               {/* Blind Date Step 2: Location & Time Details */}
+              {/* Blind Meeting Step 2: Location & Time Details */}
               {blindDateStep === 'details' && (
                 <View style={styles.blindDateFlow}>
                   <Text style={styles.blindDateFlowTitle}>Suggest a spot</Text>
                   <Text style={styles.blindDateFlowDesc}>
-                    Add details for your blind date
+                    Add details for your blind meeting
                   </Text>
                   
                   <View style={styles.blindDateFlowInputs}>
@@ -1632,11 +1714,12 @@ const UserProfileModal: React.FC<{
               )}
               
               {/* Message Only Step - When sender chooses "They pick" */}
+              {/* Message Only Step - When sender chooses "They pick" */}
               {blindDateStep === 'message_only' && (
                 <View style={styles.blindDateFlow}>
                   <Text style={styles.blindDateFlowTitle}>Add a message</Text>
                   <Text style={styles.blindDateFlowDesc}>
-                    Send a message with your blind date request
+                    Send a message with your blind meeting request
                   </Text>
                   
                   <View style={styles.blindDateFlowInputs}>
@@ -1687,11 +1770,12 @@ const UserProfileModal: React.FC<{
               )}
               
               {/* Accept Blind Date - Target provides location */}
+              {/* Accept Blind Meeting - Target provides location */}
               {blindDateStep === 'accept_location' && (
                 <View style={styles.blindDateFlow}>
                   <Text style={styles.blindDateFlowTitle}>Pick the spot</Text>
                   <Text style={styles.blindDateFlowDesc}>
-                    They want you to choose where to meet
+                    They want you to choose where to meet up
                   </Text>
                   
                   <View style={styles.blindDateFlowInputs}>
@@ -1777,7 +1861,7 @@ const UserProfileModal: React.FC<{
                         style={styles.blindDateFlowSendGradient}
                       >
                         <Text style={styles.blindDateFlowSendText}>
-                          {loading ? 'Accepting...' : 'Accept & Set Location'}
+                          {loading ? 'Accepting...' : 'Accept & Set Meetup Spot'}
                         </Text>
                       </LinearGradient>
                     </TouchableOpacity>
@@ -1786,9 +1870,10 @@ const UserProfileModal: React.FC<{
               )}
               
               {/* Accept Simple - When requester already provided location */}
+              {/* Accept Simple - When requester already provided location */}
               {blindDateStep === 'accept_simple' && (
                 <View style={styles.blindDateFlow}>
-                  <Text style={styles.blindDateFlowTitle}>Accept blind date</Text>
+                  <Text style={styles.blindDateFlowTitle}>Accept blind meeting</Text>
                   <Text style={styles.blindDateFlowDesc}>
                     They've already set the spot - just send a reply!
                   </Text>
@@ -1832,7 +1917,7 @@ const UserProfileModal: React.FC<{
                         style={styles.blindDateFlowSendGradient}
                       >
                         <Text style={styles.blindDateFlowSendText}>
-                          {loading ? 'Accepting...' : 'Accept Date'}
+                          {loading ? 'Accepting...' : 'Accept Meeting'}
                         </Text>
                       </LinearGradient>
                     </TouchableOpacity>
@@ -1848,7 +1933,7 @@ const UserProfileModal: React.FC<{
                     <View style={styles.blindDateMatchedInfo}>
                       <Ionicons name="eye-off" size={18} color={BLUE} />
                       <Text style={styles.blindDateMatchedText}>
-                        Profile hidden until after your date
+                        Profile hidden until after your meetup
                       </Text>
                       {matchStatus?.blind_location_name && (
                         <View style={styles.blindDateMatchedDetail}>
@@ -1902,7 +1987,7 @@ const UserProfileModal: React.FC<{
                 <View style={styles.userSheetIncomingActions}>
                   {targetNeedsToPick && (
                     <Text style={styles.targetPickHint}>
-                      Pick a spot and time for your blind date
+                      Pick a spot and time for your blind meeting
                     </Text>
                   )}
                   <View style={styles.userSheetIncomingBtns}>
@@ -1925,7 +2010,7 @@ const UserProfileModal: React.FC<{
                       >
                         <Ionicons name={targetNeedsToPick ? "location" : "checkmark"} size={24} color="#FFF" />
                         <Text style={styles.userSheetAcceptBtnText}>
-                          {targetNeedsToPick ? 'Pick Spot & Accept' : 'Accept'}
+                          {targetNeedsToPick ? 'Pick Spot & Accept' : 'Accept Request'}
                         </Text>
                       </LinearGradient>
                     </TouchableOpacity>
@@ -2591,7 +2676,7 @@ export default function MapScreen() {
   const [users, setUsers] = useState<UserMapCard[]>([]);
   const [selectedUser, setSelectedUser] = useState<UserMapCard | null>(null);
   const [showUserModal, setShowUserModal] = useState(false);
-  const [currentUserMode, setCurrentUserMode] = useState<'dating' | 'friend'>('dating');
+  const [currentUserMode, setCurrentUserMode] = useState<'dating' | 'friend'>('friend');
   const [showFrameViewerMain, setShowFrameViewerMain] = useState(false);
   const [frameViewerFrames, setFrameViewerFrames] = useState<any[]>([]);
   
@@ -3234,6 +3319,13 @@ export default function MapScreen() {
     if (!pos) return users;
     
     const filtered = users.filter(user => {
+      // MODE FILTER - ONLY show friend mode users (CRITICAL - reject dating mode)
+      if (user.mode !== 'friend') {
+        console.log(`❌ Rejected user ${user.full_name}: mode is '${user.mode}', not 'friend'`);
+        return false;
+      }
+
+      
       // Age filter
       if (user.age < filters.ageMin || user.age > filters.ageMax) return false;
       
@@ -3252,7 +3344,8 @@ export default function MapScreen() {
       return true;
     });
     
-    console.log(`🔍 Filter applied: ${filtered.length}/${users.length} users shown (age: ${filters.ageMin}-${filters.ageMax}, dist: ${filters.distanceKm}km, genders: ${filters.genders.join(',')})`);
+    
+    console.log(`🔍 Filter applied: ${filtered.length}/${users.length} users shown (mode: friend ONLY, age: ${filters.ageMin}-${filters.ageMax}, dist: ${filters.distanceKm}km, genders: ${filters.genders.join(',')})`);
     return filtered;
   }, [users, filters, pos, haversineMeters]);
   
