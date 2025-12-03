@@ -1,18 +1,23 @@
 // app/(tabs_support)/chat_talk.tsx
 import { Ionicons } from "@expo/vector-icons";
+import { Audio } from 'expo-av';
+import { BlurView } from "expo-blur";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-    ActivityIndicator,
-    FlatList,
-    Image,
-    KeyboardAvoidingView,
-    Platform,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Image,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -24,10 +29,12 @@ import { scale, verticalScale } from "@/utils/responsive";
 const BG = Colors.BG;
 const INK = Colors.INK;
 const BLUE = Colors.BLUE;
+const CARD_BG = "#FFFFFF";
+const BORDER = "rgba(27, 68, 205, 0.08)";
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
 // Types
-// ─────────────────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
 
 interface Message {
   id: string;
@@ -40,6 +47,7 @@ interface Message {
 interface ChatPartner {
   id: string;
   name: string;
+  age: number | null;
   avatarUrl: string | null;
   isBlind: boolean;
 }
@@ -53,9 +61,9 @@ interface MatchInfo {
   chatAllowed: boolean;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
 // Utilities
-// ─────────────────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
 
 const toStoragePath = (urlOrPath: string | null): string | null => {
   if (!urlOrPath) return null;
@@ -75,9 +83,9 @@ const signPath = async (path: string | null): Promise<string | null> => {
   return data?.signedUrl ?? null;
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
 // Main Component
-// ─────────────────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
 
 export default function ChatTalkScreen() {
   const params = useLocalSearchParams<{ matchId?: string; conversationId?: string }>();
@@ -93,12 +101,21 @@ export default function ChatTalkScreen() {
   const [partner, setPartner] = useState<ChatPartner | null>(null);
   const [partnerLastReadAt, setPartnerLastReadAt] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
+  
+  // Voice message states
+  const [isRecording, setIsRecording] = useState(false);
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  
+  // Action menu state
+  const [showActionMenu, setShowActionMenu] = useState(false);
 
   const flatListRef = useRef<FlatList>(null);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
   // Initialize chat
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
 
   const initializeChat = useCallback(async () => {
     setLoading(true);
@@ -229,6 +246,7 @@ export default function ChatTalkScreen() {
           setPartner({
             id: otherUserId,
             name: matchMode === "dating" ? "Mystery Date" : "Mystery Friend",
+            age: null,
             avatarUrl: null,
             isBlind: true,
           });
@@ -244,6 +262,7 @@ export default function ChatTalkScreen() {
               setPartner({
                 id: otherUserId,
                 name: "Match",
+                age: null,
                 avatarUrl: null,
                 isBlind: false,
               });
@@ -262,6 +281,7 @@ export default function ChatTalkScreen() {
               setPartner({
                 id: otherUserId,
                 name: profile.full_name || "Match",
+                age: profile.age || null,
                 avatarUrl,
                 isBlind: false,
               });
@@ -269,6 +289,7 @@ export default function ChatTalkScreen() {
               setPartner({
                 id: otherUserId,
                 name: "Match",
+                age: null,
                 avatarUrl: null,
                 isBlind: false,
               });
@@ -278,6 +299,7 @@ export default function ChatTalkScreen() {
             setPartner({
               id: otherUserId,
               name: "Match",
+              age: null,
               avatarUrl: null,
               isBlind: false,
             });
@@ -296,9 +318,9 @@ export default function ChatTalkScreen() {
     }
   }, [matchId, conversationIdParam]);
 
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
   // Load messages
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
 
   const loadMessages = async (conversationId: string, userId: string) => {
     const { data, error } = await supabase
@@ -337,15 +359,13 @@ export default function ChatTalkScreen() {
       setPartnerLastReadAt(new Date(partnerData.last_read_at));
     }
 
-    // Scroll to bottom after messages load
-    setTimeout(() => {
-      flatListRef.current?.scrollToEnd({ animated: false });
-    }, 100);
+    // Scroll to bottom after messages load with smooth animation
+    flatListRef.current?.scrollToEnd({ animated: true });
   };
 
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
   // Mark as read
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
 
   const markAsRead = async (conversationId: string, userId: string) => {
     try {
@@ -363,9 +383,9 @@ export default function ChatTalkScreen() {
     }
   };
 
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
   // Send message
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
 
   const handleSend = async () => {
     if (!inputText.trim() || !matchInfo?.conversationId || !currentUserId || sending) return;
@@ -410,10 +430,8 @@ export default function ChatTalkScreen() {
           markAsRead(matchInfo.conversationId, currentUserId),
         ]);
 
-        // Scroll to bottom
-        setTimeout(() => {
-          flatListRef.current?.scrollToEnd({ animated: true });
-        }, 100);
+        // Scroll to bottom smoothly
+        flatListRef.current?.scrollToEnd({ animated: true });
       }
     } catch (err) {
       console.error("Send error:", err);
@@ -423,9 +441,154 @@ export default function ChatTalkScreen() {
     }
   };
 
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Voice message handlers
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const startRecording = async () => {
+    try {
+      const permission = await Audio.requestPermissionsAsync();
+      
+      if (permission.status !== 'granted') {
+        Alert.alert('Permission Required', 'Please grant microphone permission to send voice messages');
+        return;
+      }
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      
+      setRecording(recording);
+      setIsRecording(true);
+      setRecordingDuration(0);
+
+      // Start timer for recording duration
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingDuration(prev => prev + 1);
+      }, 1000);
+
+    } catch (err) {
+      console.error('Failed to start recording', err);
+      Alert.alert('Error', 'Failed to start recording');
+    }
+  };
+
+  const stopRecording = async () => {
+    if (!recording) return;
+
+    try {
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+
+      setIsRecording(false);
+      await recording.stopAndUnloadAsync();
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+      });
+
+      const uri = recording.getURI();
+      
+      if (uri && recordingDuration >= 1) {
+        // TODO: Upload voice message to storage and send
+        // For now, just show a message
+        Alert.alert('Voice Message', 'Voice message feature coming soon!');
+      }
+
+      setRecording(null);
+      setRecordingDuration(0);
+    } catch (err) {
+      console.error('Failed to stop recording', err);
+    }
+  };
+
+  const cancelRecording = async () => {
+    if (!recording) return;
+
+    try {
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+
+      setIsRecording(false);
+      await recording.stopAndUnloadAsync();
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+      });
+
+      setRecording(null);
+      setRecordingDuration(0);
+    } catch (err) {
+      console.error('Failed to cancel recording', err);
+    }
+  };
+
+  const formatRecordingDuration = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Block and Report handlers
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const handleBlock = async () => {
+    if (!currentUserId || !matchInfo?.otherUserId) return;
+
+    Alert.alert(
+      "Block User",
+      `Are you sure you want to block ${partner?.name || "this user"}? They won't be able to contact you.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Block",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const { error: blockError } = await supabase
+                .from("blocks")
+                .insert({ blocker_id: currentUserId, blocked_id: matchInfo.otherUserId });
+
+              if (blockError && blockError.code !== '23505') {
+                throw blockError;
+              }
+
+              await supabase
+                .from("match_requests")
+                .delete()
+                .or(`and(requester_id.eq.${currentUserId},target_id.eq.${matchInfo.otherUserId}),and(requester_id.eq.${matchInfo.otherUserId},target_id.eq.${currentUserId})`);
+
+              Alert.alert("Blocked", `${partner?.name || "User"} has been blocked.`, [
+                { text: "OK", onPress: () => router.back() }
+              ]);
+            } catch (error) {
+              console.error("Error blocking user:", error);
+              Alert.alert("Error", "Failed to block user. Please try again.");
+            } finally {
+              setShowActionMenu(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleReport = () => {
+    setShowActionMenu(false);
+    Alert.alert("Report", "Report functionality coming soon. For urgent matters, please contact support@niice.app");
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // Real-time subscription for messages
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
 
   useEffect(() => {
     if (!matchInfo?.conversationId || !currentUserId) return;
@@ -456,10 +619,8 @@ export default function ChatTalkScreen() {
             ]);
             // Mark as read since user is viewing the chat
             markAsRead(matchInfo.conversationId, currentUserId);
-            // Scroll to bottom for new messages
-            setTimeout(() => {
-              flatListRef.current?.scrollToEnd({ animated: true });
-            }, 100);
+            // Scroll to bottom for new messages with smooth animation
+            flatListRef.current?.scrollToEnd({ animated: true });
           }
         }
       )
@@ -470,9 +631,9 @@ export default function ChatTalkScreen() {
     };
   }, [matchInfo?.conversationId, currentUserId]);
 
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
   // Real-time subscription for read receipts (partner's last_read_at)
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
 
   useEffect(() => {
     if (!matchInfo?.conversationId || !matchInfo?.otherUserId) return;
@@ -502,17 +663,29 @@ export default function ChatTalkScreen() {
     };
   }, [matchInfo?.conversationId, currentUserId]);
 
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
   // Effects
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
 
   useEffect(() => {
     initializeChat();
   }, [initializeChat]);
 
-  // ─────────────────────────────────────────────────────────────────────────────
+  // Cleanup recording on unmount
+  useEffect(() => {
+    return () => {
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+      }
+      if (recording) {
+        recording.stopAndUnloadAsync();
+      }
+    };
+  }, [recording]);
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // Helpers
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
 
   const formatMessageTime = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -534,27 +707,47 @@ export default function ChatTalkScreen() {
     }
   };
 
-  // Group messages by date
+  // Group messages by date and sender (for consecutive message grouping)
   const groupedMessages = React.useMemo(() => {
-    const groups: { date: string; messages: Message[] }[] = [];
+    const groups: { date: string; messageGroups: { senderId: string; messages: Message[] }[] }[] = [];
     let currentDate = "";
 
-    messages.forEach((msg) => {
+    messages.forEach((msg, index) => {
       const msgDate = new Date(msg.createdAt).toDateString();
+      
+      // New date group
       if (msgDate !== currentDate) {
         currentDate = msgDate;
-        groups.push({ date: msg.createdAt, messages: [msg] });
+        groups.push({ 
+          date: msg.createdAt, 
+          messageGroups: [{ senderId: msg.senderId, messages: [msg] }] 
+        });
       } else {
-        groups[groups.length - 1].messages.push(msg);
+        const currentDateGroup = groups[groups.length - 1];
+        const lastMessageGroup = currentDateGroup.messageGroups[currentDateGroup.messageGroups.length - 1];
+        
+        // Check if this message is from the same sender as the last group
+        // and if it's within 2 minutes of the last message
+        const lastMsg = lastMessageGroup.messages[lastMessageGroup.messages.length - 1];
+        const timeDiff = new Date(msg.createdAt).getTime() - new Date(lastMsg.createdAt).getTime();
+        const isConsecutive = msg.senderId === lastMessageGroup.senderId && timeDiff < 120000; // 2 minutes
+        
+        if (isConsecutive) {
+          // Add to existing group
+          lastMessageGroup.messages.push(msg);
+        } else {
+          // Start new group
+          currentDateGroup.messageGroups.push({ senderId: msg.senderId, messages: [msg] });
+        }
       }
     });
 
     return groups;
   }, [messages]);
 
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
   // Render
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
 
   const handleGoBack = () => {
     if (router.canGoBack()) {
@@ -575,7 +768,7 @@ export default function ChatTalkScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container} edges={["top"]}>
+      <SafeAreaView style={styles.container} edges={[]}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={BLUE} />
           <Text style={styles.loadingText}>Loading chat...</Text>
@@ -586,7 +779,7 @@ export default function ChatTalkScreen() {
 
   if (error) {
     return (
-      <SafeAreaView style={styles.container} edges={["top"]}>
+      <SafeAreaView style={styles.container} edges={[]}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.headerBackButton} onPress={handleGoBack}>
             <Ionicons name="chevron-back" size={24} color={INK} />
@@ -606,8 +799,8 @@ export default function ChatTalkScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
-      {/* Header */}
+    <SafeAreaView style={styles.container} edges={[]}>
+      {/* Header - Clean style matching profile.tsx */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.headerBackButton} onPress={handleGoBack}>
           <Ionicons name="chevron-back" size={24} color={INK} />
@@ -617,6 +810,7 @@ export default function ChatTalkScreen() {
           style={styles.headerCenter}
           onPress={handleViewProfile}
           disabled={partner?.isBlind}
+          activeOpacity={0.8}
         >
           <View style={[
             styles.headerAvatar,
@@ -625,14 +819,14 @@ export default function ChatTalkScreen() {
             {partner?.avatarUrl ? (
               <Image source={{ uri: partner.avatarUrl }} style={styles.headerAvatarImage} />
             ) : partner?.isBlind ? (
-              <Ionicons name="eye-off" size={20} color="#FFFFFF" />
+              <Ionicons name="eye-off" size={18} color="#FFFFFF" />
             ) : (
-              <Ionicons name="person" size={20} color={BLUE} />
+              <Ionicons name="person" size={18} color={BLUE} />
             )}
           </View>
           <View style={styles.headerInfo}>
             <Text style={styles.headerName} numberOfLines={1}>
-              {partner?.name || "Chat"}
+              {partner?.name || "Chat"}{partner?.age ? `, ${partner.age}` : ""}
             </Text>
             {partner?.isBlind && (
               <Text style={styles.headerBlindLabel}>Blind Match</Text>
@@ -642,9 +836,7 @@ export default function ChatTalkScreen() {
 
         <TouchableOpacity 
           style={styles.headerActionButton}
-          onPress={() => {
-            // TODO: Show options menu (view profile, block, etc.)
-          }}
+          onPress={() => setShowActionMenu(true)}
         >
           <Ionicons name="ellipsis-vertical" size={20} color={INK} />
         </TouchableOpacity>
@@ -653,7 +845,7 @@ export default function ChatTalkScreen() {
       {/* Messages */}
       <KeyboardAvoidingView 
         style={styles.messagesContainer}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={0}
       >
         <FlatList
@@ -661,49 +853,69 @@ export default function ChatTalkScreen() {
           data={groupedMessages}
           keyExtractor={(item) => item.date}
           contentContainerStyle={styles.messagesList}
-          renderItem={({ item: group }) => (
+          renderItem={({ item: dateGroup }) => (
             <View>
               <View style={styles.dateSeparator}>
                 <Text style={styles.dateSeparatorText}>
-                  {formatDateHeader(group.date)}
+                  {formatDateHeader(dateGroup.date)}
                 </Text>
               </View>
-              {group.messages.map((msg: Message) => {
-                // Check if message was read by partner (for my messages only)
-                const isRead = msg.isMine && partnerLastReadAt && 
-                  new Date(msg.createdAt) <= partnerLastReadAt;
+              
+              {dateGroup.messageGroups.map((msgGroup: { senderId: string; messages: Message[] }, groupIndex: number) => {
+                const isMine = msgGroup.messages[0]?.isMine;
                 
                 return (
-                  <View
-                    key={msg.id}
-                    style={[
-                      styles.messageBubble,
-                      msg.isMine ? styles.messageBubbleMine : styles.messageBubbleTheirs,
-                    ]}
-                  >
-                    <Text style={[
-                      styles.messageText,
-                      msg.isMine ? styles.messageTextMine : styles.messageTextTheirs,
-                    ]}>
-                      {msg.content}
-                    </Text>
-                    <View style={styles.messageFooter}>
-                      <Text style={[
-                        styles.messageTime,
-                        msg.isMine ? styles.messageTimeMine : styles.messageTimeTheirs,
-                      ]}>
-                        {formatMessageTime(msg.createdAt)}
-                      </Text>
-                      {msg.isMine && (
-                        <View style={styles.readReceipt}>
-                          <Ionicons 
-                            name="checkmark-done" 
-                            size={14} 
-                            color={isRead ? "#34B7F1" : "rgba(255,255,255,0.5)"} 
-                          />
+                  <View key={`group-${groupIndex}-${msgGroup.senderId}`}>
+                    {msgGroup.messages.map((msg: Message, msgIndex: number) => {
+                      const isFirst = msgIndex === 0;
+                      const isLast = msgIndex === msgGroup.messages.length - 1;
+                      
+                      // Check if message was read by partner (for my messages only)
+                      const isRead = msg.isMine && partnerLastReadAt && 
+                        new Date(msg.createdAt) <= partnerLastReadAt;
+                      
+                      return (
+                        <View
+                          key={msg.id}
+                          style={[
+                            styles.messageBubble,
+                            isMine ? styles.messageBubbleMine : styles.messageBubbleTheirs,
+                            !isFirst && (isMine ? styles.messageBubbleMineConsecutive : styles.messageBubbleTheirsConsecutive),
+                            isFirst && (isMine ? styles.messageBubbleMineFirst : styles.messageBubbleTheirsFirst),
+                            isLast && (isMine ? styles.messageBubbleMineLast : styles.messageBubbleTheirsLast),
+                          ]}
+                        >
+                          <View style={styles.messageContent}>
+                            <Text style={[
+                              styles.messageText,
+                              isMine ? styles.messageTextMine : styles.messageTextTheirs,
+                              styles.messageTextWithFooter,
+                            ]}>
+                              {msg.content}
+                            </Text>
+                            
+                            {/* Inline time and status - positioned absolutely - SHOWN ON ALL MESSAGES */}
+                            <View style={styles.messageInlineFooter}>
+                              <Text style={[
+                                styles.messageTime,
+                                isMine ? styles.messageTimeMine : styles.messageTimeTheirs,
+                              ]}>
+                                {formatMessageTime(msg.createdAt)}
+                              </Text>
+                              {isMine && (
+                                <View style={styles.readReceipt}>
+                                  <Ionicons 
+                                    name="checkmark-done" 
+                                    size={12} 
+                                    color={isRead ? BLUE : "rgba(255,255,255,0.5)"} 
+                                  />
+                                </View>
+                              )}
+                            </View>
+                          </View>
                         </View>
-                      )}
-                    </View>
+                      );
+                    })}
                   </View>
                 );
               })}
@@ -713,7 +925,7 @@ export default function ChatTalkScreen() {
             <View style={styles.emptyMessages}>
               <Ionicons 
                 name={partner?.isBlind ? "eye-off-outline" : "chatbubble-outline"} 
-                size={48} 
+                size={40} 
                 color="rgba(10,14,26,0.15)" 
               />
               <Text style={styles.emptyMessagesText}>
@@ -726,32 +938,72 @@ export default function ChatTalkScreen() {
           }
         />
 
-        {/* Input */}
+        {/* Input - Clean style with voice message button */}
         {matchInfo?.chatAllowed !== false ? (
           <View style={styles.inputContainer}>
-            <TextInput
-              style={styles.textInput}
-              placeholder="Type a message..."
-              placeholderTextColor="rgba(10,14,26,0.4)"
-              value={inputText}
-              onChangeText={setInputText}
-              multiline
-              maxLength={1000}
-            />
-            <TouchableOpacity
-              style={[
-                styles.sendButton,
-                (!inputText.trim() || sending) && styles.sendButtonDisabled,
-              ]}
-              onPress={handleSend}
-              disabled={!inputText.trim() || sending}
-            >
-              {sending ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <Ionicons name="send" size={18} color="#FFFFFF" />
-              )}
-            </TouchableOpacity>
+            {isRecording ? (
+              // Recording UI
+              <View style={styles.recordingContainer}>
+                <TouchableOpacity 
+                  style={styles.recordingCancelBtn}
+                  onPress={cancelRecording}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="close" size={20} color="#EF4444" />
+                </TouchableOpacity>
+                
+                <View style={styles.recordingInfo}>
+                  <View style={styles.recordingDot} />
+                  <Text style={styles.recordingText}>
+                    {formatRecordingDuration(recordingDuration)}
+                  </Text>
+                </View>
+
+                <TouchableOpacity 
+                  style={styles.recordingSendBtn}
+                  onPress={stopRecording}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="send" size={18} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
+            ) : (
+              // Normal input UI
+              <>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Type a message..."
+                  placeholderTextColor="rgba(10,14,26,0.4)"
+                  value={inputText}
+                  onChangeText={setInputText}
+                  multiline
+                  maxLength={1000}
+                />
+                
+                {inputText.trim() ? (
+                  <TouchableOpacity
+                    style={styles.sendButton}
+                    onPress={handleSend}
+                    disabled={sending}
+                    activeOpacity={0.7}
+                  >
+                    {sending ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Ionicons name="send" size={16} color="#FFFFFF" />
+                    )}
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.voiceButton}
+                    onPress={startRecording}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="mic" size={20} color={BLUE} />
+                  </TouchableOpacity>
+                )}
+              </>
+            )}
           </View>
         ) : (
           <View style={styles.chatDisabledContainer}>
@@ -761,13 +1013,62 @@ export default function ChatTalkScreen() {
           </View>
         )}
       </KeyboardAvoidingView>
+
+      {/* Action Menu Bottom Sheet */}
+      {showActionMenu && (
+        <Modal transparent visible={showActionMenu} animationType="slide" onRequestClose={() => setShowActionMenu(false)}>
+          <Pressable style={styles.sheetBackdrop} onPress={() => setShowActionMenu(false)}>
+            <Pressable style={styles.sheetContainer} onPress={(e) => e.stopPropagation()}>
+              <BlurView intensity={95} tint="light" style={styles.sheetBlur}>
+                <View style={styles.sheetContent}>
+                  <View style={styles.sheetHandle} />
+                  
+                  <Text style={styles.sheetTitle}>Actions for {partner?.name || "User"}</Text>
+                  
+                  <TouchableOpacity
+                    style={styles.sheetOption}
+                    onPress={handleBlock}
+                    activeOpacity={0.8}
+                  >
+                    <View style={[styles.sheetButton, { backgroundColor: "#FF4444" }]}>
+                      <Ionicons name="ban" size={20} color="#FFFFFF" style={{ marginRight: scale(8) }} />
+                      <Text style={styles.sheetButtonText}>Block User</Text>
+                    </View>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.sheetOption}
+                    onPress={handleReport}
+                    activeOpacity={0.8}
+                  >
+                    <View style={[styles.sheetButton, { backgroundColor: "#FFE4E4" }]}>
+                      <Ionicons name="flag" size={20} color="#FF4444" style={{ marginRight: scale(8) }} />
+                      <Text style={[styles.sheetButtonTextDark, { color: "#FF4444" }]}>Report User</Text>
+                    </View>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.sheetOption}
+                    onPress={() => setShowActionMenu(false)}
+                    activeOpacity={0.8}
+                  >
+                    <View style={[styles.sheetButton, { backgroundColor: "#EEF4FF" }]}>
+                      <Text style={styles.sheetButtonTextDark}>Cancel</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              </BlurView>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      )}
     </SafeAreaView>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Styles
-// ─────────────────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// Styles - Clean, no gradients, matching profile.tsx
+// ═══════════════════════════════════════════════════════════════════════════
 
 const styles = StyleSheet.create({
   container: {
@@ -807,27 +1108,31 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(24),
     paddingVertical: verticalScale(12),
     backgroundColor: BLUE,
-    borderRadius: scale(12),
+    borderRadius: scale(20),
   },
   errorButtonText: {
     fontFamily: Fonts.bold,
     fontSize: scale(14),
     color: "#FFFFFF",
+    letterSpacing: 0.2,
   },
 
-  // Header
+  // Header - Clean style, extends to top of screen
   header: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: scale(16),
-    paddingVertical: verticalScale(12),
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "rgba(10,14,26,0.08)",
-    backgroundColor: "#FFFFFF",
+    paddingTop: verticalScale(50),
+    paddingBottom: verticalScale(12),
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER,
+    backgroundColor: CARD_BG,
   },
   headerBackButton: {
-    width: scale(32),
-    height: scale(32),
+    width: scale(36),
+    height: scale(36),
+    borderRadius: scale(18),
+    backgroundColor: "rgba(27,68,205,0.08)",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -838,17 +1143,20 @@ const styles = StyleSheet.create({
     marginHorizontal: scale(12),
   },
   headerAvatar: {
-    width: scale(40),
-    height: scale(40),
-    borderRadius: scale(20),
-    backgroundColor: "#E4EBFA",
+    width: scale(36),
+    height: scale(36),
+    borderRadius: scale(18),
+    backgroundColor: "#E8F4FF",
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
     marginRight: scale(10),
+    borderWidth: 1,
+    borderColor: BORDER,
   },
   headerAvatarBlind: {
     backgroundColor: BLUE,
+    borderColor: BLUE,
   },
   headerAvatarImage: {
     width: "100%",
@@ -861,10 +1169,11 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.bold,
     fontSize: scale(16),
     color: INK,
+    letterSpacing: 0.2,
   },
   headerBlindLabel: {
     fontFamily: Fonts.primary,
-    fontSize: scale(12),
+    fontSize: scale(11),
     color: BLUE,
     marginTop: verticalScale(1),
   },
@@ -874,10 +1183,13 @@ const styles = StyleSheet.create({
     fontSize: scale(18),
     color: INK,
     textAlign: "center",
+    letterSpacing: 0.2,
   },
   headerActionButton: {
-    width: scale(32),
-    height: scale(32),
+    width: scale(36),
+    height: scale(36),
+    borderRadius: scale(18),
+    backgroundColor: "rgba(27,68,205,0.08)",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -888,52 +1200,115 @@ const styles = StyleSheet.create({
   },
   messagesList: {
     paddingHorizontal: scale(16),
-    paddingVertical: verticalScale(16),
+    paddingVertical: verticalScale(12),
     flexGrow: 1,
   },
   dateSeparator: {
     alignItems: "center",
-    marginVertical: verticalScale(16),
+    marginVertical: verticalScale(12),
   },
   dateSeparatorText: {
     fontFamily: Fonts.primary,
-    fontSize: scale(12),
+    fontSize: scale(11),
     color: "rgba(10,14,26,0.4)",
-    backgroundColor: "rgba(10,14,26,0.04)",
+    backgroundColor: "rgba(27,68,205,0.06)",
     paddingHorizontal: scale(12),
     paddingVertical: verticalScale(4),
-    borderRadius: scale(10),
+    borderRadius: scale(12),
+    overflow: "hidden",
   },
+  
+  // Message bubbles - Dynamic width, grouped style
   messageBubble: {
+    alignSelf: "flex-start",
     maxWidth: "80%",
-    paddingHorizontal: scale(14),
-    paddingVertical: verticalScale(10),
-    borderRadius: scale(18),
-    marginBottom: verticalScale(6),
+    paddingHorizontal: scale(12),
+    paddingVertical: verticalScale(8),
+    borderRadius: scale(16),
+    marginBottom: verticalScale(2),
   },
   messageBubbleMine: {
     alignSelf: "flex-end",
     backgroundColor: BLUE,
-    borderBottomRightRadius: scale(4),
   },
   messageBubbleTheirs: {
     alignSelf: "flex-start",
-    backgroundColor: "#FFFFFF",
-    borderBottomLeftRadius: scale(4),
+    backgroundColor: CARD_BG,
     borderWidth: 1,
-    borderColor: "rgba(10,14,26,0.06)",
+    borderColor: BORDER,
   },
+  
+  // First message in group - full rounded corners on top
+  messageBubbleMineFirst: {
+    borderTopLeftRadius: scale(16),
+    borderTopRightRadius: scale(16),
+  },
+  messageBubbleTheirsFirst: {
+    borderTopLeftRadius: scale(16),
+    borderTopRightRadius: scale(16),
+  },
+  
+  // Last message in group - distinctive tail corner
+  messageBubbleMineLast: {
+    borderBottomLeftRadius: scale(16),
+    borderBottomRightRadius: scale(4),
+    marginBottom: verticalScale(8),
+  },
+  messageBubbleTheirsLast: {
+    borderBottomLeftRadius: scale(4),
+    borderBottomRightRadius: scale(16),
+    marginBottom: verticalScale(8),
+  },
+  
+  // Consecutive messages (not first, not last) - rounded on both sides
+  messageBubbleMineConsecutive: {
+    borderTopRightRadius: scale(16),
+    borderBottomRightRadius: scale(16),
+  },
+  messageBubbleTheirsConsecutive: {
+    borderTopLeftRadius: scale(16),
+    borderBottomLeftRadius: scale(16),
+  },
+  
+  // Message content wrapper - relative positioning for absolute footer
+  messageContent: {
+    position: "relative",
+    minWidth: scale(60),
+  },
+  
   messageText: {
     fontFamily: Fonts.primary,
-    fontSize: scale(15),
-    lineHeight: scale(35),
+    fontSize: scale(14),
+    lineHeight: scale(20),
+    fontWeight: "500",
+    flexShrink: 1,
+    paddingTop: verticalScale(6),
   },
+  
+  // Add padding-right when message has footer to prevent overlap
+  messageTextWithFooter: {
+    paddingRight: scale(60),
+    paddingBottom: scale(2),
+  },
+  
   messageTextMine: {
     color: "#FFFFFF",
   },
   messageTextTheirs: {
     color: INK,
   },
+  
+  // Inline footer - absolutely positioned at bottom right
+  messageInlineFooter: {
+    position: "absolute",
+    bottom: scale(2),
+    right: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: scale(3),
+    backgroundColor: "transparent",
+  },
+  
   messageTime: {
     fontFamily: Fonts.primary,
     fontSize: scale(10),
@@ -944,15 +1319,8 @@ const styles = StyleSheet.create({
   messageTimeTheirs: {
     color: "rgba(10,14,26,0.4)",
   },
-  messageFooter: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "flex-end",
-    marginTop: verticalScale(4),
-    gap: scale(4),
-  },
   readReceipt: {
-    marginLeft: scale(2),
+    marginLeft: scale(1),
   },
   emptyMessages: {
     flex: 1,
@@ -968,49 +1336,175 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 
-  // Input
+  // Input - Clean style, positioned higher, NO top border/rectangle
   inputContainer: {
     flexDirection: "row",
     alignItems: "flex-end",
     paddingHorizontal: scale(16),
-    paddingVertical: verticalScale(12),
-    backgroundColor: "#FFFFFF",
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "rgba(10,14,26,0.08)",
+    paddingTop: verticalScale(10),
+    paddingBottom: verticalScale(16),
+    backgroundColor: CARD_BG,
   },
   textInput: {
     flex: 1,
-    minHeight: verticalScale(40),
-    maxHeight: verticalScale(100),
-    backgroundColor: "rgba(10,14,26,0.04)",
-    borderRadius: scale(20),
-    paddingHorizontal: scale(16),
-    paddingVertical: verticalScale(10),
+    minHeight: verticalScale(36),
+    maxHeight: verticalScale(80),
+    backgroundColor: "rgba(27,68,205,0.06)",
+    borderRadius: scale(18),
+    paddingHorizontal: scale(14),
+    paddingTop: verticalScale(9),
+    paddingBottom: verticalScale(9),
     fontFamily: Fonts.primary,
-    fontSize: scale(15),
+    fontSize: scale(14),
     color: INK,
-    marginRight: scale(10),
+    marginRight: scale(8),
+    borderWidth: 1,
+    borderColor: BORDER,
+    textAlignVertical: "center",
   },
   sendButton: {
-    width: scale(40),
-    height: scale(40),
-    borderRadius: scale(20),
+    width: scale(36),
+    height: scale(36),
+    borderRadius: scale(18),
     backgroundColor: BLUE,
     alignItems: "center",
     justifyContent: "center",
   },
-  sendButtonDisabled: {
-    backgroundColor: "rgba(27,68,205,0.4)",
+  voiceButton: {
+    width: scale(36),
+    height: scale(36),
+    borderRadius: scale(18),
+    backgroundColor: "rgba(27,68,205,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: BORDER,
   },
+  
+  // Recording UI
+  recordingContainer: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "rgba(27,68,205,0.06)",
+    borderRadius: scale(18),
+    paddingHorizontal: scale(12),
+    paddingVertical: verticalScale(8),
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  recordingCancelBtn: {
+    width: scale(36),
+    height: scale(36),
+    borderRadius: scale(18),
+    backgroundColor: "rgba(239,68,68,0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  recordingInfo: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: scale(8),
+  },
+  recordingDot: {
+    width: scale(8),
+    height: scale(8),
+    borderRadius: scale(4),
+    backgroundColor: "#EF4444",
+  },
+  recordingText: {
+    fontFamily: Fonts.bold,
+    fontSize: scale(14),
+    color: INK,
+    letterSpacing: 0.2,
+  },
+  recordingSendBtn: {
+    width: scale(36),
+    height: scale(36),
+    borderRadius: scale(18),
+    backgroundColor: BLUE,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
   chatDisabledContainer: {
     paddingHorizontal: scale(16),
     paddingVertical: verticalScale(16),
-    backgroundColor: "rgba(10,14,26,0.04)",
+    backgroundColor: "rgba(27,68,205,0.06)",
     alignItems: "center",
   },
   chatDisabledText: {
     fontFamily: Fonts.primary,
     fontSize: scale(14),
     color: "rgba(10,14,26,0.5)",
+  },
+
+  // Bottom Sheet for actions
+  sheetBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  sheetContainer: {
+    borderTopLeftRadius: scale(32),
+    borderTopRightRadius: scale(32),
+    overflow: "hidden",
+  },
+  sheetBlur: {
+    borderTopLeftRadius: scale(32),
+    borderTopRightRadius: scale(32),
+    overflow: "hidden",
+  },
+  sheetContent: {
+    backgroundColor: "rgba(255,255,255,0.98)",
+    paddingTop: verticalScale(12),
+    paddingBottom: verticalScale(30),
+    paddingHorizontal: scale(24),
+  },
+  sheetHandle: {
+    width: scale(48),
+    height: verticalScale(4),
+    borderRadius: scale(2),
+    backgroundColor: "rgba(0,0,0,0.2)",
+    alignSelf: "center",
+    marginBottom: verticalScale(16),
+  },
+  sheetTitle: {
+    fontFamily: Fonts.bold,
+    fontSize: scale(18),
+    color: INK,
+    textAlign: "center",
+    marginBottom: verticalScale(20),
+    letterSpacing: 0.2,
+  },
+  sheetOption: {
+    marginBottom: verticalScale(12),
+  },
+  sheetButton: {
+    flexDirection: "row",
+    height: verticalScale(56),
+    borderRadius: scale(28),
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: BLUE,
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  sheetButtonText: {
+    fontSize: scale(17),
+    fontFamily: Fonts.bold,
+    color: "#FFFFFF",
+    letterSpacing: 0.4,
+  },
+  sheetButtonTextDark: {
+    fontSize: scale(17),
+    fontFamily: Fonts.bold,
+    color: INK,
+    letterSpacing: 0.4,
   },
 });

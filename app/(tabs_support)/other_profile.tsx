@@ -5,21 +5,21 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    Dimensions,
-    Image,
-    Modal,
-    NativeScrollEvent,
-    NativeSyntheticEvent,
-    Pressable,
-    Animated as RNAnimated,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  Image,
+  Modal,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  Pressable,
+  Animated as RNAnimated,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -44,6 +44,21 @@ interface PromptAnswer {
   question?: string;
   title?: string;
   answer: string;
+}
+
+// ✅ Interface for profile data to fix TypeScript errors
+interface ProfileData {
+  full_name?: string | null;
+  age?: number | null;
+  bio?: string | null;
+  gender_subtype?: string | null;
+  height_cm?: number | null;
+  education?: string | null;
+  sexual_orientation?: string | null;
+  institution?: string | null;
+  prompt_answers?: any[] | null;
+  lat?: number | null;
+  lng?: number | null;
 }
 
 // Utils
@@ -89,6 +104,23 @@ const signPath = async (path: string | null): Promise<string | null> => {
   const { data, error } = await supabase.storage.from("user_photos").createSignedUrl(path, 3600);
   if (error) console.warn("signPath error:", error.message);
   return data?.signedUrl ?? null;
+};
+
+// ✅ Distance calculation helper
+const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): string => {
+  const R = 6371; // Earth's radius in km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lng2 - lng1) * Math.PI) / 180;
+  const a = 
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const distance = R * c;
+  
+  if (distance < 1) {
+    return `${Math.round(distance * 1000)}m away`;
+  }
+  return `${distance.toFixed(1)}km away`;
 };
 
 // Combination display logic for FRIEND MODE "What I'm Looking For"
@@ -253,6 +285,17 @@ export default function OtherProfileScreen() {
   const [showActionModal, setShowActionModal] = useState(false);
   const [blocking, setBlocking] = useState(false);
 
+  // ✅ Distance state
+  const [distance, setDistance] = useState<string | null>(null);
+
+  // ✅ Friend request status
+  const [matchStatus, setMatchStatus] = useState<{
+    status: 'pending' | 'accepted' | 'denied' | null;
+    isRequester: boolean;
+    matchId: string | null;
+  }>({ status: null, isRequester: false, matchId: null });
+  const [sendingRequest, setSendingRequest] = useState(false);
+
   const [profile, setProfile] = useState<{
     fullName: string; age: number | null; bio: string | null; genderSubtype: string | null; heightCm: number | null;
     education: string | null; sexualOrientation: string | null; institution: string | null;
@@ -331,6 +374,68 @@ export default function OtherProfileScreen() {
     }
   };
 
+  // ✅ Check match status
+  const checkMatchStatus = async (currentUid: string, targetUid: string) => {
+    try {
+      const { data } = await supabase
+        .from('match_requests')
+        .select('id, status, requester_id, target_id')
+        .or(`and(requester_id.eq.${currentUid},target_id.eq.${targetUid}),and(requester_id.eq.${targetUid},target_id.eq.${currentUid})`)
+        .neq('status', 'denied')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (data) {
+        setMatchStatus({
+          status: data.status,
+          isRequester: data.requester_id === currentUid,
+          matchId: data.id,
+        });
+        console.log("✅ Match status:", data.status, "isRequester:", data.requester_id === currentUid);
+      } else {
+        setMatchStatus({ status: null, isRequester: false, matchId: null });
+      }
+    } catch (error) {
+      console.error("Error checking match status:", error);
+    }
+  };
+
+  // ✅ Send friend request
+  const handleSendFriendRequest = async () => {
+    if (!currentUserId || !targetUserId || sendingRequest) return;
+
+    setSendingRequest(true);
+    try {
+      const { error } = await supabase
+        .from('match_requests')
+        .insert({
+          requester_id: currentUserId,
+          target_id: targetUserId,
+          match_mode: 'friend',
+          connection_visibility: 'full_profile',
+          status: 'pending',
+        });
+
+      if (error) {
+        if (error.code === '23505') {
+          Alert.alert("Already Sent", "You've already sent a friend request to this person.");
+        } else {
+          throw error;
+        }
+      } else {
+        Alert.alert("Success", "Friend request sent!");
+        // Refresh match status
+        await checkMatchStatus(currentUserId, targetUserId);
+      }
+    } catch (error) {
+      console.error("Error sending friend request:", error);
+      Alert.alert("Error", "Failed to send friend request. Please try again.");
+    } finally {
+      setSendingRequest(false);
+    }
+  };
+
   // Load profile data
   const loadProfileData = useCallback(async () => {
     if (!targetUserId) {
@@ -340,69 +445,113 @@ export default function OtherProfileScreen() {
 
     try {
       const { data: auth } = await supabase.auth.getUser();
-      setCurrentUserId(auth?.user?.id ?? null);
+      const currentUid = auth?.user?.id ?? null;
+      setCurrentUserId(currentUid);
+
+      // ✅ Get current user's location
+      let currentUserLat: number | null = null;
+      let currentUserLng: number | null = null;
+      if (currentUid) {
+        const { data: currentUserProfile } = await supabase
+          .from("profiles")
+          .select("lat, lng")
+          .eq("id", currentUid)
+          .single();
+        if (currentUserProfile) {
+          currentUserLat = currentUserProfile.lat;
+          currentUserLng = currentUserProfile.lng;
+        }
+      }
+
+      // ✅ STEP 1: Check match status FIRST (before fetching data)
+      let isFriend = false;
+      if (currentUid) {
+        await checkMatchStatus(currentUid, targetUserId);
+        // Check the match status we just set
+        const { data: matchCheck } = await supabase
+          .from('match_requests')
+          .select('status')
+          .or(`and(requester_id.eq.${currentUid},target_id.eq.${targetUserId}),and(requester_id.eq.${targetUserId},target_id.eq.${currentUid})`)
+          .eq('status', 'accepted')
+          .maybeSingle();
+        
+        isFriend = !!matchCheck;
+        console.log(isFriend ? "✅ FRIEND - Full visibility enabled" : "⚠️ NON-FRIEND - Limited visibility");
+      }
 
       // Fetch active frames
       await fetchActiveFrames(targetUserId);
 
-      // Fetch profile using RPC function (respects privacy)
-      const { data: profileData, error: profileError } = await supabase
-        .rpc("get_matched_user_profile", { target_user_id: targetUserId });
+      // ✅ STEP 2: Fetch data based on friend status
+      let targetProfileData: ProfileData | null = null;
+      let friendMode;
 
-      if (profileError) {
-        console.error("Failed to load profile via RPC:", profileError);
+      if (isFriend) {
+        // ✅ FULL VISIBILITY - Fetch everything directly when friends
+        const { data: fullProfile } = await supabase
+          .from("profiles")
+          .select("full_name, age, bio, gender_subtype, height_cm, education, sexual_orientation, institution, prompt_answers, lat, lng")
+          .eq("id", targetUserId)
+          .single();
+        
+        targetProfileData = fullProfile;
+        
+        // Get full friend mode data directly
+        const { data: fullFriendMode } = await supabase
+          .from("user_modes")
+          .select("looking_for_friend, value_friend")
+          .eq("user_id", targetUserId)
+          .eq("mode", "friend")
+          .maybeSingle();
+        
+        friendMode = fullFriendMode || {};
+      } else {
+        // ✅ LIMITED VISIBILITY - Use RPC for non-friends
+        const { data: rpcProfile } = await supabase.rpc('get_matched_user_profile', { 
+          target_user_id: targetUserId 
+        });
+        targetProfileData = (Array.isArray(rpcProfile) ? rpcProfile[0] : rpcProfile) as ProfileData;
+
+        const { data: rpcFriendMode } = await supabase.rpc('get_user_friend_mode', { 
+          target_user_id: targetUserId 
+        });
+        friendMode = Array.isArray(rpcFriendMode) ? rpcFriendMode[0] : (rpcFriendMode || {});
       }
 
-      const p: {
-        full_name?: string | null;
-        age?: number | null;
-        bio?: string | null;
-        main_photo_url?: string | null;
-      } = (profileData && profileData.length > 0) ? profileData[0] : {};
+      const p: ProfileData = targetProfileData || {};
+      console.log("✅ Friend mode data:", friendMode);
 
-      // Also try to get additional profile data directly (may be blocked by RLS but worth trying)
-      // Include basic fields as fallback in case RPC doesn't return them
-      const { data: extraProfileData } = await supabase
-        .from("profiles")
-        .select("full_name, age, bio, gender_subtype, height_cm, education, sexual_orientation, institution, prompt_answers")
-        .eq("id", targetUserId)
-        .maybeSingle();
+      // ✅ Calculate distance if both coordinates exist
+      if (currentUserLat && currentUserLng && p.lat && p.lng) {
+        const dist = calculateDistance(currentUserLat, currentUserLng, p.lat, p.lng);
+        setDistance(dist);
+        console.log("📍 Distance calculated:", dist);
+      }
 
-      const extra: {
-        full_name?: string | null;
-        age?: number | null;
-        bio?: string | null;
-        gender_subtype?: string | null;
-        height_cm?: number | null;
-        education?: string | null;
-        sexual_orientation?: string | null;
-        institution?: string | null;
-        prompt_answers?: any[] | null;
-      } = extraProfileData || {};
+      // ✅ STEP 3: Fetch additional data with appropriate visibility
+      let lifeRes, mainRes, othersRes, hobbiesRes;
 
-      // Fetch other data
-      const [lifeRes, mainRes, othersRes, modesRes, hobbiesRes] = await Promise.all([
-        supabase.from("lifestyle").select("drinking, smoking, zodiac, religion, politics, workout, communication, love_language, pets, kids, communities").eq("user_id", targetUserId).maybeSingle(),
-        supabase.from("user_photos").select("photo_url").eq("user_id", targetUserId).eq("is_main", true).maybeSingle(),
-        supabase.from("user_photos").select("photo_url, created_at, is_main").eq("user_id", targetUserId).neq("is_main", true).order("created_at", { ascending: true }),
-        supabase.from("user_modes").select("looking_for_friend, value_friend").eq("user_id", targetUserId).eq("mode", "friend").maybeSingle(),
-        supabase.from("user_hobbies").select("hobbies_master(label)").eq("user_id", targetUserId),
-      ]);
+      if (isFriend) {
+        // ✅ FULL VISIBILITY - Fetch all data directly
+        [lifeRes, mainRes, othersRes, hobbiesRes] = await Promise.all([
+          supabase.from("lifestyle").select("drinking, smoking, zodiac, religion, politics, workout, communication, love_language, pets, kids, communities").eq("user_id", targetUserId).maybeSingle(),
+          supabase.from("user_photos").select("photo_url").eq("user_id", targetUserId).eq("is_main", true).maybeSingle(),
+          supabase.from("user_photos").select("photo_url, created_at, is_main").eq("user_id", targetUserId).neq("is_main", true).order("created_at", { ascending: true }),
+          supabase.from("user_hobbies").select("hobbies_master(label)").eq("user_id", targetUserId),
+        ]);
+      } else {
+        // ✅ LIMITED VISIBILITY - Use RPC or restricted queries
+        // For non-friends, we might want to limit what's shown
+        [lifeRes, mainRes, othersRes, hobbiesRes] = await Promise.all([
+          supabase.from("lifestyle").select("drinking, smoking, zodiac").eq("user_id", targetUserId).maybeSingle(), // Limited fields
+          supabase.from("user_photos").select("photo_url").eq("user_id", targetUserId).eq("is_main", true).maybeSingle(),
+          Promise.resolve({ data: [] }), // No additional photos for non-friends
+          supabase.from("user_hobbies").select("hobbies_master(label)").eq("user_id", targetUserId).limit(3), // Limited hobbies
+        ]);
+      }
 
-      // Debug logging - remove after debugging
-      console.log("=== OTHER PROFILE DEBUG ===");
-      console.log("Target User ID:", targetUserId);
-      console.log("RPC Profile Data (p):", JSON.stringify(p, null, 2));
-      console.log("Extra Profile Data:", JSON.stringify(extra, null, 2));
-      console.log("Lifestyle Response:", JSON.stringify(lifeRes, null, 2));
-      console.log("Main Photo Response:", JSON.stringify(mainRes, null, 2));
-      console.log("Other Photos Response:", JSON.stringify(othersRes, null, 2));
-      console.log("Modes Response:", JSON.stringify(modesRes, null, 2));
-      console.log("Hobbies Response:", JSON.stringify(hobbiesRes, null, 2));
-      console.log("=== END DEBUG ===");
-
-      // Merge RPC data with extra profile data
-      const promptsRaw = Array.isArray(extra?.prompt_answers) ? extra.prompt_answers : null;
+      // Prompts
+      const promptsRaw = Array.isArray(p?.prompt_answers) ? p.prompt_answers : null;
       const prompts: PromptAnswer[] | null = promptsRaw
         ? [...promptsRaw]
             .filter((x: any) => x && typeof x === "object")
@@ -411,19 +560,16 @@ export default function OtherProfileScreen() {
         : null;
 
       setProfile({
-        fullName: p.full_name || extra.full_name || "",
-        age: p.age ?? extra.age ?? null,
-        bio: p.bio || extra.bio || null,
-        genderSubtype: extra.gender_subtype ?? null,
-        heightCm: extra.height_cm ?? null,
-        education: extra.education ?? null,
-        sexualOrientation: extra.sexual_orientation ?? null,
-        institution: extra.institution ?? null,
+        fullName: p.full_name || "",
+        age: p.age ?? null,
+        bio: p.bio || null,
+        genderSubtype: p.gender_subtype ?? null,
+        heightCm: p.height_cm ?? null,
+        education: p.education ?? null,
+        sexualOrientation: p.sexual_orientation ?? null,
+        institution: p.institution ?? null,
         promptAnswers: prompts,
       });
-
-      // Use main photo from RPC if available, otherwise from direct query
-      const rpcMainPhoto = p.main_photo_url ?? null;
 
       // Lifestyle
       const l = (lifeRes as any).data || {};
@@ -451,8 +597,8 @@ export default function OtherProfileScreen() {
       });
       setCommunities(matchedCommunities);
 
-      // Photos - use RPC main photo if available, otherwise from direct query
-      const avatarUrl = rpcMainPhoto || (mainRes as any)?.data?.photo_url || null;
+      // Photos
+      const avatarUrl = (mainRes as any)?.data?.photo_url || null;
       const others = (othersRes as any)?.data || [];
       const [first, second, third] = others;
       const [avatarSigned, firstSigned, secondSigned, thirdSigned] = await Promise.all([
@@ -468,27 +614,52 @@ export default function OtherProfileScreen() {
         third: thirdSigned ?? third?.photo_url ?? null,
       });
 
-      // Modes
-      const m = (modesRes as any)?.data || {};
+      // ✅ Process friend mode data
       const LOOKING_FOR_FRIEND_DISPLAY: Record<string, string> = {
-        new_friends_nearby: "New friends nearby", workout_fitness_buddy: "Workout/fitness buddy",
-        travel_companions: "Travel companions", activity_hobby_partners: "Activity/hobby partners",
-        casual_hangouts: "Casual hangouts", professional_networking: "Professional networking",
+        new_friends_nearby: "New friends nearby",
+        workout_fitness_buddy: "Workout/fitness buddy",
+        travel_companions: "Travel companions",
+        activity_hobby_partners: "Activity/hobby partners",
+        casual_hangouts: "Casual hangouts",
+        professional_networking: "Professional networking",
         close_friendships: "Close friendships",
       };
-      const lookingForEnums: string[] = Array.isArray(m.looking_for_friend) ? m.looking_for_friend : [];
-      const lookingForDisplay = lookingForEnums.map((e) => LOOKING_FOR_FRIEND_DISPLAY[e]).filter(Boolean);
+
+      const lookingForEnums: string[] = Array.isArray(friendMode.looking_for_friend)
+        ? friendMode.looking_for_friend
+        : [];
+
+      const lookingForDisplay = lookingForEnums
+        .map((e) => LOOKING_FOR_FRIEND_DISPLAY[e])
+        .filter(Boolean);
+
       let combinedLooking = "";
-      if (lookingForDisplay.length === 1) combinedLooking = lookingForDisplay[0];
-      else if (lookingForDisplay.length === 2) combinedLooking = getCombinedLookingFor(lookingForDisplay);
-      else if (lookingForDisplay.length > 2) combinedLooking = getCombinedLookingFor(lookingForDisplay.slice(0, 2));
+      if (lookingForDisplay.length === 1) {
+        combinedLooking = lookingForDisplay[0];
+      } else if (lookingForDisplay.length === 2) {
+        combinedLooking = getCombinedLookingFor(lookingForDisplay);
+      } else if (lookingForDisplay.length > 2) {
+        combinedLooking = getCombinedLookingFor(lookingForDisplay.slice(0, 2));
+      }
 
       const parseListHelper = (raw: any): string[] => {
-        const list = Array.isArray(raw) ? raw.map((s) => humanize(String(s)))
-          : typeof raw === "string" ? raw.split(/[,/&]| and /i).map((s: string) => humanize(s.trim())) : [];
+        const list = Array.isArray(raw)
+          ? raw.map((s) => humanize(String(s)))
+          : typeof raw === "string"
+          ? raw.split(/[,/&]| and /i).map((s: string) => humanize(s.trim()))
+          : [];
         return Array.from(new Set(list.filter(Boolean)));
       };
-      setModes({ looking: combinedLooking ? [combinedLooking] : [], values: parseListHelper(m.value_friend) });
+
+      setModes({
+        looking: combinedLooking ? [combinedLooking] : [],
+        values: parseListHelper(friendMode.value_friend),
+      });
+
+      console.log("✅ Set modes:", {
+        looking: combinedLooking ? [combinedLooking] : [],
+        values: parseListHelper(friendMode.value_friend),
+      });
 
       // Hobbies
       const hs = (hobbiesRes as any)?.data || [];
@@ -671,13 +842,15 @@ export default function OtherProfileScreen() {
         </TouchableOpacity>
         
         <View style={styles.topRight}>
-          <TouchableOpacity
-            onPress={handleChat}
-            activeOpacity={0.7}
-            style={styles.chatButton}
-          >
-            <Ionicons name="chatbubble-outline" size={20} color="#FFFFFF" />
-          </TouchableOpacity>
+          {matchStatus.status === 'accepted' && (
+            <TouchableOpacity
+              onPress={handleChat}
+              activeOpacity={0.7}
+              style={styles.chatButtonIcon}
+            >
+              <Ionicons name="chatbubble-outline" size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             onPress={() => setShowActionModal(true)}
             activeOpacity={0.7}
@@ -734,6 +907,62 @@ export default function OtherProfileScreen() {
               )}
             </View>
 
+            {/* Friend Status or Add Friend Button */}
+            {matchStatus.status === 'accepted' ? (
+              <View style={styles.friendBadge}>
+                <Ionicons name="checkmark-circle" size={16} color="#22C55E" style={{ marginRight: scale(6) }} />
+                <Text style={styles.friendBadgeText}>Friend</Text>
+              </View>
+            ) : matchStatus.status === 'pending' ? (
+              matchStatus.isRequester ? (
+                <View style={styles.pendingBadge}>
+                  <Ionicons name="time-outline" size={16} color="#F59E0B" style={{ marginRight: scale(6) }} />
+                  <Text style={styles.pendingBadgeText}>Request Sent</Text>
+                </View>
+              ) : (
+                <TouchableOpacity 
+                  activeOpacity={0.85} 
+                  onPress={async () => {
+                    if (!matchStatus.matchId) return;
+                    try {
+                      await supabase.from('match_requests').update({ status: 'accepted' }).eq('id', matchStatus.matchId);
+                      Alert.alert("Success", "Friend request accepted!");
+                      if (currentUserId) await checkMatchStatus(currentUserId, targetUserId);
+                    } catch (error) {
+                      Alert.alert("Error", "Failed to accept request");
+                    }
+                  }}
+                  disabled={sendingRequest}
+                  style={styles.acceptButton}
+                >
+                  {sendingRequest ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <Ionicons name="checkmark" size={16} color="#FFFFFF" style={{ marginRight: scale(6) }} />
+                      <Text style={styles.acceptButtonText}>Accept Request</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              )
+            ) : (
+              <TouchableOpacity 
+                activeOpacity={0.85} 
+                onPress={handleSendFriendRequest}
+                disabled={sendingRequest}
+                style={styles.addFriendButton}
+              >
+                {sendingRequest ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons name="person-add" size={16} color="#FFFFFF" style={{ marginRight: scale(6) }} />
+                    <Text style={styles.addFriendText}>Add Friend</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+
             {/* Events Button */}
             <TouchableOpacity 
               activeOpacity={0.9} 
@@ -741,18 +970,11 @@ export default function OtherProfileScreen() {
                 pathname: "/(tabs_support)/other_event_status", 
                 params: { userId: targetUserId } 
               })}
-              style={styles.eventsButtonWrapper}
+              style={styles.eventsButton}
             >
-              <LinearGradient
-                colors={["#EEF4FF", "#E8F0FF"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.eventsButton}
-              >
-                <Ionicons name="calendar" size={16} color={BLUE} style={{ marginRight: scale(6) }} />
-                <Text style={styles.eventsButtonText}>Events</Text>
-                <Ionicons name="chevron-forward" size={16} color={BLUE} />
-              </LinearGradient>
+              <Ionicons name="calendar" size={16} color={BLUE} style={{ marginRight: scale(6) }} />
+              <Text style={styles.eventsButtonText}>Events</Text>
+              <Ionicons name="chevron-forward" size={16} color={BLUE} />
             </TouchableOpacity>
           </View>
         </View>
@@ -1134,7 +1356,7 @@ const styles = StyleSheet.create({
     alignItems: "center", 
     gap: scale(12) 
   },
-  chatButton: { 
+  chatButtonIcon: { 
     width: scale(40), 
     height: scale(40), 
     borderRadius: scale(20), 
@@ -1222,16 +1444,96 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.bold, 
     letterSpacing: 0.3 
   },
-  eventsButtonWrapper: { 
-    marginTop: verticalScale(8) 
+  // Friend Status Badge Styles
+  friendBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: verticalScale(8),
+    backgroundColor: "rgba(34,197,94,0.1)",
+    paddingHorizontal: scale(12),
+    paddingVertical: verticalScale(6),
+    borderRadius: scale(16),
+    alignSelf: "flex-start",
+    borderWidth: 1,
+    borderColor: "rgba(34,197,94,0.2)",
+  },
+  friendBadgeText: {
+    fontFamily: Fonts.bold,
+    fontSize: scale(13),
+    color: "#22C55E",
+    letterSpacing: 0.2,
+  },
+  pendingBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: verticalScale(8),
+    backgroundColor: "rgba(245,158,11,0.1)",
+    paddingHorizontal: scale(12),
+    paddingVertical: verticalScale(6),
+    borderRadius: scale(16),
+    alignSelf: "flex-start",
+    borderWidth: 1,
+    borderColor: "rgba(245,158,11,0.2)",
+  },
+  pendingBadgeText: {
+    fontFamily: Fonts.bold,
+    fontSize: scale(13),
+    color: "#F59E0B",
+    letterSpacing: 0.2,
+  },
+  addFriendButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: verticalScale(8),
+    alignSelf: "flex-start",
+    backgroundColor: BLUE,
+    paddingHorizontal: scale(16),
+    paddingVertical: verticalScale(8),
+    borderRadius: scale(20),
+    shadowColor: BLUE,
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
+  addFriendText: {
+    fontFamily: Fonts.bold,
+    fontSize: scale(14),
+    color: "#FFFFFF",
+    letterSpacing: 0.3,
+  },
+  acceptButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: verticalScale(8),
+    alignSelf: "flex-start",
+    backgroundColor: "#22C55E",
+    paddingHorizontal: scale(16),
+    paddingVertical: verticalScale(8),
+    borderRadius: scale(20),
+    shadowColor: "#22C55E",
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
+  acceptButtonText: {
+    fontFamily: Fonts.bold,
+    fontSize: scale(14),
+    color: "#FFFFFF",
+    letterSpacing: 0.3,
   },
   eventsButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    marginTop: verticalScale(8),
     paddingVertical: verticalScale(10),
     paddingHorizontal: scale(16),
     borderRadius: scale(12),
+    backgroundColor: "rgba(27,68,205,0.08)",
     borderWidth: 1,
     borderColor: "rgba(27,68,205,0.15)",
   },

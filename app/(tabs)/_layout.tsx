@@ -182,19 +182,64 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
 
 // -------- Header cloned from profile.tsx (with Friend pill) --------
 function ProfileLikeHeader() {
+  const popScale = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.spring(popScale, {
+      toValue: 0.94,
+      useNativeDriver: true,
+      friction: 6,
+      tension: 140,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.sequence([
+      Animated.spring(popScale, {
+        toValue: 1.08,
+        useNativeDriver: true,
+        friction: 4,
+        tension: 160,
+      }),
+      Animated.spring(popScale, {
+        toValue: 1,
+        useNativeDriver: true,
+        friction: 6,
+        tension: 140,
+      }),
+    ]).start();
+  };
+
   return (
-    <SafeAreaView edges={["top"]} style={styles.headerSafeArea}>
+    <SafeAreaView edges={[]} style={styles.headerSafeArea}>
       <View style={styles.topBar}>
-        <View style={styles.logoRow}>
-          <Image
-            source={require("../../assets/images/niice_logo_icon.png")}
-            resizeMode="contain"
-            style={styles.logo}
-          />
-          <View style={styles.modePill}>
-            <Text style={styles.modePillText}>Friend</Text>
-          </View>
-        </View>
+        <Pressable
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
+          hitSlop={10}
+        >
+          <Animated.View
+            style={[
+              styles.logoRow,
+              {
+                transform: [
+                  { translateY: verticalScale(60.4) },
+                  { scale: popScale },
+                ],
+              },
+            ]}
+          >
+            <Image
+              source={require("../../assets/images/niice_logo_icon.png")}
+              resizeMode="contain"
+              style={styles.logo}
+            />
+            <View style={styles.modePill}>
+              <Text style={styles.modePillText}>Friend</Text>
+            </View>
+          </Animated.View>
+        </Pressable>
+
         {/* Spacer to mimic place of edit + settings buttons */}
         <View style={styles.headerRightSpacer} />
       </View>
@@ -289,35 +334,47 @@ const styles = StyleSheet.create({
     backgroundColor: HEADER_BG,
   },
 
+  // logo + pill row (no transform here, we apply it inline with scale)
   logoRow: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-end",
   },
 
   logo: {
     width: scale(110),
     height: verticalScale(38),
-    marginTop: verticalScale(1.38),
+    marginRight: scale(6),
+    marginBottom: verticalScale(2),
   },
 
   modePill: {
-    marginLeft: scale(10),
-    paddingHorizontal: scale(14),
-    paddingVertical: verticalScale(6),
-    borderRadius: verticalScale(18),
+    marginLeft: scale(6),
+    marginTop: verticalScale(4),
+    marginBottom: verticalScale(3),
+    height: verticalScale(28),
+    paddingHorizontal: scale(18),
+    borderRadius: verticalScale(999),
     backgroundColor: BLUE,
-    borderWidth: 1.5,
+    borderWidth: 1.2,
     borderColor: INK,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
   },
+
   modePillText: {
-    color: "#FFFFFF",
-    fontSize: scale(12),
-    fontWeight: "700",
+    color: BG,
+    fontSize: scale(13),
     fontFamily: "Kadwa-Bold",
+    fontWeight: "700",
+    letterSpacing: 0.15,
   },
 
   headerRightSpacer: {
-    // roughly the space taken by editButton + settingsBtn in profile.tsx
     width: scale(40 + 12 + 40),
   },
 });

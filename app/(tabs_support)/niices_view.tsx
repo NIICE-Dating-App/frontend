@@ -4,16 +4,16 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    Dimensions,
-    Image,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Dimensions,
+  Image,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -21,6 +21,7 @@ import { Colors } from "@/components/theme";
 import { Fonts } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
 import { scale, verticalScale } from "@/utils/responsive";
+import ActiveFramesModal from "../(frames)/active_frames";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -28,6 +29,8 @@ const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const BG = Colors.BG;
 const INK = Colors.INK;
 const BLUE = Colors.BLUE;
+const CARD_BG = "#FFFFFF";
+const BORDER = "rgba(27, 68, 205, 0.08)";
 
 // ================== TYPES ==================
 type ConnectionVisibility = "full_profile" | "blind";
@@ -64,41 +67,75 @@ const formatRelativeTime = (dateStr: string | null): string => {
 // ================== NIICE CARD COMPONENT ==================
 const NiiceCard: React.FC<{ 
   match: NiiceMatch; 
-  onPress: () => void;
+  onOpenFrames: (userId: string) => void;
   onChatPress: () => void;
-}> = ({ match, onPress, onChatPress }) => (
-  <View style={styles.niiceCard}>
-    <TouchableOpacity style={styles.niiceCardBody} onPress={onPress} activeOpacity={0.8}>
-      <View style={styles.niiceAvatarContainer}>
-        {match.main_photo_url ? (
-          <Image source={{ uri: match.main_photo_url }} style={styles.niiceAvatar} />
-        ) : (
-          <View style={styles.niiceAvatarPlaceholder}>
-            <Ionicons name="person" size={28} color="rgba(10,14,26,0.4)" />
+}> = ({ match, onOpenFrames, onChatPress }) => {
+  const hasNewMessage = !match.last_message_preview;
+  
+  return (
+    <View style={styles.niiceCard}>
+      <TouchableOpacity style={styles.niiceCardBody} onPress={onChatPress} activeOpacity={0.9}>
+        {/* Avatar - Opens Frames or Profile */}
+        <TouchableOpacity 
+          style={styles.niiceAvatarContainer}
+          onPress={(e) => { e.stopPropagation(); onOpenFrames(match.other_user_id); }}
+          activeOpacity={0.8}
+        >
+          {match.from_blind_meet && <View style={styles.niiceAvatarRing} />}
+          <View style={[styles.niiceAvatarInner, match.from_blind_meet && styles.niiceAvatarInnerWithRing]}>
+            {match.main_photo_url ? (
+              <Image source={{ uri: match.main_photo_url }} style={styles.niiceAvatar} />
+            ) : (
+              <View style={styles.niiceAvatarPlaceholder}>
+                <Ionicons name="person" size={20} color={BLUE} />
+              </View>
+            )}
           </View>
-        )}
-        {match.from_blind_meet && (
-          <View style={styles.niiceBlindBadge}>
-            <Ionicons name="eye-off" size={10} color="#FFFFFF" />
+          {match.from_blind_meet && (
+            <View style={styles.niiceBlindBadge}>
+              <Ionicons name="eye-off" size={9} color="#FFFFFF" />
+            </View>
+          )}
+        </TouchableOpacity>
+        
+        {/* Info */}
+        <View style={styles.niiceInfo}>
+          <View style={styles.niiceNameRow}>
+            <Text style={styles.niiceName} numberOfLines={1}>
+              {match.full_name}{match.age ? `, ${match.age}` : ""}
+            </Text>
+            {hasNewMessage && (
+              <View style={styles.niiceNewBadge}>
+                <Text style={styles.niiceNewText}>New</Text>
+              </View>
+            )}
           </View>
-        )}
-      </View>
-      
-      <View style={styles.niiceInfo}>
-        <Text style={styles.niiceName} numberOfLines={1}>
-          {match.full_name}{match.age ? `, ${match.age}` : ""}
-        </Text>
-        <Text style={styles.niiceMeta}>
-          Connected {formatRelativeTime(match.created_at)}
-        </Text>
-      </View>
+          
+          {match.last_message_preview ? (
+            <Text style={styles.niiceLastMessage} numberOfLines={1}>
+              {match.last_message_preview}
+            </Text>
+          ) : (
+            <View style={styles.niiceLastMessageRow}>
+              <Ionicons name="chatbubble-ellipses-outline" size={14} color="rgba(10,14,26,0.4)" />
+              <Text style={styles.niiceLastMessageMuted}>Say hi and break the ice</Text>
+            </View>
+          )}
+          
+          <Text style={styles.niiceMeta}>
+            {match.last_message_at ? `Last talked ${formatRelativeTime(match.last_message_at)}` : `Connected ${formatRelativeTime(match.created_at)}`}
+          </Text>
+        </View>
 
-      <TouchableOpacity style={styles.chatButton} onPress={onChatPress} activeOpacity={0.7}>
-        <Ionicons name="chatbubble" size={18} color={BLUE} />
+        {/* Chevron Only */}
+        <Ionicons name="chevron-forward" size={20} color="rgba(10,14,26,0.3)" style={{ marginLeft: scale(8) }} />
       </TouchableOpacity>
-    </TouchableOpacity>
-  </View>
-);
+      
+      {/* Hairline Divider */}
+      <View style={styles.niiceCardDivider} />
+    </View>
+  );
+};
 
 // ================== EMPTY STATE ==================
 const EmptyState: React.FC<{ 
@@ -110,7 +147,7 @@ const EmptyState: React.FC<{
 }> = ({ icon, title, subtitle, ctaLabel, onCta }) => (
   <View style={styles.emptyState}>
     <View style={styles.emptyIconContainer}>
-      <Ionicons name={icon as any} size={40} color={BLUE} />
+      <Ionicons name={icon as any} size={32} color={BLUE} />
     </View>
     <Text style={styles.emptyTitle}>{title}</Text>
     <Text style={styles.emptySubtitle}>{subtitle}</Text>
@@ -130,6 +167,9 @@ export default function NiicesViewScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  
+  const [showFramesModal, setShowFramesModal] = useState(false);
+  const [framesData, setFramesData] = useState<any[]>([]);
 
   // Load User ID
   useEffect(() => {
@@ -172,7 +212,6 @@ export default function NiicesViewScreen() {
         .order('responded_at', { ascending: false, nullsFirst: false });
 
       if (error) {
-        console.error("Error fetching matches:", error);
         setNiiceMatches([]);
         setFilteredMatches([]);
         return;
@@ -227,7 +266,6 @@ export default function NiicesViewScreen() {
       setNiiceMatches(niices);
       setFilteredMatches(niices);
     } catch (err) {
-      console.error("Error loading niice matches:", err);
       setNiiceMatches([]);
       setFilteredMatches([]);
     } finally {
@@ -260,8 +298,32 @@ export default function NiicesViewScreen() {
     setRefreshing(false);
   };
 
-  const handleViewProfile = (targetUserId: string) => {
-    router.push({ pathname: "/profile", params: { userId: targetUserId } });
+  // Check for frames first, if none exist go to profile
+  const handleOpenFrames = useCallback(async (targetUserId: string, matchId: string) => {
+    try {
+      const { data } = await supabase.rpc('get_user_active_frames', { target_user_id: targetUserId });
+      if (data && data.length > 0) {
+        const processed = await Promise.all(data.map(async (frame: any) => {
+          if (frame.media_url && !frame.media_url.startsWith('http')) {
+            const { data: signedData } = await supabase.storage.from("frames").createSignedUrl(frame.media_url, 3600);
+            return { ...frame, media_url: signedData?.signedUrl || frame.media_url };
+          }
+          return frame;
+        }));
+        setFramesData(processed);
+        setShowFramesModal(true);
+      } else {
+        // No frames, go to profile
+        router.push({ pathname: "/(tabs_support)/other_profile", params: { userId: targetUserId, matchId: matchId } });
+      }
+    } catch (err) { 
+      // On error, go to profile
+      router.push({ pathname: "/(tabs_support)/other_profile", params: { userId: targetUserId, matchId: matchId } });
+    }
+  }, []);
+
+  const handleViewProfile = (targetUserId: string, matchId: string) => {
+    router.push({ pathname: "/(tabs_support)/other_profile", params: { userId: targetUserId, matchId: matchId } });
   };
 
   const handleChatPress = (matchId: string) => {
@@ -274,8 +336,8 @@ export default function NiicesViewScreen() {
     <SafeAreaView style={styles.container} edges={["top"]}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()} activeOpacity={0.7}>
-          <Ionicons name="arrow-back" size={24} color={INK} />
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()} activeOpacity={0.85}>
+          <Ionicons name="arrow-back" size={24} color={BLUE} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Your Niices</Text>
         <View style={styles.headerCount}>
@@ -286,7 +348,7 @@ export default function NiicesViewScreen() {
       {/* Search Bar */}
       <View style={styles.searchContainer}>
         <View style={styles.searchBar}>
-          <Ionicons name="search" size={18} color="rgba(10,14,26,0.4)" />
+          <Ionicons name="search" size={18} color={BLUE} style={{ opacity: 0.6 }} />
           <TextInput
             style={styles.searchInput}
             placeholder="Search niices..."
@@ -295,8 +357,8 @@ export default function NiicesViewScreen() {
             onChangeText={setSearchQuery}
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery("")}>
-              <Ionicons name="close-circle" size={18} color="rgba(10,14,26,0.4)" />
+            <TouchableOpacity onPress={() => setSearchQuery("")} activeOpacity={0.7}>
+              <Ionicons name="close-circle" size={18} color={BLUE} style={{ opacity: 0.6 }} />
             </TouchableOpacity>
           )}
         </View>
@@ -320,7 +382,9 @@ export default function NiicesViewScreen() {
           {filteredMatches.length === 0 ? (
             searchQuery.trim() ? (
               <View style={styles.emptyInlineState}>
-                <Ionicons name="search" size={24} color="rgba(10,14,26,0.3)" />
+                <View style={styles.emptyInlineIconContainer}>
+                  <Ionicons name="search" size={24} color={BLUE} />
+                </View>
                 <Text style={styles.emptyInlineText}>No niices found</Text>
               </View>
             ) : (
@@ -333,40 +397,52 @@ export default function NiicesViewScreen() {
               />
             )
           ) : (
-            filteredMatches.map((match) => (
-              <NiiceCard
-                key={match.id}
-                match={match}
-                onPress={() => handleViewProfile(match.other_user_id)}
-                onChatPress={() => handleChatPress(match.id)}
-              />
-            ))
+            <View style={styles.niicesList}>
+              {filteredMatches.map((match) => (
+                <NiiceCard
+                  key={match.id}
+                  match={match}
+                  onOpenFrames={(userId) => handleOpenFrames(userId, match.id)}
+                  onChatPress={() => handleChatPress(match.id)}
+                />
+              ))}
+            </View>
           )}
         </ScrollView>
       )}
+      
+      <ActiveFramesModal 
+        visible={showFramesModal} 
+        onClose={() => setShowFramesModal(false)} 
+        frames={framesData}
+        isOwnProfile={false}
+      />
     </SafeAreaView>
   );
 }
 
-// ================== STYLES ==================
+// ================== STYLES (MATCHING MAIN NIICES SECTION) ==================
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: BG,
   },
+  
+  // Header - Clean minimal style
   header: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: scale(16),
-    paddingVertical: verticalScale(12),
+    paddingHorizontal: scale(20),
+    paddingVertical: verticalScale(14),
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(27,68,205,0.06)",
+    borderBottomColor: BORDER,
+    backgroundColor: BG,
   },
   backButton: {
     width: scale(40),
     height: scale(40),
     borderRadius: scale(20),
-    backgroundColor: "rgba(27,68,205,0.06)",
+    backgroundColor: "rgba(27,68,205,0.08)",
     alignItems: "center",
     justifyContent: "center",
     marginRight: scale(12),
@@ -376,11 +452,12 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.bold,
     fontSize: scale(20),
     color: INK,
+    letterSpacing: 0.2,
   },
   headerCount: {
     backgroundColor: BLUE,
-    borderRadius: scale(12),
-    paddingHorizontal: scale(10),
+    borderRadius: scale(16),
+    paddingHorizontal: scale(12),
     paddingVertical: verticalScale(4),
     minWidth: scale(32),
     alignItems: "center",
@@ -389,28 +466,32 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.bold,
     fontSize: scale(13),
     color: "#FFFFFF",
+    letterSpacing: 0.2,
   },
   
-  // Search
+  // Search - Minimal compact style
   searchContainer: {
-    paddingHorizontal: scale(16),
+    paddingHorizontal: scale(20),
     paddingVertical: verticalScale(12),
   },
   searchBar: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "rgba(27,68,205,0.06)",
-    borderRadius: scale(12),
+    borderRadius: scale(20),
     paddingHorizontal: scale(14),
     paddingVertical: verticalScale(10),
     gap: scale(10),
+    borderWidth: 1,
+    borderColor: BORDER,
   },
   searchInput: {
     flex: 1,
     fontFamily: Fonts.primary,
-    fontSize: scale(15),
+    fontSize: scale(14),
     color: INK,
     padding: 0,
+    fontWeight: "500",
   },
   
   // Scroll
@@ -418,80 +499,141 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: scale(16),
-    paddingTop: verticalScale(4),
     paddingBottom: verticalScale(100),
   },
   
-  // Niice Card
+  // Niices List Container - NO HORIZONTAL PADDING (full width)
+  niicesList: {
+    // Removed paddingHorizontal to make cards full width
+  },
+  
+  // Niice Card - Full width with internal padding
   niiceCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: scale(16),
-    marginBottom: verticalScale(10),
-    borderWidth: 1,
-    borderColor: "rgba(27,68,205,0.06)",
-    overflow: "hidden",
+    backgroundColor: CARD_BG,
+    marginBottom: verticalScale(0),
   },
   niiceCardBody: {
     flexDirection: "row",
     alignItems: "center",
-    padding: scale(14),
+    paddingVertical: verticalScale(10),
+    paddingHorizontal: scale(20), // Padding inside the card for content
+    minHeight: verticalScale(64),
   },
+  niiceCardDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: BORDER,
+    marginLeft: scale(78), // Adjusted to account for internal padding + avatar width
+  },
+  
+  // Avatar - 44x44 matching main section
   niiceAvatarContainer: {
     position: "relative",
-    marginRight: scale(12),
+    marginRight: scale(14),
+    width: scale(44),
+    height: scale(44),
+  },
+  niiceAvatarRing: {
+    position: "absolute",
+    top: -2,
+    left: -2,
+    right: -2,
+    bottom: -2,
+    borderRadius: scale(23),
+    borderWidth: 2,
+    borderColor: BLUE,
+  },
+  niiceAvatarInner: {
+    width: scale(44),
+    height: scale(44),
+    borderRadius: scale(22),
+    overflow: "hidden",
+    backgroundColor: "#E8F4FF",
+  },
+  niiceAvatarInnerWithRing: {
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
   },
   niiceAvatar: {
-    width: scale(56),
-    height: scale(56),
-    borderRadius: scale(28),
+    width: "100%",
+    height: "100%",
   },
   niiceAvatarPlaceholder: {
-    width: scale(56),
-    height: scale(56),
-    borderRadius: scale(28),
-    backgroundColor: "#E8F4FF",
+    width: "100%",
+    height: "100%",
     alignItems: "center",
     justifyContent: "center",
+    backgroundColor: "#E8F4FF",
   },
   niiceBlindBadge: {
     position: "absolute",
-    bottom: -4,
-    right: -4,
-    width: scale(20),
-    height: scale(20),
-    borderRadius: scale(10),
+    bottom: -2,
+    right: -2,
+    width: scale(18),
+    height: scale(18),
+    borderRadius: scale(9),
     backgroundColor: BLUE,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
     borderColor: "#FFFFFF",
   },
+  
+  // Info Section
   niiceInfo: {
     flex: 1,
+  },
+  niiceNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: scale(6),
+    marginBottom: verticalScale(2),
   },
   niiceName: {
     fontFamily: Fonts.bold,
     fontSize: scale(16),
     color: INK,
-    marginBottom: verticalScale(4),
+    letterSpacing: 0.2,
+    flexShrink: 1,
+  },
+  niiceNewBadge: {
+    backgroundColor: "rgba(27,68,205,0.08)",
+    borderRadius: scale(10),
+    paddingHorizontal: scale(8),
+    paddingVertical: verticalScale(2),
+  },
+  niiceNewText: {
+    fontFamily: Fonts.bold,
+    fontSize: scale(10),
+    color: BLUE,
+    letterSpacing: 0.2,
+  },
+  niiceLastMessage: {
+    fontFamily: Fonts.primary,
+    fontSize: scale(14),
+    color: "rgba(10,14,26,0.7)",
+    marginBottom: verticalScale(2),
+    fontWeight: "500",
+  },
+  niiceLastMessageRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: scale(4),
+    marginBottom: verticalScale(2),
+  },
+  niiceLastMessageMuted: {
+    fontFamily: Fonts.primary,
+    fontSize: scale(14),
+    color: "rgba(10,14,26,0.5)",
+    fontStyle: "italic",
+    fontWeight: "500",
   },
   niiceMeta: {
     fontFamily: Fonts.primary,
-    fontSize: scale(13),
-    color: "rgba(10,14,26,0.5)",
-  },
-  chatButton: {
-    width: scale(44),
-    height: scale(44),
-    borderRadius: scale(22),
-    backgroundColor: "rgba(27,68,205,0.08)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginLeft: scale(8),
+    fontSize: scale(12),
+    color: "rgba(10,14,26,0.4)",
   },
   
-  // Loading
+  // Loading - Minimal style
   loadingContainer: {
     flex: 1,
     alignItems: "center",
@@ -505,16 +647,16 @@ const styles = StyleSheet.create({
     marginTop: verticalScale(12),
   },
   
-  // Empty State
+  // Empty State - Minimal clean style
   emptyState: {
     alignItems: "center",
     paddingVertical: verticalScale(60),
     paddingHorizontal: scale(32),
   },
   emptyIconContainer: {
-    width: scale(80),
-    height: scale(80),
-    borderRadius: scale(40),
+    width: scale(72),
+    height: scale(72),
+    borderRadius: scale(36),
     backgroundColor: "rgba(27,68,205,0.08)",
     alignItems: "center",
     justifyContent: "center",
@@ -522,22 +664,22 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontFamily: Fonts.bold,
-    fontSize: scale(20),
+    fontSize: scale(18),
     color: INK,
     marginBottom: verticalScale(8),
     textAlign: "center",
+    letterSpacing: 0.2,
   },
   emptySubtitle: {
     fontFamily: Fonts.primary,
     fontSize: scale(14),
     color: "rgba(10,14,26,0.6)",
     textAlign: "center",
-    marginBottom: verticalScale(24),
-    lineHeight: scale(20),
+    marginBottom: verticalScale(20),
   },
   emptyCta: {
+    borderRadius: scale(28),
     backgroundColor: BLUE,
-    borderRadius: scale(12),
     paddingHorizontal: scale(24),
     paddingVertical: verticalScale(12),
   },
@@ -545,15 +687,25 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.bold,
     fontSize: scale(14),
     color: "#FFFFFF",
+    letterSpacing: 0.2,
   },
   emptyInlineState: {
     alignItems: "center",
     paddingVertical: verticalScale(40),
     gap: verticalScale(12),
   },
+  emptyInlineIconContainer: {
+    width: scale(56),
+    height: scale(56),
+    borderRadius: scale(28),
+    backgroundColor: "rgba(27,68,205,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   emptyInlineText: {
     fontFamily: Fonts.bold,
-    fontSize: scale(15),
-    color: "rgba(10,14,26,0.4)",
+    fontSize: scale(14),
+    color: "rgba(10,14,26,0.5)",
+    letterSpacing: 0.2,
   },
 });

@@ -270,6 +270,7 @@ export default function ProfileTop() {
   const [photos, setPhotos] = useState<{ avatar: string | null; first: string | null; second: string | null; third: string | null; }>({ avatar: null, first: null, second: null, third: null });
   const [modes, setModes] = useState<{ looking: string[]; values: string[] }>({ looking: [], values: [] });
   const [hobbies, setHobbies] = useState<string[]>([]);
+  const [pendingRequestCount, setPendingRequestCount] = useState(0);
 
   // UI controls
   const [isEditingBio, setIsEditingBio] = useState(false);
@@ -284,6 +285,35 @@ export default function ProfileTop() {
 
   // Animations
   const framesHeight = useRef(new RNAnimated.Value(0)).current;
+
+  // Niice + Friend header pop animation
+  const friendScale = useRef(new RNAnimated.Value(1)).current;
+
+  const handleFriendPressIn = () => {
+    RNAnimated.spring(friendScale, {
+      toValue: 0.94,
+      useNativeDriver: true,
+      friction: 6,
+      tension: 140,
+    }).start();
+  };
+
+  const handleFriendPressOut = () => {
+    RNAnimated.sequence([
+      RNAnimated.spring(friendScale, {
+        toValue: 1.08,
+        useNativeDriver: true,
+        friction: 4,
+        tension: 160,
+      }),
+      RNAnimated.spring(friendScale, {
+        toValue: 1,
+        useNativeDriver: true,
+        friction: 6,
+        tension: 140,
+      }),
+    ]).start();
+  };
 
   // Prompts carousel
   const [promptWidth, setPromptWidth] = useState(SCREEN_WIDTH);
@@ -425,6 +455,15 @@ export default function ProfileTop() {
           .maybeSingle(),
         supabase.from("user_hobbies").select("hobbies_master(label)").eq("user_id", userId),
       ]);
+
+      // Fetch pending incoming requests count
+      const { count } = await supabase
+        .from("match_requests")
+        .select("*", { count: "exact", head: true })
+        .eq("target_id", userId)
+        .eq("status", "pending");
+
+      setPendingRequestCount(count || 0);
 
       const p = (profRes as any).data || {};
       const promptsRaw = Array.isArray(p?.prompt_answers) ? p.prompt_answers : null;
@@ -647,11 +686,28 @@ export default function ProfileTop() {
 
       {/* Top Bar */}
       <View style={styles.topBar}>
-        <Image 
-          source={require("../../assets/images/niice_logo_icon.png")} 
-          resizeMode="contain" 
-          style={styles.logo} 
-        />
+        <Pressable
+          onPressIn={handleFriendPressIn}
+          onPressOut={handleFriendPressOut}
+          hitSlop={10}
+        >
+          <RNAnimated.View
+            style={[
+              styles.logoRow,
+              { transform: [{ scale: friendScale }] },
+            ]}
+          >
+            <Image 
+              source={require("../../assets/images/niice_logo_icon.png")} 
+              resizeMode="contain" 
+              style={styles.logo} 
+            />
+            <View style={styles.friendPill}>
+              <Text style={styles.friendPillText}>Friend</Text>
+            </View>
+          </RNAnimated.View>
+        </Pressable>
+
         <View style={styles.topRight}>
           <TouchableOpacity 
             style={styles.editButton} 
@@ -674,9 +730,16 @@ export default function ProfileTop() {
               size={22} 
               color={INK} 
             />
+            {pendingRequestCount > 0 && (
+              <View style={styles.requestsBadge}>
+                <Text style={styles.requestsBadgeText}>
+                  {pendingRequestCount > 99 ? '99+' : pendingRequestCount}
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
           <TouchableOpacity 
-            onPress={() => router.push("/in_progress")} 
+            onPress={() => router.push("/(tabs_support)/setting")} 
             activeOpacity={0.7} 
             style={styles.settingsBtn}
           >
@@ -737,26 +800,26 @@ export default function ProfileTop() {
 
             {/* Frames Button */}
             <TouchableOpacity 
-              activeOpacity={0.9} 
-              onPress={() => {
-                const newExpanded = !framesExpanded;
-                setFramesExpanded(newExpanded);
-                
-                RNAnimated.timing(framesHeight, {
-                  toValue: newExpanded ? 1 : 0,
-                  duration: 300,
-                  easing: Easing.out(Easing.ease),
-                  useNativeDriver: false,
-                }).start();
-              }}
-              style={styles.framesButtonWrapper}
-            >
-              <View style={styles.framesButton}>
-                <Text style={styles.framesButtonText}>
-                  Frames {framesExpanded ? '↓' : '→'}
-                </Text>
-              </View>
-            </TouchableOpacity>
+  activeOpacity={0.9} 
+  onPress={() => {
+    const newExpanded = !framesExpanded;
+    setFramesExpanded(newExpanded);
+    
+    RNAnimated.timing(framesHeight, {
+      toValue: newExpanded ? 1 : 0,
+      duration: 300,
+      easing: Easing.out(Easing.ease),
+      useNativeDriver: false,
+    }).start();
+  }}
+  style={styles.framesButtonWrapper}
+>
+  <View style={styles.framesButton}>
+    <Ionicons name="film-outline" size={16} color="#FFFFFF" style={{ marginRight: scale(6) }} />
+    <Text style={styles.framesButtonText}>Frames</Text>
+    <Ionicons name={framesExpanded ? "chevron-down" : "chevron-forward"} size={16} color="#FFFFFF" />
+  </View>
+</TouchableOpacity>
 
             {/* Expandable Frame Actions */}
             <RNAnimated.View 
@@ -893,47 +956,44 @@ export default function ProfileTop() {
             <View style={styles.featuredContent}>
               {/* Small label with icon */}
               <View style={styles.featuredLabel}>
-  <Ionicons
-    name="people-outline"
-    size={16}
-    color={BLUE}
-    style={{ marginRight: scale(6) }}
-  />
-  <Text style={styles.featuredLabelText}>What I'm Looking For</Text>
-</View>
+                <Ionicons
+                  name="people-outline"
+                  size={16}
+                  color={BLUE}
+                  style={{ marginRight: scale(6) }}
+                />
+                <Text style={styles.featuredLabelText}>What I'm Looking For</Text>
+              </View>
 
-              
               {/* Large prominent chip */}
               {modes.looking.length ? (
-  <View style={styles.featuredChipWrapper}>
-    <View style={styles.featuredChip}>
-  <Ionicons
-    name="people"
-    size={20}
-    color="rgba(255,255,255,0.9)"
-    style={{ marginLeft: scale(10), marginRight: scale(10) }}
-  />
-  <Text style={styles.featuredChipText}>
-    {modes.looking[0]}
-  </Text>
-</View>
-
-
-  </View>
-) : (
-  <View style={styles.featuredChipWrapper}>
-    <TouchableOpacity
-      activeOpacity={0.9}
-      onPress={() => router.push("/(edit_profile)/what_im_looking_for_edit")}
-    >
-      <View style={[styles.featuredChip, styles.featuredChipEmpty]}>
-        <Text style={styles.featuredChipEmptyText}>
-          + Set what you're looking for
-        </Text>
-      </View>
-    </TouchableOpacity>
-  </View>
-)}
+                <View style={styles.featuredChipWrapper}>
+                  <View style={styles.featuredChip}>
+                    <Ionicons
+                      name="people"
+                      size={20}
+                      color="rgba(255,255,255,0.9)"
+                      style={{ marginLeft: scale(10), marginRight: scale(10) }}
+                    />
+                    <Text style={styles.featuredChipText}>
+                      {modes.looking[0]}
+                    </Text>
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.featuredChipWrapper}>
+                  <TouchableOpacity
+                    activeOpacity={0.9}
+                    onPress={() => router.push("/(edit_profile)/what_im_looking_for_edit")}
+                  >
+                    <View style={[styles.featuredChip, styles.featuredChipEmpty]}>
+                      <Text style={styles.featuredChipEmptyText}>
+                        + Set what you're looking for
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              )}
 
             </View>
           </View>
@@ -1333,6 +1393,7 @@ const styles = StyleSheet.create({
     flex: 1, 
     backgroundColor: BG 
   },
+
   topBar: { 
     flexDirection: "row", 
     alignItems: "center", 
@@ -1342,14 +1403,52 @@ const styles = StyleSheet.create({
     paddingBottom: verticalScale(12),
     backgroundColor: BG,
   },
+
+  // Niice + Friend row (matching layout spacing)
+  logoRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+  },
+
   logo: { 
     width: scale(110), 
-    height: verticalScale(38) 
+    height: verticalScale(38),
+    marginRight: scale(6),
+    marginBottom: verticalScale(2),
   },
+
+  // ✅ Friend rectangle: same size, rounded like featured chip
+  friendPill: {
+    marginLeft: scale(6),
+    marginTop: verticalScale(4),
+    marginBottom: verticalScale(3),
+    height: verticalScale(28),
+    paddingHorizontal: scale(18),
+    borderRadius: scale(28), // unified roundness
+    backgroundColor: BLUE,
+    borderWidth: 1.2,
+    borderColor: INK,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
+  },
+
+  friendPillText: {
+    color: BG,
+    fontSize: scale(13),
+    fontFamily: Fonts.bold,
+    fontWeight: "700",
+    letterSpacing: 0.15,
+  },
+
   topRight: { 
     flexDirection: "row", 
     alignItems: "center", 
-    gap: scale(12) 
+    gap: scale(6) 
   },
   editButton: { 
     width: scale(40), 
@@ -1365,7 +1464,35 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   requestsBtn: { 
-    padding: scale(8) 
+    padding: scale(8),
+    position: "relative",
+  },
+  requestsBadge: {
+    position: "absolute",
+    top: -scale(-4),
+    right: -scale(-1),
+    minWidth: scale(16),
+    height: scale(16),
+    borderRadius: scale(8),
+    backgroundColor: "#FF3B30",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: scale(4),
+    borderWidth: 2,
+    borderColor: BG,
+    shadowColor: "#FF3B30",
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 3,
+  },
+  requestsBadgeText: {
+    fontFamily: Fonts.bold,
+    fontSize: scale(9),
+    color: "#FFFFFF",
+    includeFontPadding: false,
+    textAlign: "center",
+    lineHeight: scale(15),
   },
   settingsBtn: { 
     padding: scale(8) 
@@ -1442,15 +1569,20 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.bold, 
     letterSpacing: 0.3 
   },
+
   framesButtonWrapper: {
     marginTop: verticalScale(6),
   },
+
+  // ✅ Frames button: unified roundness & size style
   framesButton: { 
-    alignSelf: "flex-start", 
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     backgroundColor: BLUE,
-    borderRadius: scale(20), 
-    paddingVertical: verticalScale(6), 
-    paddingHorizontal: scale(14),
+    borderRadius: scale(28),
+    paddingVertical: verticalScale(8),
+    paddingHorizontal: scale(20),
     shadowColor: BLUE,
     shadowOpacity: 0.25,
     shadowRadius: 6,
@@ -1459,21 +1591,25 @@ const styles = StyleSheet.create({
   },
   framesButtonText: { 
     fontFamily: Fonts.bold, 
-    fontSize: scale(16), 
+    fontSize: scale(14), 
     color: "#FFFFFF", 
-    letterSpacing: 0.3 
+    letterSpacing: 0.3,
+    flex: 1,
   },
+
   frameActions: {
     marginTop: verticalScale(8),
     gap: verticalScale(8),
   },
+
+  // ✅ Add New Frame / Frame Archive buttons: unified roundness & size
   frameActionButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: scale(20),
-    paddingVertical: verticalScale(8),
-    paddingHorizontal: scale(14),
+    borderRadius: scale(28),
+    paddingVertical: verticalScale(10),
+    paddingHorizontal: scale(20),
     shadowColor: BLUE,
     shadowOpacity: 0.15,
     shadowRadius: 4,
@@ -1486,6 +1622,7 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     letterSpacing: 0.3,
   },
+
   bioSection: { 
     paddingHorizontal: scale(20), 
     marginTop: verticalScale(20) 
@@ -2120,45 +2257,49 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   featuredChip: {
-  flexDirection: "row",
-  alignItems: "center",
-  justifyContent: "center",
-  backgroundColor: BLUE,
-  borderRadius: scale(28),
-  paddingVertical: verticalScale(10),
-  paddingHorizontal: scale(20),
-  minWidth: "80%",
-  shadowColor: BLUE,
-  shadowOffset: { width: 0, height: 4 },
-  shadowOpacity: 0.25,
-  shadowRadius: 8,
-  elevation: 6,
-},
-eventsButtonWrapper: { marginTop: verticalScale(8) },
-eventsButton: {
-  flexDirection: "row",
-  alignItems: "center",
-  justifyContent: "center",
-  paddingVertical: verticalScale(10),
-  paddingHorizontal: scale(16),
-  borderRadius: scale(12),
-  borderWidth: 1,
-  borderColor: "rgba(27,68,205,0.15)",
-},
-eventsButtonText: {
-  fontFamily: Fonts.bold,
-  fontSize: scale(14),
-  color: BLUE,
-  flex: 1,
-},
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: BLUE,
+    borderRadius: scale(28),
+    paddingVertical: verticalScale(10),
+    paddingHorizontal: scale(20),
+    minWidth: "80%",
+    shadowColor: BLUE,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  eventsButtonWrapper: { 
+    marginTop: verticalScale(8) 
+  },
+
+  // ✅ Events button: unified roundness & size style
+  eventsButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: verticalScale(8),
+    paddingHorizontal: scale(10),
+    borderRadius: scale(28),
+    borderWidth: 1,
+    borderColor: "rgba(27,68,205,0.15)",
+  },
+  eventsButtonText: {
+    fontFamily: Fonts.bold,
+    fontSize: scale(14),
+    color: BLUE,
+    flex: 1,
+  },
 
   featuredChipText: {
-  fontSize: scale(14),
-  fontFamily: Fonts.bold,
-  color: "#FFFFFF",
-  letterSpacing: 0.3,
-  textAlign: "center",
-},
+    fontSize: scale(14),
+    fontFamily: Fonts.bold,
+    color: "#FFFFFF",
+    letterSpacing: 0.3,
+    textAlign: "center",
+  },
 
   featuredChipEmpty: {
     backgroundColor: "#EEF4FF",

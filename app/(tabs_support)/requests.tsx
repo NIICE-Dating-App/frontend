@@ -2,20 +2,20 @@
 
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
-import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    Dimensions,
-    Image,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  Image,
+  RefreshControl,
+  Animated as RNAnimated,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -75,51 +75,103 @@ const RequestRow: React.FC<{
   onAccept?: () => void; 
   onDecline?: () => void 
 }> = ({ request, onPress, onAccept, onDecline }) => {
+  const scaleAnim = useRef(new RNAnimated.Value(1)).current;
+  
+  const handlePressIn = () => {
+    RNAnimated.timing(scaleAnim, {
+      toValue: 0.98,
+      duration: 100,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    RNAnimated.spring(scaleAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+      friction: 5,
+    }).start();
+  };
+
   const isBlind = request.connection_visibility === "blind";
+
   return (
-    <TouchableOpacity style={styles.requestRow} onPress={onPress} activeOpacity={0.9}>
-      <View style={[styles.requestAvatar, isBlind && styles.requestAvatarBlind]}>
-        {isBlind ? (
-          <LinearGradient colors={[BLUE, "#4E7DE9"]} style={styles.requestAvatarGradient}>
-            <Ionicons name="eye-off" size={20} color="#FFFFFF" />
-          </LinearGradient>
-        ) : request.main_photo_url ? (
-          <Image source={{ uri: request.main_photo_url }} style={styles.requestPhoto} />
+    <TouchableOpacity 
+      style={styles.requestRowWrapper} 
+      onPress={onPress} 
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      activeOpacity={1}
+    >
+      <RNAnimated.View 
+        style={[
+          styles.requestRow,
+          { transform: [{ scale: scaleAnim }] }
+        ]}
+      >
+        <View style={[styles.requestAvatar, isBlind && styles.requestAvatarBlind]}>
+          {isBlind ? (
+            <View style={styles.requestAvatarBlindInner}>
+              <Ionicons name="eye-off" size={20} color="#FFFFFF" />
+            </View>
+          ) : request.main_photo_url ? (
+            <Image source={{ uri: request.main_photo_url }} style={styles.requestPhoto} />
+          ) : (
+            <View style={styles.requestPhotoPlaceholder}>
+              <Ionicons name="person" size={20} color="rgba(10,14,26,0.4)" />
+            </View>
+          )}
+        </View>
+        <View style={styles.requestInfo}>
+          <Text style={styles.requestName} numberOfLines={1}>
+            {isBlind ? "Mystery Person" : (request.full_name || "Someone")}
+            {request.age && !isBlind ? `, ${request.age}` : ""}
+          </Text>
+          <Text style={styles.requestSubtext}>
+            {isBlind ? "Blind meeting" : request.match_mode === "dating" ? "Date request" : "Friend request"}
+          </Text>
+          {request.sender_message && request.is_incoming && (
+            <Text style={styles.requestMessage} numberOfLines={1}>"{request.sender_message}"</Text>
+          )}
+          <Text style={styles.requestTime}>{formatRelativeTime(request.created_at)}</Text>
+        </View>
+        {request.is_incoming && request.status === "pending" && onAccept && onDecline ? (
+          <View style={styles.requestActions}>
+            <TouchableOpacity 
+              style={styles.requestDeclineBtn} 
+              onPress={(e) => {
+                e.stopPropagation();
+                onDecline();
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="close" size={20} color="rgba(10,14,26,0.5)" />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.requestAcceptBtn} 
+              onPress={(e) => {
+                e.stopPropagation();
+                onAccept();
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="checkmark" size={22} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
         ) : (
-          <View style={styles.requestPhotoPlaceholder}>
-            <Ionicons name="person" size={20} color="rgba(10,14,26,0.4)" />
+          <View style={[
+            styles.requestStatusBadge, 
+            request.status === "accepted" && styles.requestStatusAccepted
+          ]}>
+            <Text style={[
+              styles.requestStatusText, 
+              request.status === "accepted" && styles.requestStatusTextAccepted
+            ]}>
+              {request.status === "pending" ? "Pending" : request.status === "accepted" ? "Accepted" : "Declined"}
+            </Text>
           </View>
         )}
-      </View>
-      <View style={styles.requestInfo}>
-        <Text style={styles.requestName} numberOfLines={1}>
-          {isBlind ? "Mystery Person" : (request.full_name || "Someone")}
-          {request.age && !isBlind ? `, ${request.age}` : ""}
-        </Text>
-        <Text style={styles.requestSubtext}>
-          {isBlind ? "Blind meeting" : request.match_mode === "dating" ? "Date request" : "Friend request"}
-        </Text>
-        {request.sender_message && request.is_incoming && (
-          <Text style={styles.requestMessage} numberOfLines={1}>"{request.sender_message}"</Text>
-        )}
-        <Text style={styles.requestTime}>{formatRelativeTime(request.created_at)}</Text>
-      </View>
-      {request.is_incoming && request.status === "pending" && onAccept && onDecline ? (
-        <View style={styles.requestActions}>
-          <TouchableOpacity style={styles.requestDeclineBtn} onPress={onDecline}>
-            <Text style={styles.requestDeclineText}>✕</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.requestAcceptBtn} onPress={onAccept}>
-            <Text style={styles.requestAcceptText}>✓</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <View style={[styles.requestStatusBadge, request.status === "accepted" && styles.requestStatusAccepted]}>
-          <Text style={[styles.requestStatusText, request.status === "accepted" && styles.requestStatusTextAccepted]}>
-            {request.status === "pending" ? "Pending" : request.status === "accepted" ? "Accepted" : "Declined"}
-          </Text>
-        </View>
-      )}
+      </RNAnimated.View>
     </TouchableOpacity>
   );
 };
@@ -161,7 +213,7 @@ function RequestsScreen() {
       const { data, error } = await supabase.from("match_requests")
         .select("id, requester_id, target_id, match_mode, connection_visibility, status, sender_message, place_role, created_at")
         .or(`requester_id.eq.${uid},target_id.eq.${uid}`)
-        .in("status", ["pending", "accepted", "rejected"])
+        .eq("status", "pending")
         .order("created_at", { ascending: false });
       
       if (error) { 
@@ -276,7 +328,9 @@ function RequestsScreen() {
           onPress={() => router.back()}
           activeOpacity={0.7}
         >
-          <Ionicons name="arrow-back" size={24} color={INK} />
+          <View style={styles.backButtonInner}>
+            <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
+          </View>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Requests</Text>
         <View style={styles.headerRight} />
@@ -285,45 +339,43 @@ function RequestsScreen() {
       {/* Tab Toggle */}
       <View style={styles.tabContainer}>
         <TouchableOpacity 
-          style={[styles.tab, requestsTab === "incoming" && styles.tabActive]} 
+          style={styles.tab} 
           onPress={() => setRequestsTab("incoming")}
-          activeOpacity={0.8}
+          activeOpacity={0.9}
         >
-          {requestsTab === "incoming" ? (
-            <LinearGradient colors={[BLUE, "#4E7DE9"]} style={styles.tabGradient}>
-              <Text style={styles.tabTextActive}>Incoming</Text>
-              {pendingCount > 0 && (
-                <View style={styles.tabBadgeActive}>
-                  <Text style={styles.tabBadgeTextActive}>{pendingCount}</Text>
-                </View>
-              )}
-            </LinearGradient>
-          ) : (
-            <View style={styles.tabInner}>
-              <Text style={styles.tabText}>Incoming</Text>
-              {pendingCount > 0 && (
-                <View style={styles.tabBadge}>
-                  <Text style={styles.tabBadgeText}>{pendingCount}</Text>
-                </View>
-              )}
-            </View>
-          )}
+          <View style={[
+            styles.tabInner, 
+            requestsTab === "incoming" && styles.tabInnerActive
+          ]}>
+            <Text style={requestsTab === "incoming" ? styles.tabTextActive : styles.tabText}>
+              Incoming
+            </Text>
+            {pendingCount > 0 && (
+              <View style={[
+                styles.tabBadge, 
+                requestsTab === "incoming" && styles.tabBadgeActive
+              ]}>
+                <Text style={requestsTab === "incoming" ? styles.tabBadgeTextActive : styles.tabBadgeText}>
+                  {pendingCount}
+                </Text>
+              </View>
+            )}
+          </View>
         </TouchableOpacity>
         
         <TouchableOpacity 
-          style={[styles.tab, requestsTab === "outgoing" && styles.tabActive]} 
+          style={styles.tab} 
           onPress={() => setRequestsTab("outgoing")}
-          activeOpacity={0.8}
+          activeOpacity={0.9}
         >
-          {requestsTab === "outgoing" ? (
-            <LinearGradient colors={[BLUE, "#4E7DE9"]} style={styles.tabGradient}>
-              <Text style={styles.tabTextActive}>Outgoing</Text>
-            </LinearGradient>
-          ) : (
-            <View style={styles.tabInner}>
-              <Text style={styles.tabText}>Outgoing</Text>
-            </View>
-          )}
+          <View style={[
+            styles.tabInner, 
+            requestsTab === "outgoing" && styles.tabInnerActive
+          ]}>
+            <Text style={requestsTab === "outgoing" ? styles.tabTextActive : styles.tabText}>
+              Outgoing
+            </Text>
+          </View>
         </TouchableOpacity>
       </View>
 
@@ -391,13 +443,20 @@ const styles = StyleSheet.create({
     flexDirection: "row", 
     alignItems: "center", 
     justifyContent: "space-between",
-    paddingHorizontal: scale(16), 
-    paddingVertical: verticalScale(12), 
-    borderBottomWidth: 1, 
-    borderBottomColor: "rgba(27,68,205,0.06)" 
+    paddingHorizontal: scale(20), 
+    paddingVertical: verticalScale(16), 
   },
   backButton: { 
-    padding: scale(4) 
+    width: scale(36),
+    height: scale(36),
+  },
+  backButtonInner: {
+    width: scale(36),
+    height: scale(36),
+    borderRadius: scale(18),
+    backgroundColor: "#000910",
+    alignItems: "center",
+    justifyContent: "center",
   },
   headerTitle: { 
     fontFamily: Fonts.bold, 
@@ -405,42 +464,43 @@ const styles = StyleSheet.create({
     color: INK 
   },
   headerRight: { 
-    width: scale(32) 
+    width: scale(36) 
   },
 
   // Tab Toggle
   tabContainer: { 
     flexDirection: "row", 
-    marginHorizontal: scale(16), 
-    marginTop: verticalScale(16),
-    marginBottom: verticalScale(8),
-    backgroundColor: "rgba(27,68,205,0.04)", 
-    borderRadius: scale(16), 
+    marginHorizontal: scale(20), 
+    marginTop: verticalScale(8),
+    marginBottom: verticalScale(16),
+    backgroundColor: "rgba(27,68,205,0.08)", 
+    borderRadius: scale(24), 
     padding: scale(4) 
   },
   tab: { 
     flex: 1, 
-    borderRadius: scale(12), 
+    borderRadius: scale(20), 
     overflow: "hidden" 
-  },
-  tabActive: {},
-  tabGradient: { 
-    flexDirection: "row", 
-    alignItems: "center", 
-    justifyContent: "center", 
-    paddingVertical: verticalScale(12), 
-    gap: scale(6),
-    borderRadius: scale(12),
   },
   tabInner: { 
     flexDirection: "row", 
     alignItems: "center", 
     justifyContent: "center", 
-    paddingVertical: verticalScale(12), 
-    gap: scale(6) 
+    paddingVertical: verticalScale(10), 
+    paddingHorizontal: scale(8),
+    borderRadius: scale(20),
+    overflow: "hidden",
+  },
+  tabInnerActive: {
+    backgroundColor: BLUE,
+    shadowColor: BLUE,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 6,
   },
   tabText: { 
-    fontFamily: Fonts.primary, 
+    fontFamily: Fonts.bold, 
     fontSize: scale(14), 
     color: "rgba(10,14,26,0.6)" 
   },
@@ -450,25 +510,21 @@ const styles = StyleSheet.create({
     color: "#FFFFFF" 
   },
   tabBadge: { 
+    marginLeft: scale(6),
     backgroundColor: "rgba(10,14,26,0.1)", 
-    borderRadius: scale(10), 
-    paddingHorizontal: scale(6), 
+    borderRadius: scale(12), 
+    paddingHorizontal: scale(8), 
     paddingVertical: verticalScale(2), 
     minWidth: scale(20), 
     alignItems: "center" 
   },
   tabBadgeActive: { 
     backgroundColor: "rgba(255,255,255,0.25)", 
-    borderRadius: scale(10), 
-    paddingHorizontal: scale(6), 
-    paddingVertical: verticalScale(2), 
-    minWidth: scale(20), 
-    alignItems: "center" 
   },
   tabBadgeText: { 
     fontFamily: Fonts.bold, 
     fontSize: scale(11), 
-    color: "rgba(10,14,26,0.5)" 
+    color: "rgba(10,14,26,0.6)" 
   },
   tabBadgeTextActive: { 
     fontFamily: Fonts.bold, 
@@ -481,7 +537,7 @@ const styles = StyleSheet.create({
     flex: 1 
   },
   scrollContent: { 
-    paddingHorizontal: scale(16),
+    paddingHorizontal: scale(20),
     paddingTop: verticalScale(8),
     paddingBottom: verticalScale(40) 
   },
@@ -525,43 +581,50 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.primary, 
     fontSize: scale(14), 
     color: "rgba(10,14,26,0.6)", 
-    textAlign: "center" 
+    textAlign: "center",
+    lineHeight: verticalScale(20),
   },
 
   // Requests List
   requestsList: { 
-    gap: verticalScale(8) 
+    gap: verticalScale(12) 
+  },
+
+  // Request Row
+  requestRowWrapper: {
+    borderRadius: scale(20),
   },
   requestRow: { 
     flexDirection: "row", 
     alignItems: "center", 
-    backgroundColor: "#FFFFFF", 
-    borderRadius: scale(16), 
-    padding: scale(14), 
+    borderRadius: scale(20), 
+    padding: scale(16), 
+    overflow: "hidden",
     borderWidth: 1, 
-    borderColor: "rgba(27,68,205,0.06)",
+    borderColor: "rgba(27,68,205,0.08)",
+    backgroundColor: "#FFFFFF",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 4,
   },
   requestAvatar: { 
-    width: scale(52), 
-    height: scale(52), 
-    borderRadius: scale(26), 
+    width: scale(56), 
+    height: scale(56), 
+    borderRadius: scale(28), 
     overflow: "hidden", 
     backgroundColor: "#E8F4FF", 
-    marginRight: scale(12) 
+    marginRight: scale(14) 
   },
   requestAvatarBlind: { 
     backgroundColor: "transparent" 
   },
-  requestAvatarGradient: { 
-    width: "100%", 
-    height: "100%", 
-    alignItems: "center", 
-    justifyContent: "center" 
+  requestAvatarBlindInner: {
+    flex: 1,
+    backgroundColor: BLUE,
+    alignItems: "center",
+    justifyContent: "center",
   },
   requestPhoto: { 
     width: "100%", 
@@ -574,7 +637,7 @@ const styles = StyleSheet.create({
   },
   requestInfo: { 
     flex: 1, 
-    marginRight: scale(8) 
+    marginRight: scale(12) 
   },
   requestName: { 
     fontFamily: Fonts.bold, 
@@ -600,48 +663,40 @@ const styles = StyleSheet.create({
     fontSize: scale(11), 
     color: "rgba(10,14,26,0.4)" 
   },
+
+  // Actions
   requestActions: { 
     flexDirection: "row", 
-    gap: scale(8) 
+    gap: scale(10) 
   },
   requestDeclineBtn: { 
     width: scale(40), 
     height: scale(40), 
     borderRadius: scale(20), 
-    borderWidth: 1.5, 
-    borderColor: "rgba(10,14,26,0.12)", 
+    backgroundColor: "rgba(27,68,205,0.08)", 
     alignItems: "center", 
     justifyContent: "center",
-    backgroundColor: "#FFFFFF"
-  },
-  requestDeclineText: { 
-    fontFamily: Fonts.bold, 
-    fontSize: scale(16), 
-    color: "rgba(10,14,26,0.5)" 
   },
   requestAcceptBtn: { 
     width: scale(40), 
     height: scale(40), 
     borderRadius: scale(20), 
-    backgroundColor: BLUE, 
+    backgroundColor: BLUE,
     alignItems: "center", 
     justifyContent: "center",
     shadowColor: BLUE,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.25,
     shadowRadius: 4,
-    elevation: 3,
+    elevation: 4,
   },
-  requestAcceptText: { 
-    fontFamily: Fonts.bold, 
-    fontSize: scale(16), 
-    color: "#FFFFFF" 
-  },
+
+  // Status Badge
   requestStatusBadge: { 
     paddingHorizontal: scale(12), 
     paddingVertical: verticalScale(6), 
-    borderRadius: scale(12), 
-    backgroundColor: "rgba(10,14,26,0.06)" 
+    borderRadius: scale(16), 
+    backgroundColor: "rgba(10,14,26,0.08)" 
   },
   requestStatusAccepted: { 
     backgroundColor: "rgba(34,197,94,0.1)" 
@@ -649,7 +704,7 @@ const styles = StyleSheet.create({
   requestStatusText: { 
     fontFamily: Fonts.bold, 
     fontSize: scale(12), 
-    color: "rgba(10,14,26,0.5)" 
+    color: "rgba(10,14,26,0.6)" 
   },
   requestStatusTextAccepted: { 
     color: "#22C55E" 

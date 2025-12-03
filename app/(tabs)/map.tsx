@@ -132,6 +132,8 @@ type EventCategory =
   | "online_virtual"
   | "other";
 
+type EventType = 'public' | 'public_application' | 'private' | 'invite_only' | 'group_event' | 'community_event';
+
 interface EventData {
   id: string;
   event_name: string;
@@ -148,7 +150,20 @@ interface EventData {
   age_max: number;
   gender_allowed: string;
   status: string;
+  event_type?: EventType;
+  accepted_count?: number;
+  fuzzy_radius_meters?: number;
+  user_application_status?: 'none' | 'pending' | 'approved' | 'rejected' | 'cancelled';
 }
+
+const eventTypeDisplayNames: Record<EventType, { label: string; icon: string; color: string }> = {
+  public: { label: "Public", icon: "earth", color: "#22C55E" },
+  public_application: { label: "Apply to Join", icon: "clipboard-check-outline", color: "#3B82F6" },
+  private: { label: "Private", icon: "lock-outline", color: "#8B5CF6" },
+  invite_only: { label: "Invite Only", icon: "email-outline", color: "#F59E0B" },
+  group_event: { label: "Group Event", icon: "account-group", color: "#EC4899" },
+  community_event: { label: "Community", icon: "home-group", color: "#06B6D4" },
+};
 
 const categoryDisplayNames: Record<EventCategory, { label: string; icon: string }> = {
   food_drinks: { label: "Food & Drinks", icon: "silverware-fork-knife" },
@@ -662,21 +677,51 @@ const IiLoader: React.FC = () => {
 /* ===================== EVENT MARKER COMPONENT ===================== */
 const EventMarker: React.FC<{ event: EventData }> = ({ event }) => {
   const categoryInfo = categoryDisplayNames[event.category] || categoryDisplayNames.other;
+  const eventTypeInfo = eventTypeDisplayNames[event.event_type || 'public'];
+  const isPrivate = event.event_type === 'private';
   
   return (
     <View style={styles.eventMarkerContainer}>
-      <View style={styles.eventMarkerBubble}>
-        <LinearGradient 
-          colors={["#FFFFFF", "#F8FAFF"]} 
-          style={StyleSheet.absoluteFillObject}
-        />
+      <View style={[
+        styles.eventMarkerBubble,
+        isPrivate && { borderWidth: 2, borderColor: eventTypeInfo.color }
+      ]}>
+        {/* Gradient wrapper with overflow hidden */}
+        <View style={StyleSheet.absoluteFillObject}>
+          <LinearGradient 
+            colors={isPrivate ? ["#F3E8FF", "#FFFFFF"] : ["#FFFFFF", "#F8FAFF"]} 
+            style={{ flex: 1, borderRadius: scale(18) - 2 }}
+          />
+        </View>
         <MaterialCommunityIcons 
           name={categoryInfo.icon as any} 
           size={20} 
-          color={BLUE}
+          color={isPrivate ? eventTypeInfo.color : BLUE}
         />
       </View>
-      <View style={styles.eventMarkerPin} />
+      {/* Lock badge positioned outside the bubble */}
+      {isPrivate && (
+        <View style={{
+          position: 'absolute',
+          top: -2,
+          right: scale(36) / 2 - 14,
+          backgroundColor: eventTypeInfo.color,
+          borderRadius: 7,
+          width: 14,
+          height: 14,
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderWidth: 1.5,
+          borderColor: '#FFFFFF',
+          zIndex: 10,
+        }}>
+          <MaterialCommunityIcons name="lock" size={8} color="#FFFFFF" />
+        </View>
+      )}
+      <View style={[
+        styles.eventMarkerPin,
+        isPrivate && { borderTopColor: eventTypeInfo.color }
+      ]} />
     </View>
   );
 };
@@ -2169,25 +2214,88 @@ const EventDetailsModal: React.FC<{
   onEdit: () => void;
   onDelete: () => void;
   isOwnEvent: boolean;
-}> = ({ visible, event, onClose, onEdit, onDelete, isOwnEvent }) => {
+  currentUserId: string | null;
+  currentUserAge: number | null;
+  currentUserGender: string | null;
+  onApplySuccess?: () => void;
+  onEventUpdate?: (updatedEvent: EventData) => void;
+}> = ({ visible, event, onClose, onEdit, onDelete, isOwnEvent, currentUserId, currentUserAge, currentUserGender, onApplySuccess, onEventUpdate }) => {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const slideAnim = useRef(new RNAnimated.Value(SCREEN_H)).current;
   const panY = useRef(new RNAnimated.Value(0)).current;
   const startY = useRef(0);
   const isClosing = useRef(false);
+  
+  // Apply modal state
+  const [showApplyModal, setShowApplyModal] = useState(false);
+  const [applyMessage, setApplyMessage] = useState('');
+  const [applyLoading, setApplyLoading] = useState(false);
+  const [applicationStatus, setApplicationStatus] = useState<'none' | 'pending' | 'approved' | 'rejected'>('none');
+
+  // Debug: Track apply modal visibility
+  useEffect(() => {
+    console.log(`🔍 Apply Modal visibility changed: ${showApplyModal}`);
+  }, [showApplyModal]);
 
   useEffect(() => {
     if (visible) {
       isClosing.current = false;
+      setApplyMessage('');
+      // Initialize application status from event data if available
+      const initialStatus = event?.user_application_status;
+      console.log(`🎫 EventDetailsModal opened for "${event?.event_name}": user_application_status=${initialStatus}`);
+      
+      if (initialStatus && initialStatus !== 'none' && initialStatus !== 'cancelled') {
+        console.log(`   → Setting applicationStatus to: ${initialStatus}`);
+        setApplicationStatus(initialStatus as 'pending' | 'approved' | 'rejected');
+      } else {
+        console.log(`   → Setting applicationStatus to: none`);
+        setApplicationStatus('none');
+      }
       RNAnimated.spring(slideAnim, { toValue: 0, useNativeDriver: true, tension: 65, friction: 11 }).start();
+      
+      // Double-check with fresh data if user has already applied
+      if (event && currentUserId && !isOwnEvent) {
+        checkExistingApplication();
+      }
     } else if (!isClosing.current) {
       RNAnimated.timing(slideAnim, { toValue: SCREEN_H, duration: 250, useNativeDriver: true }).start();
     }
-  }, [visible]);
+  }, [visible, event, currentUserId]);
+  
+  const checkExistingApplication = async () => {
+    if (!event || !currentUserId) return;
+    
+    try {
+      const { data, error } = await supabase
+        .from('event_applications')
+        .select('status')
+        .eq('event_id', event.id)
+        .eq('applicant_id', currentUserId)
+        .maybeSingle();
+      
+      if (error) {
+        console.warn("Could not check existing application:", error.message);
+        return;
+      }
+      
+      if (data) {
+        console.log(`📋 Found existing application for event ${event.id}: status=${data.status}`);
+        setApplicationStatus(data.status as any);
+      }
+    } catch (err: any) {
+      console.warn("Exception checking application:", err?.message);
+    }
+  };
 
   if (!event) return null;
 
   const categoryInfo = categoryDisplayNames[event.category] || categoryDisplayNames.other;
+  const eventTypeInfo = eventTypeDisplayNames[event.event_type || 'public'];
+  
+  // Debug: Log the event type when modal opens
+  console.log(`🎫 EventDetailsModal: "${event.event_name}" - type=${event.event_type || 'undefined'}, badge=${eventTypeInfo.label}, isOwn=${isOwnEvent}`);
   
   const formatTime = (dateString: string) => {
     const date = new Date(dateString);
@@ -2196,7 +2304,35 @@ const EventDetailsModal: React.FC<{
     return `${days[date.getDay()]}, ${date.getDate()} ${months[date.getMonth()]} · ${date.getHours().toString().padStart(2, "0")}:${date.getMinutes().toString().padStart(2, "0")}`;
   };
 
+  // Check if user can see exact location
+  // For private events: only host or approved users can see exact location
+  const canSeeExactLocation = () => {
+    if (isOwnEvent) return true; // Host always sees exact location
+    if (event.event_type !== 'private') return true; // Non-private events show exact location
+    // For private events, only approved users can see exact location
+    return applicationStatus === 'approved';
+  };
+
+  // Get display location for private events (fuzzy for non-approved)
+  const getDisplayLocation = () => {
+    if (canSeeExactLocation()) {
+      return event.location_name;
+    }
+    // For private events without approval, show approximate location
+    return `Near ${event.location_name.split(',')[0] || 'this area'}`;
+  };
+
   const openInGoogleMaps = () => {
+    // For private events, non-approved users shouldn't be able to navigate
+    if (!canSeeExactLocation()) {
+      Alert.alert(
+        "Location Hidden",
+        "The exact location will be revealed once your application is approved by the host.",
+        [{ text: "OK" }]
+      );
+      return;
+    }
+    
     Alert.alert(
       "Open in Maps",
       `Navigate to ${event.location_name}?`,
@@ -2240,18 +2376,16 @@ const EventDetailsModal: React.FC<{
   const handleTouchEnd = (e: any) => {
     const deltaY = e.nativeEvent.pageY - startY.current;
     if (deltaY > 100) {
-      // Swiped down more than 100px - animate slide down smoothly
-      isClosing.current = true; // Prevent double animation
-      panY.setValue(0); // Reset panY
+      isClosing.current = true;
+      panY.setValue(0);
       RNAnimated.timing(slideAnim, {
         toValue: SCREEN_H,
         duration: 200,
         useNativeDriver: true,
       }).start(() => {
-        onClose(); // Call onClose after animation completes
+        onClose();
       });
     } else {
-      // Spring back to original position
       RNAnimated.spring(panY, {
         toValue: 0,
         useNativeDriver: true,
@@ -2260,122 +2394,373 @@ const EventDetailsModal: React.FC<{
       }).start();
     }
   };
+  
+  // Handle apply to event
+  const handleApply = async () => {
+    if (!event || !currentUserId) return;
+    
+    console.log(`🎟️ Attempting to join event: "${event.event_name}" (${event.id})`);
+    setApplyLoading(true);
+    try {
+      // Call the 2-parameter RPC function (returns JSON)
+      const { data: rpcResult, error: rpcError } = await supabase.rpc('apply_to_event', {
+        p_event_id: event.id,
+        p_message: applyMessage.trim() || null,
+      });
+      
+      if (rpcError) {
+        console.error("RPC error:", rpcError);
+        Alert.alert("Error", rpcError.message || "Failed to apply");
+        return;
+      }
+      
+      // Handle JSON response from the 2-parameter function
+      if (rpcResult) {
+        if (rpcResult.success) {
+          const newStatus = rpcResult.status as 'approved' | 'pending';
+          console.log(`✅ Join successful! New status: ${newStatus}`);
+          Alert.alert("Success!", rpcResult.message);
+          setApplicationStatus(newStatus);
+          setShowApplyModal(false);
+          setApplyMessage('');
+          
+          // Update the event in parent state
+          if (onEventUpdate) {
+            const updatedEvent: EventData = {
+              ...event,
+              user_application_status: newStatus,
+              accepted_count: newStatus === 'approved' ? (event.accepted_count || 0) + 1 : event.accepted_count,
+            };
+            console.log(`📝 Calling onEventUpdate with status=${newStatus}, accepted_count=${updatedEvent.accepted_count}`);
+            onEventUpdate(updatedEvent);
+          }
+          
+          onApplySuccess?.();
+        } else {
+          // Check if it's "already applied" - update status accordingly
+          console.log(`⚠️ Join failed: ${rpcResult.error}, current status: ${rpcResult.status}`);
+          if (rpcResult.status) {
+            setApplicationStatus(rpcResult.status as 'approved' | 'pending' | 'rejected');
+          }
+          Alert.alert("Cannot Join", rpcResult.error || "Failed to apply");
+        }
+      }
+    } catch (error: any) {
+      console.error("Apply exception:", error);
+      Alert.alert("Error", error.message || "Failed to apply");
+    } finally {
+      setApplyLoading(false);
+    }
+  };
+  
+  // Navigate to applications page (for hosts)
+  const handleViewApplications = () => {
+    onClose();
+    router.push({
+      pathname: "/(tabs_support)/host_applications",
+      params: { eventId: event.id }
+    });
+  };
+  
+  // Determine if event requires application
+  const requiresApplication = event.event_type === 'public_application' || event.event_type === 'private';
+  const isDirectJoin = event.event_type === 'public' || event.event_type === 'group_event' || event.event_type === 'community_event';
+  
+  // Get action button text
+  const getActionButtonText = () => {
+    if (applicationStatus === 'approved') return 'Joined ✓';
+    if (applicationStatus === 'pending') return 'Pending...';
+    if (applicationStatus === 'rejected') return 'Rejected';
+    if (!isEligible) return ineligibilityReason || 'Not Eligible';
+    if (isDirectJoin) return 'Join Event';
+    return 'Apply to Join';
+  };
+  
+  // Check eligibility based on age and gender
+  const checkEligibility = (): { eligible: boolean; reason: string | null } => {
+    if (!event) return { eligible: true, reason: null };
+    
+    // Check age eligibility
+    if (currentUserAge !== null) {
+      if (currentUserAge < event.age_min) {
+        return { eligible: false, reason: `Min age: ${event.age_min}` };
+      }
+      if (currentUserAge > event.age_max) {
+        return { eligible: false, reason: `Max age: ${event.age_max}` };
+      }
+    }
+    
+    // Check gender eligibility
+    if (currentUserGender && event.gender_allowed && event.gender_allowed !== 'Everyone') {
+      const userGenderLower = currentUserGender.toLowerCase();
+      const allowedGender = event.gender_allowed.toLowerCase();
+      
+      // Map gender_allowed values to gender values
+      const genderMatch = 
+        (allowedGender === 'man' && userGenderLower === 'man') ||
+        (allowedGender === 'woman' && userGenderLower === 'woman') ||
+        (allowedGender === 'beyond binary' && userGenderLower === 'nonbinary');
+      
+      if (!genderMatch) {
+        return { eligible: false, reason: `${event.gender_allowed} only` };
+      }
+    }
+    
+    return { eligible: true, reason: null };
+  };
+  
+  const { eligible: isEligible, reason: ineligibilityReason } = checkEligibility();
+  
+  const canApply = applicationStatus === 'none' && !isOwnEvent && isEligible;
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
-      <Pressable style={styles.modalBackdrop} onPress={onClose}>
-        <RNAnimated.View 
-          style={[
-            styles.modalContainer, 
-            { 
-              transform: [
-                { translateY: RNAnimated.add(slideAnim, panY) }
-              ], 
-              paddingBottom: Math.max(insets.bottom, 20) 
-            }
-          ]}
-        >
-          <Pressable onPress={(e) => e.stopPropagation()}>
-            {/* Swipeable handle area */}
-            <View
-              onTouchStart={handleTouchStart}
-              onTouchMove={handleTouchMove}
-              onTouchEnd={handleTouchEnd}
-              style={{ paddingVertical: 8 }}
-            >
-              <View style={styles.modalHandle} />
-            </View>
-
-            {/* Header */}
-            <View style={styles.modalHeader}>
-              <View style={{ flex: 1 }}>
-                <View style={styles.categoryBadge}>
-                  <MaterialCommunityIcons name={categoryInfo.icon as any} size={16} color={BLUE} />
-                  <Text style={styles.categoryBadgeText}>{categoryInfo.label}</Text>
-                </View>
-                <Text style={styles.eventTitle} numberOfLines={2}>{event.event_name}</Text>
+    <>
+      <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
+        <Pressable style={styles.modalBackdrop} onPress={onClose}>
+          <RNAnimated.View 
+            style={[
+              styles.modalContainer, 
+              { 
+                transform: [
+                  { translateY: RNAnimated.add(slideAnim, panY) }
+                ], 
+                paddingBottom: Math.max(insets.bottom, 20) 
+              }
+            ]}
+          >
+            <Pressable onPress={(e) => e.stopPropagation()}>
+              {/* Swipeable handle area */}
+              <View
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
+                style={{ paddingVertical: 8 }}
+              >
+                <View style={styles.modalHandle} />
               </View>
-              <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-                <Ionicons name="close" size={26} color="#0A0E1A" />
-              </TouchableOpacity>
-            </View>
 
-            {/* Content */}
-            <ScrollView style={{ maxHeight: SCREEN_H * 0.5 }} showsVerticalScrollIndicator={false}>
-              <View style={{ padding: 20, gap: 20 }}>
-                {/* Time */}
-                <View style={styles.infoCard}>
-                  <View style={styles.infoRow}>
-                    <Ionicons name="calendar-outline" size={20} color={BLUE} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.infoLabel}>Starts</Text>
-                      <Text style={styles.infoValue}>{formatTime(event.time_start)}</Text>
+              {/* Header */}
+              <View style={styles.modalHeader}>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', gap: 6, marginBottom: 8 }}>
+                    {/* Category badge */}
+                    <View style={styles.categoryBadge}>
+                      <MaterialCommunityIcons name={categoryInfo.icon as any} size={14} color={BLUE} />
+                      <Text style={styles.categoryBadgeText}>{categoryInfo.label}</Text>
+                    </View>
+                    {/* Event Type badge */}
+                    <View style={[styles.categoryBadge, { backgroundColor: `${eventTypeInfo.color}15` }]}>
+                      <MaterialCommunityIcons name={eventTypeInfo.icon as any} size={14} color={eventTypeInfo.color} />
+                      <Text style={[styles.categoryBadgeText, { color: eventTypeInfo.color }]}>{eventTypeInfo.label}</Text>
                     </View>
                   </View>
-                  <View style={styles.infoRow}>
-                    <Ionicons name="time-outline" size={20} color={BLUE} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.infoLabel}>Ends</Text>
-                      <Text style={styles.infoValue}>{formatTime(event.time_end)}</Text>
-                    </View>
-                  </View>
+                  <Text style={styles.eventTitle} numberOfLines={2}>{event.event_name}</Text>
                 </View>
+                <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+                  <Ionicons name="close" size={26} color="#0A0E1A" />
+                </TouchableOpacity>
+              </View>
 
-                {/* Location - Tappable */}
-                <TouchableOpacity onPress={openInGoogleMaps} activeOpacity={0.7}>
+              {/* Content */}
+              <ScrollView style={{ maxHeight: SCREEN_H * 0.5 }} showsVerticalScrollIndicator={false}>
+                <View style={{ padding: 20, gap: 20 }}>
+                  {/* Attendees Count - Always show */}
+                  <View style={styles.attendeesCard}>
+                    <Ionicons 
+                      name={(event.accepted_count || 0) > 0 ? "checkmark-circle" : "people-outline"} 
+                      size={18} 
+                      color={(event.accepted_count || 0) > 0 ? "#22C55E" : BLUE} 
+                    />
+                    <Text style={[
+                      styles.attendeesText,
+                      { color: (event.accepted_count || 0) > 0 ? "#22C55E" : BLUE }
+                    ]}>
+                      {event.accepted_count || 0} {(event.accepted_count || 0) === 1 ? 'person' : 'people'} joining
+                    </Text>
+                    <Text style={styles.capacityText}>/ {event.capacity} spots</Text>
+                  </View>
+                  
+                  {/* Time */}
                   <View style={styles.infoCard}>
                     <View style={styles.infoRow}>
-                      <Ionicons name="location-outline" size={20} color={BLUE} />
+                      <Ionicons name="calendar-outline" size={20} color={BLUE} />
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.infoLabel}>Location</Text>
-                        <Text style={styles.infoValue}>{event.location_name}</Text>
+                        <Text style={styles.infoLabel}>Starts</Text>
+                        <Text style={styles.infoValue}>{formatTime(event.time_start)}</Text>
                       </View>
-                      <Ionicons name="chevron-forward" size={20} color="rgba(10, 14, 26, 0.3)" />
+                    </View>
+                    <View style={styles.infoRow}>
+                      <Ionicons name="time-outline" size={20} color={BLUE} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.infoLabel}>Ends</Text>
+                        <Text style={styles.infoValue}>{formatTime(event.time_end)}</Text>
+                      </View>
                     </View>
                   </View>
-                </TouchableOpacity>
 
-                {/* Description */}
-                {event.event_description && (
-                  <View style={styles.infoCard}>
-                    <Text style={styles.sectionLabel}>Description</Text>
-                    <Text style={styles.descText}>{event.event_description}</Text>
-                  </View>
-                )}
+                  {/* Location - Tappable */}
+                  <TouchableOpacity onPress={openInGoogleMaps} activeOpacity={0.7}>
+                    <View style={styles.infoCard}>
+                      <View style={styles.infoRow}>
+                        <Ionicons 
+                          name={canSeeExactLocation() ? "location-outline" : "locate-outline"} 
+                          size={20} 
+                          color={canSeeExactLocation() ? BLUE : "#8B5CF6"} 
+                        />
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.infoLabel}>
+                            {canSeeExactLocation() ? "Location" : "Approximate Location"}
+                          </Text>
+                          <Text style={styles.infoValue}>{getDisplayLocation()}</Text>
+                          {!canSeeExactLocation() && event.event_type === 'private' && (
+                            <Text style={{ fontSize: 12, color: '#8B5CF6', marginTop: 4, fontStyle: 'italic' }}>
+                              Exact location revealed after approval
+                            </Text>
+                          )}
+                        </View>
+                        {canSeeExactLocation() && (
+                          <Ionicons name="chevron-forward" size={20} color="rgba(10, 14, 26, 0.3)" />
+                        )}
+                        {!canSeeExactLocation() && (
+                          <Ionicons name="lock-closed" size={16} color="#8B5CF6" />
+                        )}
+                      </View>
+                    </View>
+                  </TouchableOpacity>
 
-                {/* Details Grid */}
-                <View style={styles.detailsGrid}>
-                  <View style={styles.detailBox}>
-                    <Ionicons name="people-outline" size={18} color={BLUE} />
-                    <Text style={styles.detailBoxText}>{event.capacity} spots</Text>
+                  {/* Description */}
+                  {event.event_description && (
+                    <View style={styles.infoCard}>
+                      <Text style={styles.sectionLabel}>Description</Text>
+                      <Text style={styles.descText}>{event.event_description}</Text>
+                    </View>
+                  )}
+
+                  {/* Details Grid */}
+                  <View style={styles.detailsGrid}>
+                    <View style={styles.detailBox}>
+                      <Ionicons name="people-outline" size={18} color={BLUE} />
+                      <Text style={styles.detailBoxText}>{event.capacity} spots</Text>
+                    </View>
+                    <View style={styles.detailBox}>
+                      <Ionicons name="person-outline" size={18} color={BLUE} />
+                      <Text style={styles.detailBoxText}>{event.age_min}–{event.age_max} y/o</Text>
+                    </View>
                   </View>
-                  <View style={styles.detailBox}>
-                    <Ionicons name="person-outline" size={18} color={BLUE} />
-                    <Text style={styles.detailBoxText}>{event.age_min}–{event.age_max} y/o</Text>
-                  </View>
+                  
+                  {/* Gender Preference */}
+                  {event.gender_allowed && (
+                    <View style={[styles.detailsGrid, { marginTop: 10 }]}>
+                      <View style={[styles.detailBox, { flex: 1 }]}>
+                        <MaterialCommunityIcons 
+                          name={
+                            event.gender_allowed === 'Man' ? 'gender-male' :
+                            event.gender_allowed === 'Woman' ? 'gender-female' :
+                            event.gender_allowed === 'Beyond Binary' ? 'gender-non-binary' :
+                            'gender-male-female'
+                          } 
+                          size={18} 
+                          color={BLUE} 
+                        />
+                        <Text style={styles.detailBoxText}>
+                          {event.gender_allowed === 'Everyone' ? 'Open to Everyone' : `${event.gender_allowed} Only`}
+                        </Text>
+                      </View>
+                    </View>
+                  )}
                 </View>
-              </View>
-            </ScrollView>
+              </ScrollView>
 
-            {/* Action Buttons */}
-            {isOwnEvent && (
+              {/* Action Buttons */}
               <View style={styles.modalFooter}>
-                <TouchableOpacity onPress={onDelete} style={styles.deleteBtn}>
-                  <Ionicons name="trash-outline" size={20} color="#D5222B" />
-                  <Text style={styles.deleteBtnText}>Delete</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={onEdit} style={styles.editBtn}>
-                  <LinearGradient colors={GRADIENTS.chipActive} style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 14, gap: 8, borderRadius: 14 }}>
-                    <Ionicons name="create-outline" size={20} color="#FFF" />
-                    <Text style={styles.editBtnText}>Edit</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
+                {isOwnEvent ? (
+                  // Host actions - two rows
+                  <View style={{ flex: 1, gap: 10 }}>
+                    {/* First row: Applications button (full width) */}
+                    <TouchableOpacity onPress={handleViewApplications} style={styles.applicationsBtnFull}>
+                      <Ionicons name="people" size={20} color={BLUE} />
+                      <Text style={styles.applicationsBtnText}>View Applications</Text>
+                      <Ionicons name="chevron-forward" size={18} color="rgba(27, 68, 205, 0.5)" />
+                    </TouchableOpacity>
+                    
+                    {/* Second row: Delete + Edit */}
+                    <View style={{ flexDirection: 'row', gap: 10 }}>
+                      <TouchableOpacity onPress={onDelete} style={styles.deleteBtnSmall}>
+                        <Ionicons name="trash-outline" size={20} color="#D5222B" />
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={onEdit} style={styles.editBtnFull}>
+                        <LinearGradient colors={GRADIENTS.chipActive} style={styles.editBtnGradient}>
+                          <Ionicons name="create-outline" size={20} color="#FFF" />
+                          <Text style={styles.editBtnText}>Edit Event</Text>
+                        </LinearGradient>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : (
+                  // Non-host actions
+                  <TouchableOpacity 
+                    onPress={() => {
+                  console.log(`🎯 Apply button pressed - canApply=${canApply}, isEligible=${isEligible}, requiresApplication=${requiresApplication}, eventType=${event.event_type}`);
+                  if (canApply) {
+                    if (requiresApplication) {
+                      console.log('📝 Navigating to application page for', event.event_type, 'event');
+                      onClose();
+                      router.push({
+                        pathname: "/(tabs_support)/event_application_user",
+                        params: { eventId: event.id }
+                      });
+                    } else {
+                      console.log('⚡ Direct join for', event.event_type, 'event');
+                      handleApply();
+                    }
+                  }
+                }}
+                    style={[
+                      styles.applyBtn,
+                      !canApply && styles.applyBtnDisabled,
+                      applicationStatus === 'approved' && styles.applyBtnJoined,
+                      !isEligible && styles.applyBtnIneligible,
+                    ]}
+                    disabled={!canApply || applyLoading}
+                  >
+                    {applyLoading ? (
+                      <LinearGradient colors={GRADIENTS.chipActive} style={styles.applyBtnContent}>
+                        <Text style={styles.applyBtnText}>Sending...</Text>
+                      </LinearGradient>
+                    ) : (
+                      <LinearGradient 
+                        colors={
+                          applicationStatus === 'approved' ? ['#22C55E', '#16A34A'] :
+                          applicationStatus === 'pending' ? ['#F59E0B', '#D97706'] :
+                          applicationStatus === 'rejected' ? ['#9CA3AF', '#6B7280'] :
+                          !isEligible ? ['#EF4444', '#DC2626'] :
+                          GRADIENTS.chipActive
+                        } 
+                        style={styles.applyBtnContent}
+                      >
+                        <Ionicons 
+                          name={
+                            applicationStatus === 'approved' ? 'checkmark-circle' :
+                            applicationStatus === 'pending' ? 'hourglass-outline' :
+                            applicationStatus === 'rejected' ? 'close-circle' :
+                            !isEligible ? 'ban' :
+                            requiresApplication ? 'paper-plane' : 'enter-outline'
+                          } 
+                          size={20} 
+                          color="#FFF" 
+                        />
+                        <Text style={styles.applyBtnText}>{getActionButtonText()}</Text>
+                      </LinearGradient>
+                    )}
+                  </TouchableOpacity>
+                )}
               </View>
-            )}
-          </Pressable>
-        </RNAnimated.View>
-      </Pressable>
-    </Modal>
+            </Pressable>
+          </RNAnimated.View>
+        </Pressable>
+      </Modal>
+      
+    </>
   );
 };
 
@@ -2671,6 +3056,8 @@ export default function MapScreen() {
   const [selectedEvent, setSelectedEvent] = useState<EventData | null>(null);
   const [showEventModal, setShowEventModal] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserAge, setCurrentUserAge] = useState<number | null>(null);
+  const [currentUserGender, setCurrentUserGender] = useState<string | null>(null);
   
   // User discovery states
   const [users, setUsers] = useState<UserMapCard[]>([]);
@@ -2780,11 +3167,15 @@ export default function MapScreen() {
           // Fetch user preferences for filters
           const { data: profilePrefs } = await supabase
             .from('profiles')
-            .select('age_pref_min, age_pref_max, distance_km, interested_in')
+            .select('age_pref_min, age_pref_max, distance_km, interested_in, age, gender')
             .eq('id', userId)
             .single();
           
           if (profilePrefs) {
+            // Store user's own age and gender for eligibility checks
+            setCurrentUserAge(profilePrefs.age ?? null);
+            setCurrentUserGender(profilePrefs.gender ?? null);
+            
             const prefs: UserPreferences = {
               ageMin: profilePrefs.age_pref_min || 18,
               ageMax: profilePrefs.age_pref_max || 99,
@@ -2827,9 +3218,10 @@ export default function MapScreen() {
 
   // Fetch events from Supabase
   const fetchEvents = useCallback(async () => {
-    if (!pos) return;
+    if (!pos || !currentUserId) return;
     
     try {
+      // Use the SECURITY DEFINER RPC function to bypass RLS
       const { data, error } = await supabase.rpc('get_nearby_events_with_coordinates', {
         p_user_lat: pos.lat,
         p_user_lng: pos.lng,
@@ -2842,31 +3234,121 @@ export default function MapScreen() {
         return;
       }
       
-      if (data) {
-        const validEvents = data
-          .filter((event: any) => {
-            const lat = event.latitude;
-            const lng = event.longitude;
-            if (lat === null || lat === undefined || lng === null || lng === undefined) return false;
+      if (data && data.length > 0) {
+        console.log(`📍 RPC returned ${data.length} events`);
+        
+        // Filter events based on time and coordinates
+        const validEvents = data.filter((event: any) => {
+          if (!event.latitude || !event.longitude) {
+            console.log(`   ⚠️ Skipping ${event.event_name}: missing lat/lng`);
+            return false;
+          }
+          const eventEndTime = new Date(event.time_end).getTime();
+          const isValid = eventEndTime >= Date.now();
+          if (!isValid) {
+            console.log(`   ⚠️ Skipping ${event.event_name}: expired`);
+          }
+          return isValid;
+        });
+        
+        console.log(`📍 After time filter: ${validEvents.length} valid events`);
+        
+        const eventIds = validEvents.map((e: any) => e.id);
+        let userApplicationMap = new Map<string, string>();
+        let userInviteSet = new Set<string>();
+        
+        // Try to get current user's application status
+        if (currentUserId && eventIds.length > 0) {
+          try {
+            const { data: userAppData } = await supabase
+              .from('event_applications')
+              .select('event_id, status')
+              .in('event_id', eventIds)
+              .eq('applicant_id', currentUserId);
             
-            const eventEndTime = new Date(event.time_end).getTime();
-            if (eventEndTime < Date.now()) return false;
+            if (userAppData) {
+              userAppData.forEach((a: any) => {
+                userApplicationMap.set(a.event_id, a.status);
+              });
+              console.log(`📋 Found ${userAppData.length} applications for current user`);
+            }
+          } catch (err) {
+            console.warn("Could not fetch user applications");
+          }
+          
+          // Try to get invites
+          try {
+            const { data: inviteData } = await supabase
+              .from('event_invites')
+              .select('event_id')
+              .in('event_id', eventIds)
+              .eq('invited_user_id', currentUserId);
             
-            return true;
-          })
-          .map((event: any) => ({
+            if (inviteData) {
+              inviteData.forEach((inv: any) => {
+                userInviteSet.add(inv.event_id);
+              });
+            }
+          } catch (err) {
+            console.warn("Could not fetch invites");
+          }
+        }
+        
+        // Map events - use accepted_count from RPC (parse in case it's a string from BIGINT)
+        const enrichedEvents = validEvents.map((event: any) => {
+          const eventType = event.event_type || 'public';
+          const fuzzyRadius = event.fuzzy_radius_meters || 500;
+          // Parse accepted_count - BIGINT from PostgreSQL might be string
+          const acceptedCount = typeof event.accepted_count === 'string' 
+            ? parseInt(event.accepted_count, 10) 
+            : (event.accepted_count || 0);
+          
+          return {
             ...event,
             latitude: typeof event.latitude === 'string' ? parseFloat(event.latitude) : event.latitude,
             longitude: typeof event.longitude === 'string' ? parseFloat(event.longitude) : event.longitude,
-          }));
+            event_type: eventType,
+            fuzzy_radius_meters: fuzzyRadius,
+            accepted_count: acceptedCount,
+            user_application_status: userApplicationMap.get(event.id) || 'none',
+          };
+        });
         
-        console.log(`✅ Loaded ${validEvents.length} events`);
-        setEvents(validEvents as EventData[]);
+        // Filter by visibility rules
+        const visibleEvents = enrichedEvents.filter((event: any) => {
+          const eventType = event.event_type;
+          
+          // Host's own events - always visible
+          if (event.host_id === currentUserId) return true;
+          
+          // Public, public_application, private - visible to everyone in radius
+          if (eventType === 'public' || eventType === 'public_application' || eventType === 'private') {
+            return true;
+          }
+          
+          // invite_only - visible if user is invited
+          if (eventType === 'invite_only' && userInviteSet.has(event.id)) {
+            return true;
+          }
+          
+          // group_event, community_event - hide for now unless host
+          return false;
+        });
+        
+        console.log(`✅ Loaded ${visibleEvents.length} events to display`);
+        visibleEvents.forEach((e: any) => {
+          console.log(`   📍 ${e.event_name}: type=${e.event_type}, count=${e.accepted_count}, status=${e.user_application_status}`);
+        });
+        
+        setEvents(visibleEvents as EventData[]);
+      } else {
+        console.log(`📍 RPC returned no events`);
+        setEvents([]);
       }
     } catch (error) {
       console.error("Exception in fetchEvents:", error);
     }
-  }, [pos]);
+  }, [pos, currentUserId]);
 
   // Fetch users from Supabase
   const fetchUsers = useCallback(async (retryCount: number = 0) => {
@@ -2949,12 +3431,12 @@ export default function MapScreen() {
     fetchUsersRef.current = fetchUsers;
   }, [fetchUsers]);
 
-  // Initial fetch when position is available
+  // Initial fetch when position and user are available
   useEffect(() => {
-    if (pos) {
+    if (pos && currentUserId) {
       fetchEvents();
     }
-  }, [pos, fetchEvents]);
+  }, [pos, currentUserId, fetchEvents]);
 
   // Fetch users when currentUserId is available
   // Use multiple retries with exponential backoff to handle race conditions
@@ -3031,6 +3513,76 @@ export default function MapScreen() {
         }
       });
 
+    // 🔥 Subscribe to event_applications to update counts when people join/leave events
+    const applicationsChannel = supabase
+      .channel("event_applications_updates")
+      .on(
+        "postgres_changes",
+        { 
+          event: "*", 
+          schema: "public", 
+          table: "event_applications"
+        },
+        (payload) => {
+          console.log("🔔 Event application changed:", payload.eventType, payload.new || payload.old);
+          
+          // Get the event_id from the payload
+          const eventId = (payload.new as any)?.event_id || (payload.old as any)?.event_id;
+          const newStatus = (payload.new as any)?.status;
+          const oldStatus = (payload.old as any)?.status;
+          
+          if (eventId) {
+            let countDelta = 0;
+            
+            // Calculate count change based on status transition
+            if (payload.eventType === "INSERT" && newStatus === 'approved') {
+              countDelta = 1;
+            } else if (payload.eventType === "DELETE" && oldStatus === 'approved') {
+              countDelta = -1;
+            } else if (payload.eventType === "UPDATE") {
+              // Status changed
+              if (oldStatus !== 'approved' && newStatus === 'approved') {
+                countDelta = 1;
+              } else if (oldStatus === 'approved' && newStatus !== 'approved') {
+                countDelta = -1;
+              }
+            }
+            
+            if (countDelta !== 0) {
+              // Update the accepted count in events array
+              setEvents(prev => {
+                return prev.map(event => {
+                  if (event.id !== eventId) return event;
+                  
+                  const newCount = Math.max(0, (event.accepted_count || 0) + countDelta);
+                  console.log(`   📊 Updating ${event.event_name} count: ${event.accepted_count} → ${newCount}`);
+                  return {
+                    ...event,
+                    accepted_count: newCount,
+                  };
+                });
+              });
+              
+              // Also update selectedEvent if it's the same event (modal is open)
+              setSelectedEvent(prev => {
+                if (!prev || prev.id !== eventId) return prev;
+                const newCount = Math.max(0, (prev.accepted_count || 0) + countDelta);
+                console.log(`   📊 Updating selected event count: ${prev.accepted_count} → ${newCount}`);
+                return {
+                  ...prev,
+                  accepted_count: newCount,
+                };
+              });
+            }
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          console.log("✅ Event applications real-time connected");
+        }
+      });
+
     // 🔥 Also subscribe to profile updates to detect when other users come online
     const profilesChannel = supabase
       .channel("profiles_updates")
@@ -3058,6 +3610,7 @@ export default function MapScreen() {
 
     return () => {
       eventsChannel.unsubscribe();
+      applicationsChannel.unsubscribe();
       profilesChannel.unsubscribe();
     };
   }, []); // Empty deps - set up once
@@ -3398,20 +3951,43 @@ export default function MapScreen() {
         ))}
 
         {/* Event markers */}
-        {events.map((event) => (
-          <Marker
-            key={`evt-${event.id}`}
-            coordinate={{ latitude: event.latitude, longitude: event.longitude }}
-            anchor={{ x: 0.5, y: 1 }}
-            tracksViewChanges={false}
-            onPress={() => {
-              setSelectedEvent(event);
-              setShowEventModal(true);
-            }}
-          >
-            <EventMarker event={event} />
-          </Marker>
-        ))}
+        {events.map((event) => {
+          // For private events where user is not approved, show fuzzy location
+          const isPrivateNotApproved = event.event_type === 'private' && 
+            event.host_id !== currentUserId && 
+            event.user_application_status !== 'approved';
+          
+          // Calculate fuzzy offset if needed (consistent per event using event id as seed)
+          let displayLat = event.latitude;
+          let displayLng = event.longitude;
+          
+          if (isPrivateNotApproved) {
+            // Use a deterministic offset based on event id so it's consistent
+            const fuzzyRadius = (event.fuzzy_radius_meters || 500) / 111000; // Convert meters to degrees (approx)
+            // Create pseudo-random but consistent offset using event id characters
+            const seedValue = event.id.split('').reduce((acc, char, i) => acc + char.charCodeAt(0) * (i + 1), 0);
+            const angle = (seedValue % 360) * (Math.PI / 180);
+            const offsetMultiplier = 0.3 + (seedValue % 70) / 100; // 0.3 to 1.0
+            displayLat = event.latitude + Math.cos(angle) * fuzzyRadius * offsetMultiplier;
+            displayLng = event.longitude + Math.sin(angle) * fuzzyRadius * offsetMultiplier;
+          }
+          
+          return (
+            <Marker
+              key={`evt-${event.id}`}
+              coordinate={{ latitude: displayLat, longitude: displayLng }}
+              anchor={{ x: 0.5, y: 1 }}
+              tracksViewChanges={false}
+              onPress={() => {
+                console.log(`👆 Event marker pressed: "${event.event_name}", status=${event.user_application_status}, count=${event.accepted_count}`);
+                setSelectedEvent(event);
+                setShowEventModal(true);
+              }}
+            >
+              <EventMarker event={event} />
+            </Marker>
+          );
+        })}
 
       </MapView>
 
@@ -3430,7 +4006,7 @@ export default function MapScreen() {
                 <SearchIcon size={18} />
               </View>
               <TextInput
-                value={searchQuery} onChangeText={setSearchQuery} placeholder="Search for people & places"
+                value={searchQuery} onChangeText={setSearchQuery} placeholder="Search for events"
                 placeholderTextColor={PLACEHOLDER_COLOR} style={styles.searchInput} returnKeyType="search"
                 selectionColor="rgba(27,68,205,0.5)" onFocus={openSearch} onBlur={closeSearch} onSubmitEditing={closeKeyboard}
               />
@@ -3551,6 +4127,26 @@ export default function MapScreen() {
           );
         }}
         isOwnEvent={selectedEvent?.host_id === currentUserId}
+        currentUserId={currentUserId}
+        currentUserAge={currentUserAge}
+        currentUserGender={currentUserGender}
+        onApplySuccess={() => {
+          // Note: We don't need to call fetchEvents here anymore
+          // onEventUpdate already updates the local state with the correct
+          // user_application_status and accepted_count
+          // Calling fetchEvents was causing a race condition where the async
+          // fetch would overwrite the local updates before they were reflected
+          console.log("✅ Event join successful - local state updated via onEventUpdate");
+        }}
+        onEventUpdate={(updatedEvent) => {
+          console.log(`📊 onEventUpdate: "${updatedEvent.event_name}", status=${updatedEvent.user_application_status}, count=${updatedEvent.accepted_count}`);
+          // Update selectedEvent
+          setSelectedEvent(updatedEvent);
+          // Update the event in events array
+          setEvents(prev => prev.map(e => 
+            e.id === updatedEvent.id ? updatedEvent : e
+          ));
+        }}
       />
 
       {/* Filter Modal */}
@@ -3614,7 +4210,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 5,
-    overflow: "hidden",
+    // Note: no overflow: hidden to allow lock badge to show outside
   },
   eventMarkerPin: {
     width: 0,
@@ -3774,6 +4370,190 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   editBtnText: {
+    fontSize: 15,
+    fontFamily: Fonts.bold,
+    color: "#FFFFFF",
+  },
+  
+  // Attendees card
+  attendeesCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(27, 68, 205, 0.06)",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    gap: 8,
+  },
+  attendeesText: {
+    fontSize: 14,
+    fontFamily: Fonts.bold,
+    color: BLUE,
+  },
+  capacityText: {
+    fontSize: 13,
+    fontFamily: Fonts.primary,
+    color: "rgba(10, 14, 26, 0.5)",
+  },
+  
+  // Applications button (for hosts) - full width version
+  applicationsBtnFull: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    backgroundColor: "rgba(27, 68, 205, 0.08)",
+    borderWidth: 1.5,
+    borderColor: "rgba(27, 68, 205, 0.15)",
+    gap: 8,
+  },
+  applicationsBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: "rgba(27, 68, 205, 0.08)",
+    borderWidth: 1.5,
+    borderColor: "rgba(27, 68, 205, 0.2)",
+    gap: 6,
+  },
+  applicationsBtnText: {
+    flex: 1,
+    fontSize: 15,
+    fontFamily: Fonts.bold,
+    color: BLUE,
+  },
+  
+  // Delete button - small square version
+  deleteBtnSmall: {
+    width: 52,
+    height: 52,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 14,
+    backgroundColor: "rgba(213, 34, 43, 0.08)",
+    borderWidth: 1.5,
+    borderColor: "rgba(213, 34, 43, 0.2)",
+  },
+  
+  // Edit button - full width version
+  editBtnFull: {
+    flex: 1,
+    borderRadius: 14,
+    overflow: "hidden",
+  },
+  editBtnGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 14,
+    gap: 8,
+    borderRadius: 14,
+  },
+  
+  // Apply button (for non-hosts)
+  applyBtn: {
+    flex: 1,
+    borderRadius: 14,
+    overflow: "hidden",
+  },
+  applyBtnDisabled: {
+    opacity: 0.6,
+  },
+  applyBtnJoined: {
+    opacity: 1,
+  },
+  applyBtnIneligible: {
+    opacity: 0.9,
+  },
+  applyBtnContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 14,
+    gap: 8,
+    borderRadius: 14,
+  },
+  applyBtnText: {
+    fontSize: 15,
+    fontFamily: Fonts.bold,
+    color: "#FFFFFF",
+  },
+  
+  // Apply Modal styles
+  applyModalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  applyModalContainer: {
+    width: "100%",
+    maxWidth: 400,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  applyModalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  applyModalTitle: {
+    fontSize: 20,
+    fontFamily: Fonts.bold,
+    color: "#0A0E1A",
+  },
+  applyModalClose: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 18,
+    backgroundColor: "rgba(10, 14, 26, 0.05)",
+  },
+  applyModalSubtitle: {
+    fontSize: 14,
+    fontFamily: Fonts.primary,
+    color: "rgba(10, 14, 26, 0.6)",
+    marginBottom: 16,
+    lineHeight: 20,
+  },
+  applyModalInput: {
+    height: 120,
+    backgroundColor: "rgba(27, 68, 205, 0.05)",
+    borderRadius: 14,
+    padding: 16,
+    fontSize: 15,
+    fontFamily: Fonts.primary,
+    color: "#0A0E1A",
+    borderWidth: 1,
+    borderColor: "rgba(27, 68, 205, 0.1)",
+    marginBottom: 16,
+  },
+  applyModalButton: {
+    borderRadius: 14,
+    overflow: "hidden",
+  },
+  applyModalButtonGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 14,
+    gap: 8,
+  },
+  applyModalButtonText: {
     fontSize: 15,
     fontFamily: Fonts.bold,
     color: "#FFFFFF",

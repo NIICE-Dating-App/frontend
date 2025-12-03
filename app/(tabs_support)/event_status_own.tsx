@@ -2,7 +2,7 @@
 
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
-import { LinearGradient } from "expo-linear-gradient";
+
 import { router } from "expo-router";
 import React, { useCallback, useRef, useState } from "react";
 import {
@@ -145,11 +145,7 @@ const HostedEventCard: React.FC<{ event: PastEvent; onPress?: () => void }> = ({
 
   return (
     <TouchableOpacity activeOpacity={0.8} onPress={onPress} style={styles.eventCard}>
-      <LinearGradient
-        colors={["#FFFFFF", "#F8FAFF"]}
-        style={StyleSheet.absoluteFillObject}
-      />
-      <View style={styles.eventCardContent}>
+  <View style={styles.eventCardContent}>
         <View style={styles.eventCardHeader}>
           <CategoryBadge category={event.category} />
           <Text style={styles.eventDate}>{dateLabel}</Text>
@@ -193,11 +189,7 @@ const JoinedEventCard: React.FC<{ event: JoinedEvent; onPress?: () => void }> = 
 
   return (
     <TouchableOpacity activeOpacity={0.8} onPress={onPress} style={styles.eventCard}>
-      <LinearGradient
-        colors={["#FFFFFF", "#FAFBFF"]}
-        style={StyleSheet.absoluteFillObject}
-      />
-      <View style={styles.eventCardContent}>
+  <View style={styles.eventCardContent}>
         <View style={styles.eventCardHeader}>
           <CategoryBadge category={event.category} />
           <Text style={styles.eventDate}>{dateLabel}</Text>
@@ -268,9 +260,14 @@ export default function EventStatusOwnScreen() {
     try {
       const { data: auth } = await supabase.auth.getUser();
       const userId = auth?.user?.id;
-      if (!userId) return;
+      if (!userId) {
+        console.log("No user ID found");
+        return;
+      }
 
-      // Fetch rating summary using the function
+      console.log("Fetching data for userId:", userId);
+
+      // Fetch rating summary using the RPC function (uses SECURITY DEFINER)
       const { data: ratingSummaryData, error: ratingError } = await supabase
         .rpc("get_host_rating_summary", { p_host_id: userId });
 
@@ -293,95 +290,48 @@ export default function EventStatusOwnScreen() {
         });
       }
 
-      // Fetch hosted events (past)
+      // Fetch hosted events using RPC function (bypasses RLS recursion)
       const { data: hostedData, error: hostedError } = await supabase
-        .from("events")
-        .select(`
-          id,
-          event_name,
-          category,
-          location_name,
-          time_start,
-          time_end,
-          status
-        `)
-        .eq("host_id", userId)
-        .lt("time_end", new Date().toISOString())
-        .order("time_start", { ascending: false })
-        .limit(20);
+        .rpc("get_my_hosted_events", { p_user_id: userId });
+
+      console.log("Hosted events response:", hostedData, hostedError);
 
       if (!hostedError && hostedData) {
-        // Get attendee counts and ratings for each event
-        const eventsWithDetails = await Promise.all(
-          hostedData.map(async (event) => {
-            // Get attendee count
-            const { count: attendeeCount } = await supabase
-              .from("event_applications")
-              .select("*", { count: "exact", head: true })
-              .eq("event_id", event.id)
-              .eq("status", "approved");
+        const eventsWithDetails: PastEvent[] = hostedData.map((event: any) => ({
+          id: event.id,
+          event_name: event.event_name,
+          category: event.category,
+          location_name: event.location_name,
+          time_start: event.time_start,
+          time_end: event.time_end,
+          status: event.status,
+          attendee_count: Number(event.attendee_count) || 0,
+          rating: event.avg_rating ? Number(event.avg_rating) : null,
+        }));
 
-            // Get average rating for this event
-            const { data: ratingsData } = await supabase
-              .from("event_ratings")
-              .select("rating")
-              .eq("event_id", event.id);
-
-            let avgRating: number | null = null;
-            if (ratingsData && ratingsData.length > 0) {
-              const sum = ratingsData.reduce((acc, r) => acc + Number(r.rating), 0);
-              avgRating = sum / ratingsData.length;
-            }
-
-            return {
-              ...event,
-              attendee_count: attendeeCount || 0,
-              rating: avgRating,
-            };
-          })
-        );
-
+        console.log("Hosted events processed:", eventsWithDetails);
         setHostedEvents(eventsWithDetails);
       }
 
-      // Fetch joined events (past)
+      // Fetch joined events using RPC function (bypasses RLS recursion)
       const { data: joinedData, error: joinedError } = await supabase
-        .from("event_applications")
-        .select(`
-          event_id,
-          events!inner (
-            id,
-            event_name,
-            category,
-            location_name,
-            time_start,
-            time_end,
-            host_id,
-            profiles!events_host_id_fkey (
-              full_name
-            )
-          )
-        `)
-        .eq("applicant_id", userId)
-        .eq("status", "approved")
-        .lt("events.time_end", new Date().toISOString())
-        .order("created_at", { ascending: false })
-        .limit(20);
+        .rpc("get_my_joined_events", { p_user_id: userId });
+
+      console.log("Joined events response:", joinedData, joinedError);
 
       if (!joinedError && joinedData) {
-        const joinedProcessed: JoinedEvent[] = joinedData
-          .filter((item: any) => item.events)
-          .map((item: any) => ({
-            id: item.events.id,
-            event_name: item.events.event_name,
-            category: item.events.category,
-            location_name: item.events.location_name,
-            time_start: item.events.time_start,
-            time_end: item.events.time_end,
-            host_name: item.events.profiles?.full_name || null,
-            host_photo: null,
-          }));
+        const joinedProcessed: JoinedEvent[] = joinedData.map((event: any) => ({
+          id: event.id,
+          event_name: event.event_name,
+          category: event.category,
+          location_name: event.location_name,
+          time_start: event.time_start,
+          time_end: event.time_end,
+          host_name: event.host_name || null,
+          host_photo: null,
+        }));
 
+        console.log("Joined events processed:", joinedProcessed);
         setJoinedEvents(joinedProcessed);
       }
     } catch (error) {
@@ -439,7 +389,7 @@ export default function EventStatusOwnScreen() {
             onPress={() => router.back()}
             style={styles.backButton}
           >
-            <Ionicons name="chevron-back" size={24} color={INK} />
+            <Ionicons name="chevron-back" size={22} color={INK} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>My Events</Text>
           <View style={styles.headerRight} />
@@ -454,13 +404,7 @@ export default function EventStatusOwnScreen() {
         >
           {/* Rating Card */}
           <View style={styles.ratingCard}>
-            <LinearGradient
-              colors={[BLUES.b50, BLUES.b70]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={StyleSheet.absoluteFillObject}
-            />
-            <View style={styles.ratingCardDecor}>
+  <View style={styles.ratingCardDecor}>
               <View style={[styles.decorCircle, styles.decorCircle1]} />
               <View style={[styles.decorCircle, styles.decorCircle2]} />
             </View>
@@ -599,7 +543,7 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontFamily: Fonts.primary,
-    fontSize: scale(14),
+    fontSize: scale(15),
     color: "rgba(10,14,26,0.5)",
     marginTop: verticalScale(12),
   },
@@ -609,44 +553,45 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: scale(16),
+    paddingHorizontal: scale(20),
     paddingVertical: verticalScale(12),
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(0,0,0,0.05)",
+    borderBottomColor: "rgba(27,68,205,0.08)",
   },
   backButton: {
-    width: scale(40),
-    height: scale(40),
-    borderRadius: scale(20),
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(0,0,0,0.03)",
-  },
+  width: scale(40),
+  height: scale(40),
+  borderRadius: scale(20),
+  alignItems: "center",
+  justifyContent: "center",
+  backgroundColor: "rgba(0,0,0,0.03)",
+},
   headerTitle: {
     fontFamily: Fonts.bold,
-    fontSize: scale(18),
+    fontSize: scale(17),
     color: INK,
   },
   headerRight: {
-    width: scale(40),
+    width: scale(36),
   },
 
   scrollContent: {
     paddingHorizontal: scale(20),
-    paddingBottom: verticalScale(40),
+    paddingBottom: verticalScale(30),
   },
 
   // Rating Card
   ratingCard: {
-    marginTop: verticalScale(20),
-    borderRadius: scale(24),
-    overflow: "hidden",
-    shadowColor: BLUE,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 12,
-  },
+  marginTop: verticalScale(20),
+  borderRadius: scale(20),
+  overflow: "hidden",
+  backgroundColor: BLUE,
+  shadowColor: BLUE,
+  shadowOffset: { width: 0, height: 6 },
+  shadowOpacity: 0.15,
+  shadowRadius: 10,
+  elevation: 8,
+},
   ratingCardDecor: {
     position: "absolute",
     width: "100%",
@@ -670,19 +615,19 @@ const styles = StyleSheet.create({
     left: -scale(20),
   },
   ratingCardContent: {
-    padding: scale(24),
+    padding: scale(20),
     alignItems: "center",
   },
   ratingCardLabel: {
     fontFamily: Fonts.bold,
-    fontSize: scale(14),
+    fontSize: scale(13),
     color: "rgba(255,255,255,0.8)",
     letterSpacing: 0.5,
     textTransform: "uppercase",
     marginBottom: verticalScale(16),
   },
   ratingStarsContainer: {
-    marginBottom: verticalScale(20),
+    marginBottom: verticalScale(18),
   },
   ratingStats: {
     flexDirection: "row",
@@ -694,7 +639,7 @@ const styles = StyleSheet.create({
   },
   ratingStatValue: {
     fontFamily: Fonts.bold,
-    fontSize: scale(24),
+    fontSize: scale(22),
     color: "#FFFFFF",
   },
   ratingStatLabel: {
@@ -735,7 +680,7 @@ const styles = StyleSheet.create({
   },
   ratingNumber: {
     fontFamily: Fonts.bold,
-    fontSize: scale(28),
+    fontSize: scale(26),
     color: "#FFFFFF",
   },
 
@@ -747,7 +692,7 @@ const styles = StyleSheet.create({
   tabsBackground: {
     flexDirection: "row",
     backgroundColor: "rgba(27,68,205,0.06)",
-    borderRadius: scale(16),
+    borderRadius: scale(20),
     padding: scale(4),
     position: "relative",
   },
@@ -758,20 +703,20 @@ const styles = StyleSheet.create({
     width: "50%",
     height: "100%",
     backgroundColor: BLUE,
-    borderRadius: scale(12),
+    borderRadius: scale(16),
   },
   tab: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: verticalScale(12),
-    gap: scale(6),
-    zIndex: 1,
-  },
+  flex: 1,
+  flexDirection: "row",
+  alignItems: "center",
+  justifyContent: "center",
+  paddingVertical: verticalScale(10),
+  gap: scale(6),
+  zIndex: 1,
+},
   tabText: {
     fontFamily: Fonts.bold,
-    fontSize: scale(14),
+    fontSize: scale(15),
     color: "rgba(10,14,26,0.5)",
   },
   tabTextActive: {
@@ -785,51 +730,55 @@ const styles = StyleSheet.create({
 
   // Event Card
   eventCard: {
-    borderRadius: scale(16),
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "rgba(27,68,205,0.08)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
-  },
+  borderRadius: scale(20),
+  overflow: "hidden",
+  backgroundColor: "#FFFFFF",
+  borderWidth: 1,
+  borderColor: "rgba(27,68,205,0.08)",
+  shadowColor: "#000",
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.04,
+  shadowRadius: 6,
+  elevation: 2,
+},
   eventCardContent: {
-    padding: scale(16),
+    padding: scale(20),
   },
   eventCardHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: verticalScale(10),
+    marginBottom: verticalScale(12),
   },
   eventDate: {
     fontFamily: Fonts.primary,
-    fontSize: scale(12),
+    fontSize: scale(13),
     color: "rgba(10,14,26,0.5)",
   },
   eventName: {
-    fontFamily: Fonts.bold,
-    fontSize: scale(16),
-    color: INK,
-    marginBottom: verticalScale(12),
-    lineHeight: scale(22),
-  },
-  eventCardFooter: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
+  fontFamily: Fonts.bold,
+  fontSize: scale(16),
+  color: INK,
+  marginBottom: verticalScale(12),
+  marginTop: verticalScale(5),
+  lineHeight: scale(24),
+  paddingTop: verticalScale(2),
+},
+ eventCardFooter: {
+  flexDirection: "row",
+  alignItems: "flex-start",
+  justifyContent: "space-between",
+},
   eventLocation: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-    gap: scale(4),
-  },
+  flexDirection: "row",
+  alignItems: "flex-start",
+  flex: 1,
+  gap: scale(4),
+  marginRight: scale(8),
+},
   eventLocationText: {
     fontFamily: Fonts.primary,
-    fontSize: scale(12),
+    fontSize: scale(13),
     color: "rgba(10,14,26,0.6)",
     flex: 1,
   },
@@ -842,13 +791,13 @@ const styles = StyleSheet.create({
   // Category Badge
   categoryBadge: {
     backgroundColor: BLUE,
-    paddingHorizontal: scale(10),
-    paddingVertical: verticalScale(4),
-    borderRadius: scale(8),
+    paddingHorizontal: scale(12),
+    paddingVertical: verticalScale(5),
+    borderRadius: scale(14),
   },
   categoryBadgeText: {
     fontFamily: Fonts.bold,
-    fontSize: scale(10),
+    fontSize: scale(11),
     color: "#FFFFFF",
     textTransform: "uppercase",
     letterSpacing: 0.5,
@@ -858,15 +807,15 @@ const styles = StyleSheet.create({
   miniStarContainer: {
     flexDirection: "row",
     alignItems: "center",
-    gap: scale(3),
+    gap: scale(4),
     backgroundColor: "rgba(255,184,0,0.1)",
-    paddingHorizontal: scale(8),
-    paddingVertical: verticalScale(4),
-    borderRadius: scale(8),
+    paddingHorizontal: scale(10),
+    paddingVertical: verticalScale(5),
+    borderRadius: scale(14),
   },
   miniStarText: {
     fontFamily: Fonts.bold,
-    fontSize: scale(12),
+    fontSize: scale(13),
     color: "#B8860B",
   },
 
@@ -878,7 +827,7 @@ const styles = StyleSheet.create({
   },
   attendeeCountText: {
     fontFamily: Fonts.primary,
-    fontSize: scale(12),
+    fontSize: scale(13),
     color: "rgba(10,14,26,0.5)",
   },
 
@@ -889,7 +838,7 @@ const styles = StyleSheet.create({
     marginTop: verticalScale(12),
     paddingTop: verticalScale(12),
     borderTopWidth: 1,
-    borderTopColor: "rgba(27,68,205,0.06)",
+    borderTopColor: "rgba(27,68,205,0.08)",
     gap: scale(8),
   },
   hostAvatar: {
@@ -907,7 +856,7 @@ const styles = StyleSheet.create({
   },
   hostName: {
     fontFamily: Fonts.primary,
-    fontSize: scale(12),
+    fontSize: scale(13),
     color: "rgba(10,14,26,0.6)",
     flex: 1,
   },
@@ -929,14 +878,14 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontFamily: Fonts.bold,
-    fontSize: scale(18),
+    fontSize: scale(17),
     color: INK,
     marginBottom: verticalScale(8),
     textAlign: "center",
   },
   emptySubtitle: {
     fontFamily: Fonts.primary,
-    fontSize: scale(14),
+    fontSize: scale(15),
     color: "rgba(10,14,26,0.5)",
     textAlign: "center",
   },
