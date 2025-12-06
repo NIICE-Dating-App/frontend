@@ -272,9 +272,9 @@ export default function TabsLayout() {
       >
         <Tabs.Screen name="profile" options={{ title: "Profile" }} />
         <Tabs.Screen name="map" options={{ title: "Map" }} />
-        <Tabs.Screen name="(up_tab)/event" options={{ title: "Events" }} />
-        <Tabs.Screen name="(up_tab)/nicees" options={{ title: "Niice's" }} />
-        <Tabs.Screen name="chat" options={{ title: "Chat" }} />
+        <Tabs.Screen name="event" options={{ title: "Events" }} />
+        <Tabs.Screen name="chat" options={{ title: "Niice's" }} />
+        <Tabs.Screen name="niices" options={{ title: "Chat" }} />
       </Tabs>
     </View>
   );

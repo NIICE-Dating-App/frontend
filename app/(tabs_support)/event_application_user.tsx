@@ -1,11 +1,13 @@
 // app/(tabs_support)/event_application_user.tsx
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import * as Location from "expo-location";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Dimensions,
   Image,
   Keyboard,
@@ -16,7 +18,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -81,7 +83,14 @@ interface HostProfile {
   id: string;
   full_name: string;
   age: number | null;
+  bio: string | null;
   main_photo_url: string | null;
+  frame_id: string | null;
+  lat: number | null;
+  lng: number | null;
+  sexual_orientation: string | null;
+  looking_for_friend: string[] | null;
+  value_friend: string[] | null;
 }
 
 const eventTypeDisplayNames: Record<EventType, { label: string; icon: string; color: string }> = {
@@ -127,6 +136,193 @@ const signPath = async (path: string | null): Promise<string | null> => {
   return data?.signedUrl ?? null;
 };
 
+// Humanize string helper
+const humanize = (s: string | null | undefined): string => {
+  if (!s) return "";
+  return s
+    .replace(/_/g, " ")
+    .split(" ")
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
+};
+
+// Distance calculation
+const toRad = (d: number) => (d * Math.PI) / 180;
+const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+  const R = 6371; // Earth's radius in km
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
+// Format looking for display
+const formatLookingFor = (options: string[] | null): string | null => {
+  if (!options || options.length === 0) return null;
+  
+  const displayMap: Record<string, string> = {
+    'new_friends_nearby': 'New friends nearby',
+    'workout_fitness_buddy': 'Workout buddy',
+    'travel_companions': 'Travel companions',
+    'activity_hobby_partners': 'Hobby partners',
+    'casual_hangouts': 'Casual hangouts',
+    'professional_networking': 'Networking',
+    'close_friendships': 'Close friendships',
+  };
+  
+  const mapped = options.slice(0, 2).map(o => displayMap[o] || humanize(o));
+  return mapped.join(' · ');
+};
+
+// Format values display
+const formatValues = (values: string[] | null): string | null => {
+  if (!values || values.length === 0) return null;
+  return values.slice(0, 3).map(v => humanize(v)).join(' · ');
+};
+
+// Host Preview Card Component
+const HostPreviewCard: React.FC<{
+  host: HostProfile;
+  hostPhotoUrl: string | null;
+  userPosition: { lat: number; lng: number } | null;
+}> = ({ host, hostPhotoUrl, userPosition }) => {
+  const [expanded, setExpanded] = useState(false);
+  const [animatedHeight] = useState(new Animated.Value(0));
+
+  const hasFrame = !!host.frame_id;
+  
+  // Calculate distance
+  const distanceText = (() => {
+    if (!userPosition || !host.lat || !host.lng) return null;
+    const km = calculateDistance(userPosition.lat, userPosition.lng, host.lat, host.lng);
+    if (km < 1) return `${Math.round(km * 1000)}m away`;
+    return `${km.toFixed(1)}km away`;
+  })();
+
+  const orientationDisplay = host.sexual_orientation ? humanize(host.sexual_orientation) : null;
+  const lookingForDisplay = formatLookingFor(host.looking_for_friend);
+  const valuesDisplay = formatValues(host.value_friend);
+
+  const hasExpandedContent = host.bio || orientationDisplay || lookingForDisplay || valuesDisplay;
+
+  useEffect(() => {
+    Animated.timing(animatedHeight, {
+      toValue: expanded ? 1 : 0,
+      duration: 250,
+      useNativeDriver: false,
+    }).start();
+  }, [expanded]);
+
+  const toggleExpand = () => {
+    if (hasExpandedContent) {
+      setExpanded(!expanded);
+    }
+  };
+
+  return (
+    <TouchableOpacity 
+      style={styles.hostCard}
+      onPress={toggleExpand}
+      activeOpacity={hasExpandedContent ? 0.7 : 1}
+    >
+      {/* Main Host Row - Always Visible */}
+      <View style={styles.hostMainRow}>
+        {/* Photo with Frame indicator */}
+        <View style={styles.hostPhotoContainer}>
+          {hasFrame && (
+            <View style={styles.frameRing}>
+              <LinearGradient
+                colors={[BLUES.b50, BLUES.b80]}
+                style={styles.frameRingGradient}
+              />
+            </View>
+          )}
+          <View style={styles.hostPhotoWrap}>
+            {hostPhotoUrl ? (
+              <Image source={{ uri: hostPhotoUrl }} style={styles.hostPhoto} />
+            ) : (
+              <View style={styles.hostPhotoPlaceholder}>
+                <Ionicons name="person" size={scale(24)} color={BLUES.b90} />
+              </View>
+            )}
+          </View>
+        </View>
+
+        {/* Name, Age, Distance */}
+        <View style={styles.hostInfoMain}>
+          <Text style={styles.hostLabel}>Hosted by</Text>
+          <Text style={styles.hostName}>
+            {host.full_name}{host.age ? `, ${host.age}` : ''}
+          </Text>
+          {distanceText && (
+            <View style={styles.hostDistanceRow}>
+              <Ionicons name="location-outline" size={scale(12)} color="rgba(10, 14, 26, 0.5)" />
+              <Text style={styles.hostDistanceText}>{distanceText}</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Expand indicator */}
+        {hasExpandedContent && (
+          <Ionicons 
+            name={expanded ? "chevron-up" : "chevron-down"} 
+            size={scale(20)} 
+            color={BLUES.b90} 
+          />
+        )}
+      </View>
+
+      {/* Expanded Content */}
+      {expanded && hasExpandedContent && (
+        <Animated.View style={[
+          styles.hostExpandedContent,
+          {
+            opacity: animatedHeight,
+          }
+        ]}>
+          {/* Bio */}
+          {host.bio && (
+            <View style={styles.hostBioSection}>
+              <Text style={styles.hostBioText} numberOfLines={3}>{host.bio}</Text>
+            </View>
+          )}
+
+          {/* Chips Row */}
+          {(lookingForDisplay || orientationDisplay) && (
+            <View style={styles.hostChipsRow}>
+              {lookingForDisplay && (
+                <View style={styles.hostChip}>
+                  <Ionicons name="people-outline" size={scale(12)} color={BLUE} />
+                  <Text style={styles.hostChipText}>{lookingForDisplay}</Text>
+                </View>
+              )}
+              {orientationDisplay && (
+                <View style={styles.hostChip}>
+                  <Ionicons name="sparkles-outline" size={scale(12)} color={BLUE} />
+                  <Text style={styles.hostChipText}>{orientationDisplay}</Text>
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* Values */}
+          {valuesDisplay && (
+            <View style={styles.hostValuesSection}>
+              <Text style={styles.hostValuesLabel}>Values</Text>
+              <Text style={styles.hostValuesText}>{valuesDisplay}</Text>
+            </View>
+          )}
+        </Animated.View>
+      )}
+
+      {/* Tap hint */}
+      {hasExpandedContent && !expanded && (
+        <Text style={styles.hostTapHint}>Tap to see more about the host</Text>
+      )}
+    </TouchableOpacity>
+  );
+};
+
 export default function EventApplicationUserScreen() {
   const params = useLocalSearchParams<{ eventId: string }>();
   const eventId = params.eventId;
@@ -140,6 +336,25 @@ export default function EventApplicationUserScreen() {
   const [applicationMessage, setApplicationMessage] = useState("");
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [existingStatus, setExistingStatus] = useState<string | null>(null);
+  const [userPosition, setUserPosition] = useState<{ lat: number; lng: number } | null>(null);
+
+  // Get user's current position
+  useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const location = await Location.getCurrentPositionAsync({});
+          setUserPosition({
+            lat: location.coords.latitude,
+            lng: location.coords.longitude,
+          });
+        }
+      } catch (error) {
+        console.log("Could not get location:", error);
+      }
+    })();
+  }, []);
 
   // Fetch event and host data
   const loadEventData = useCallback(async () => {
@@ -212,11 +427,11 @@ export default function EventApplicationUserScreen() {
         }
       }
 
-      // Fetch host profile
+      // Fetch host profile with extended info
       if (eventData.host_id) {
         const { data: hostData } = await supabase
           .from("profiles")
-          .select("id, full_name, age")
+          .select("id, full_name, age, bio, frame_id, lat, lng, sexual_orientation")
           .eq("id", eventData.host_id)
           .single();
 
@@ -229,11 +444,33 @@ export default function EventApplicationUserScreen() {
             .eq("is_main", true)
             .maybeSingle();
 
+          // Fetch host's friend mode data
+          let friendModeData: { looking_for_friend: string[] | null; value_friend: string[] | null } | null = null;
+          
+          try {
+            const { data: modeData, error: modeError } = await supabase.rpc('get_user_friend_mode', {
+              target_user_id: eventData.host_id
+            });
+            
+            if (!modeError && modeData && modeData.length > 0) {
+              friendModeData = modeData[0];
+            }
+          } catch (err) {
+            console.log("Could not fetch friend mode data:", err);
+          }
+
           setHost({
             id: hostData.id,
             full_name: hostData.full_name,
             age: hostData.age,
+            bio: hostData.bio,
             main_photo_url: photoData?.photo_url || null,
+            frame_id: hostData.frame_id,
+            lat: hostData.lat,
+            lng: hostData.lng,
+            sexual_orientation: hostData.sexual_orientation,
+            looking_for_friend: friendModeData?.looking_for_friend || null,
+            value_friend: friendModeData?.value_friend || null,
           });
 
           // Sign the photo URL
@@ -425,7 +662,7 @@ export default function EventApplicationUserScreen() {
               </Text>
             </View>
 
-            {/* Age Range & Gender Preference */}
+            {/* Age Range */}
             <View style={styles.infoRow}>
               <View style={styles.infoIconWrap}>
                 <Ionicons name="person-outline" size={scale(18)} color={BLUE} />
@@ -456,30 +693,6 @@ export default function EventApplicationUserScreen() {
               </View>
             )}
 
-            {/* Host Info */}
-            {host && (
-              <TouchableOpacity 
-                style={styles.hostRow}
-                onPress={() => router.push({ pathname: "/(tabs_support)/other_profile", params: { userId: host.id } })}
-                activeOpacity={0.7}
-              >
-                <View style={styles.hostPhotoWrap}>
-                  {hostPhotoUrl ? (
-                    <Image source={{ uri: hostPhotoUrl }} style={styles.hostPhoto} />
-                  ) : (
-                    <View style={styles.hostPhotoPlaceholder}>
-                      <Ionicons name="person" size={scale(20)} color={BLUES.b90} />
-                    </View>
-                  )}
-                </View>
-                <View style={styles.hostInfo}>
-                  <Text style={styles.hostLabel}>Hosted by</Text>
-                  <Text style={styles.hostName}>{host.full_name}{host.age ? `, ${host.age}` : ''}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={scale(20)} color={BLUES.b90} />
-              </TouchableOpacity>
-            )}
-
             {/* Event Description */}
             {event.event_description && (
               <View style={styles.descriptionSection}>
@@ -488,6 +701,15 @@ export default function EventApplicationUserScreen() {
               </View>
             )}
           </View>
+
+          {/* Host Preview Card - NEW EXPANDED VERSION */}
+          {host && (
+            <HostPreviewCard
+              host={host}
+              hostPhotoUrl={hostPhotoUrl}
+              userPosition={userPosition}
+            />
+          )}
 
           {/* Application Section */}
           {existingStatus ? (
@@ -674,7 +896,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     borderRadius: scale(20),
     padding: scale(18),
-    marginBottom: verticalScale(20),
+    marginBottom: verticalScale(16),
     shadowColor: "#0F172A",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
@@ -760,51 +982,6 @@ const styles = StyleSheet.create({
     color: "#8B5CF6",
   },
 
-  // Host Row
-  hostRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(27, 68, 205, 0.04)",
-    padding: scale(12),
-    borderRadius: scale(14),
-    marginTop: verticalScale(8),
-    marginBottom: verticalScale(12),
-  },
-  hostPhotoWrap: {
-    width: scale(44),
-    height: scale(44),
-    borderRadius: scale(22),
-    overflow: "hidden",
-    marginRight: scale(12),
-    borderWidth: 2,
-    borderColor: "rgba(27, 68, 205, 0.15)",
-  },
-  hostPhoto: {
-    width: "100%",
-    height: "100%",
-  },
-  hostPhotoPlaceholder: {
-    width: "100%",
-    height: "100%",
-    backgroundColor: "rgba(27, 68, 205, 0.1)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  hostInfo: {
-    flex: 1,
-  },
-  hostLabel: {
-    fontFamily: Fonts.primary,
-    fontSize: scale(12),
-    color: INK,
-    opacity: 0.6,
-  },
-  hostName: {
-    fontFamily: Fonts.bold,
-    fontSize: scale(15),
-    color: INK,
-  },
-
   // Description
   descriptionSection: {
     marginTop: verticalScale(12),
@@ -824,6 +1001,155 @@ const styles = StyleSheet.create({
     color: INK,
     opacity: 0.8,
     lineHeight: scale(22),
+  },
+
+  // Host Card - NEW STYLES
+  hostCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: scale(20),
+    padding: scale(16),
+    marginBottom: verticalScale(16),
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: "rgba(27, 68, 205, 0.08)",
+  },
+  hostMainRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  hostPhotoContainer: {
+    position: "relative",
+    marginRight: scale(12),
+  },
+  frameRing: {
+    position: "absolute",
+    top: -3,
+    left: -3,
+    right: -3,
+    bottom: -3,
+    borderRadius: scale(28),
+    overflow: "hidden",
+  },
+  frameRingGradient: {
+    flex: 1,
+    borderRadius: scale(28),
+  },
+  hostPhotoWrap: {
+    width: scale(50),
+    height: scale(50),
+    borderRadius: scale(25),
+    overflow: "hidden",
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+  },
+  hostPhoto: {
+    width: "100%",
+    height: "100%",
+  },
+  hostPhotoPlaceholder: {
+    width: "100%",
+    height: "100%",
+    backgroundColor: "rgba(27, 68, 205, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  hostInfoMain: {
+    flex: 1,
+  },
+  hostLabel: {
+    fontFamily: Fonts.primary,
+    fontSize: scale(12),
+    color: INK,
+    opacity: 0.6,
+  },
+  hostName: {
+    fontFamily: Fonts.bold,
+    fontSize: scale(16),
+    color: INK,
+  },
+  hostDistanceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: verticalScale(2),
+    gap: scale(4),
+  },
+  hostDistanceText: {
+    fontFamily: Fonts.primary,
+    fontSize: scale(12),
+    color: "rgba(10, 14, 26, 0.5)",
+  },
+  hostTapHint: {
+    fontFamily: Fonts.primary,
+    fontSize: scale(11),
+    color: BLUES.b90,
+    textAlign: "center",
+    marginTop: verticalScale(10),
+    fontStyle: "italic",
+  },
+
+  // Host Expanded Content
+  hostExpandedContent: {
+    marginTop: verticalScale(14),
+    paddingTop: verticalScale(14),
+    borderTopWidth: 1,
+    borderTopColor: "rgba(27, 68, 205, 0.1)",
+  },
+  hostBioSection: {
+    marginBottom: verticalScale(12),
+  },
+  hostBioText: {
+    fontFamily: Fonts.primary,
+    fontSize: scale(14),
+    color: INK,
+    opacity: 0.8,
+    lineHeight: scale(20),
+  },
+  hostChipsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: scale(8),
+    marginBottom: verticalScale(12),
+  },
+  hostChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(27, 68, 205, 0.06)",
+    paddingHorizontal: scale(10),
+    paddingVertical: verticalScale(6),
+    borderRadius: scale(12),
+    gap: scale(6),
+    borderWidth: 1,
+    borderColor: "rgba(27, 68, 205, 0.12)",
+  },
+  hostChipText: {
+    fontFamily: Fonts.primary,
+    fontSize: scale(12),
+    color: BLUE,
+    fontWeight: "500",
+  },
+  hostValuesSection: {
+    backgroundColor: "rgba(27, 68, 205, 0.04)",
+    padding: scale(12),
+    borderRadius: scale(12),
+  },
+  hostValuesLabel: {
+    fontFamily: Fonts.bold,
+    fontSize: scale(11),
+    color: INK,
+    opacity: 0.6,
+    marginBottom: verticalScale(4),
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  hostValuesText: {
+    fontFamily: Fonts.primary,
+    fontSize: scale(13),
+    color: INK,
+    opacity: 0.8,
   },
 
   // Application Section
