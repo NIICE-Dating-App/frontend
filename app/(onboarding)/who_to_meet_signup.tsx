@@ -3,8 +3,8 @@ import { supabase } from "@/lib/supabase";
 import { moderateScale, scale, verticalScale } from "@/utils/responsive";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { router, useLocalSearchParams } from "expo-router";
-import React, { useRef, useState } from "react";
+import { router } from "expo-router";
+import { useRef, useState } from "react";
 import {
   Alert,
   Animated,
@@ -17,18 +17,6 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-
-// put near your other imports
-type Mode = "dating" | "friend";
-
-// helper: normalize any incoming `purpose` param to our two modes
-const normalizePurposeToMode = (p: unknown): Mode | null => {
-  if (p == null) return null;
-  const s = String(p).trim().toLowerCase();
-  if (s === "friend" || s === "friends") return "friend";
-  if (s === "date" || s === "dating") return "dating";
-  return null;
-};
 
 type GenderEnum = "woman" | "man" | "nonbinary";
 
@@ -44,7 +32,6 @@ const ENUM_BY_LABEL: Record<(typeof MAIN)[number], GenderEnum> = {
 
 export default function WhoToMeetSignup() {
   const [manualSet, setManualSet] = useState<string[]>([]);
-  const { purpose } = useLocalSearchParams();
   const [allMode, setAllMode] = useState(false);
   const [loading, setLoading] = useState(false);
   const lastManualRef = useRef<string[]>([]);
@@ -65,7 +52,7 @@ export default function WhoToMeetSignup() {
 
   const toggleOption = (opt: string) => {
     pulse(opt);
-  
+
     if (opt === "All") {
       if (allMode) {
         // 🔴 If "All" is currently active and user deselects it → clear everything
@@ -80,18 +67,18 @@ export default function WhoToMeetSignup() {
       }
       return;
     }
-  
+
     if (allMode) {
       // leaving ALL → single selection
       setAllMode(false);
       setManualSet([opt]);
       return;
     }
-  
+
     const next = manualSet.includes(opt)
       ? manualSet.filter((x) => x !== opt)
       : [...manualSet, opt];
-  
+
     // if all three selected, collapse to ALL
     if (MAIN.every((m) => next.includes(m))) {
       lastManualRef.current = next;
@@ -100,68 +87,56 @@ export default function WhoToMeetSignup() {
     } else {
       setManualSet(next);
     }
-  };  
+  };
 
   const isSelected = (opt: string) =>
     opt === "All" ? allMode : allMode ? true : manualSet.includes(opt);
 
-    const handleNext = async () => {
-      // normalize to enum array for DB
-      const normalized: GenderEnum[] = allMode
-        ? ["woman", "man", "nonbinary"]
-        : manualSet
-            .filter((x): x is (typeof MAIN)[number] => (MAIN as readonly string[]).includes(x))
-            .map((x) => ENUM_BY_LABEL[x]);
-  
-      if (normalized.length === 0) {
-        Alert.alert("Missing info", "Please select who you would like to meet.");
-        return;
-      }
-  
-      try {
-        setLoading(true);
-  
-        const { data: { session }, error: sessErr } = await supabase.auth.getSession();
-        if (sessErr || !session?.user) throw new Error("Session not found");
-        const userId = session.user.id;
-  
-        // save choices
-        const { error: updateError } = await supabase
-          .from("profiles")
-          .update({ interested_in: normalized, onboarding_step: 3 })
-          .eq("id", userId);
-        if (updateError) throw new Error(updateError.message);
-  
-        // 1) try router param
-        let mode: Mode | null = normalizePurposeToMode(purpose);
-  
-        // 2) if no reliable param (undefined / weird), fall back to DB
-        if (!mode) {
-          const { data: modeRow, error: modeErr } = await supabase
-            .from("user_modes")
-            .select("mode")
-            .eq("user_id", userId)
-            .maybeSingle();
-          if (modeErr) throw modeErr;
-          mode = (modeRow?.mode === "friend" ? "friend" : "dating");
-        }
-  
-        // 3) route
-        const nextPath =
-          mode === "friend"
-            ? "/(onboarding)/(friend)/hope_to_find_friend_signup"
-            : "/(onboarding)/(date)/hope_to_find_signup";
-  
-        router.push(nextPath);
-      } catch (e: any) {
-        console.log("who_to_meet -> next error; purpose param =", purpose, e);
-        Alert.alert("Error", e.message ?? "Something went wrong");
-      } finally {
-        setLoading(false);
-      }
-    };
-  
-  
+  const handleNext = async () => {
+    // normalize to enum array for DB
+    const normalized: GenderEnum[] = allMode
+      ? ["woman", "man", "nonbinary"]
+      : manualSet
+          .filter((x): x is (typeof MAIN)[number] =>
+            (MAIN as readonly string[]).includes(x)
+          )
+          .map((x) => ENUM_BY_LABEL[x]);
+
+    if (normalized.length === 0) {
+      Alert.alert("Missing info", "Please select who you would like to meet.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const {
+        data: { session },
+        error: sessErr,
+      } = await supabase.auth.getSession();
+      if (sessErr || !session?.user) throw new Error("Session not found");
+
+      const userId = session.user.id;
+
+      // ✅ Save to profiles.interested_in only (no more user_modes)
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .update({
+          interested_in: normalized,
+          onboarding_step: 7,
+        })
+        .eq("id", userId);
+
+      if (updateError) throw new Error(updateError.message);
+
+      // ✅ UNIFIED ROUTING - No more mode branching!
+      router.push("/(onboarding)/(common)/hobbies1_signup");
+    } catch (e: any) {
+      console.log("who_to_meet -> next error:", e);
+      Alert.alert("Error", e.message ?? "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -187,7 +162,7 @@ export default function WhoToMeetSignup() {
       >
         <Text style={styles.title}>Who would you like to meet?</Text>
         <Text style={styles.subtitle}>
-          You can choose more than one answer or select “All”.
+          You can choose more than one answer or select "All".
         </Text>
 
         {OPTIONS.map((opt) => {
@@ -196,14 +171,22 @@ export default function WhoToMeetSignup() {
 
           return (
             <Pressable key={opt} onPress={() => toggleOption(opt)}>
-              <Animated.View style={[{ transform: [{ scale: anim }] }, styles.shadowWrapper]}>
+              <Animated.View
+                style={[{ transform: [{ scale: anim }] }, styles.shadowWrapper]}
+              >
                 <LinearGradient
-                  colors={selected ? ["#1B44CD", "#3C6FFF", "#7AA9FF"] : ["#F9FBFF", "#EEF3FF"]}
+                  colors={
+                    selected
+                      ? ["#1B44CD", "#3C6FFF", "#7AA9FF"]
+                      : ["#F9FBFF", "#EEF3FF"]
+                  }
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={[styles.optionButton, selected && styles.optionSelected]}
                 >
-                  <Text style={[styles.optionText, selected && styles.optionTextSelected]}>
+                  <Text
+                    style={[styles.optionText, selected && styles.optionTextSelected]}
+                  >
                     {opt}
                   </Text>
                   <Ionicons
@@ -216,11 +199,19 @@ export default function WhoToMeetSignup() {
             </Pressable>
           );
         })}
+
+        {/* ✅ NEW: "Can change later" note */}
+        <Text style={styles.note}>
+          You can always change this later in your profile settings.
+        </Text>
       </ScrollView>
 
       {/* Next Button */}
       <TouchableOpacity
-        style={[styles.nextButton, manualSet.length === 0 && !allMode && { opacity: 0.5 }]}
+        style={[
+          styles.nextButton,
+          manualSet.length === 0 && !allMode && { opacity: 0.5 },
+        ]}
         onPress={handleNext}
         disabled={loading || (manualSet.length === 0 && !allMode)}
       >
@@ -251,11 +242,24 @@ const styles = StyleSheet.create({
   },
 
   progressWrapper: { marginTop: verticalScale(88), paddingHorizontal: scale(24) },
-  progressTrack: { height: verticalScale(6), backgroundColor: "#C8CDD2", borderRadius: scale(3) },
-  progressFill: { height: verticalScale(6), width: "41.16%", backgroundColor: BLUE, borderRadius: scale(3) },
+  progressTrack: {
+    height: verticalScale(6),
+    backgroundColor: "#C8CDD2",
+    borderRadius: scale(3),
+  },
+  progressFill: {
+    height: verticalScale(6),
+    width: "41.16%",
+    backgroundColor: BLUE,
+    borderRadius: scale(3),
+  },
 
   scrollContainer: { flex: 1 },
-  scrollContent: { paddingHorizontal: scale(24), paddingTop: verticalScale(28), paddingBottom: verticalScale(120) },
+  scrollContent: {
+    paddingHorizontal: scale(24),
+    paddingTop: verticalScale(28),
+    paddingBottom: verticalScale(120),
+  },
 
   title: {
     fontFamily: Fonts.bold,
@@ -264,7 +268,12 @@ const styles = StyleSheet.create({
     color: INK,
     marginBottom: verticalScale(6),
   },
-  subtitle: { fontFamily: Fonts.bold, fontSize: moderateScale(17), color: "#6C757D", marginBottom: verticalScale(20) },
+  subtitle: {
+    fontFamily: Fonts.bold,
+    fontSize: moderateScale(17),
+    color: "#6C757D",
+    marginBottom: verticalScale(20),
+  },
 
   shadowWrapper: {
     shadowColor: "#1B44CD",
@@ -282,9 +291,25 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-  optionSelected: { shadowOpacity: 0.4, shadowRadius: 8, transform: [{ scale: 1.02 }] },
-  optionText: { fontFamily: Fonts.bold, fontSize: moderateScale(17), color: "#1B2B44" },
+  optionSelected: {
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    transform: [{ scale: 1.02 }],
+  },
+  optionText: {
+    fontFamily: Fonts.bold,
+    fontSize: moderateScale(17),
+    color: "#1B2B44",
+  },
   optionTextSelected: { color: "#FFFFFF" },
+
+  note: {
+    fontFamily: Fonts.bold,
+    fontSize: moderateScale(14),
+    color: "#6C757D",
+    marginTop: verticalScale(20),
+    lineHeight: verticalScale(22),
+  },
 
   nextButton: {
     position: "absolute",

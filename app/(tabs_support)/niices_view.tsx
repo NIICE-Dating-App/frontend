@@ -33,8 +33,6 @@ const CARD_BG = "#FFFFFF";
 const BORDER = "rgba(27, 68, 205, 0.08)";
 
 // ================== TYPES ==================
-type ConnectionVisibility = "full_profile" | "blind";
-
 interface NiiceMatch {
   id: string;
   other_user_id: string;
@@ -43,12 +41,17 @@ interface NiiceMatch {
   main_photo_url: string | null;
   last_message_preview: string | null;
   last_message_at: string | null;
-  from_blind_meet: boolean;
-  connection_visibility: ConnectionVisibility;
   created_at: string;
 }
 
 // ================== UTILITY FUNCTIONS ==================
+const capitalizeName = (name: string): string => {
+  return name
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+};
+
 const formatRelativeTime = (dateStr: string | null): string => {
   if (!dateStr) return "";
   const now = new Date();
@@ -81,8 +84,7 @@ const NiiceCard: React.FC<{
           onPress={(e) => { e.stopPropagation(); onOpenFrames(match.other_user_id); }}
           activeOpacity={0.8}
         >
-          {match.from_blind_meet && <View style={styles.niiceAvatarRing} />}
-          <View style={[styles.niiceAvatarInner, match.from_blind_meet && styles.niiceAvatarInnerWithRing]}>
+          <View style={styles.niiceAvatarInner}>
             {match.main_photo_url ? (
               <Image source={{ uri: match.main_photo_url }} style={styles.niiceAvatar} />
             ) : (
@@ -91,18 +93,13 @@ const NiiceCard: React.FC<{
               </View>
             )}
           </View>
-          {match.from_blind_meet && (
-            <View style={styles.niiceBlindBadge}>
-              <Ionicons name="eye-off" size={9} color="#FFFFFF" />
-            </View>
-          )}
         </TouchableOpacity>
         
         {/* Info */}
         <View style={styles.niiceInfo}>
           <View style={styles.niiceNameRow}>
             <Text style={styles.niiceName} numberOfLines={1}>
-              {match.full_name}{match.age ? `, ${match.age}` : ""}
+              {capitalizeName(match.full_name)}{match.age ? `, ${match.age}` : ""}
             </Text>
             {hasNewMessage && (
               <View style={styles.niiceNewBadge}>
@@ -256,8 +253,6 @@ export default function NiicesViewScreen() {
             main_photo_url: preview.main_photo_url || null,
             last_message_preview: lastMsg?.content || null,
             last_message_at: lastMsg?.created_at || null,
-            from_blind_meet: false,
-            connection_visibility: m.connection_visibility as ConnectionVisibility,
             created_at: m.responded_at || m.created_at,
           };
         })
@@ -532,26 +527,12 @@ const styles = StyleSheet.create({
     width: scale(44),
     height: scale(44),
   },
-  niiceAvatarRing: {
-    position: "absolute",
-    top: -2,
-    left: -2,
-    right: -2,
-    bottom: -2,
-    borderRadius: scale(23),
-    borderWidth: 2,
-    borderColor: BLUE,
-  },
   niiceAvatarInner: {
     width: scale(44),
     height: scale(44),
     borderRadius: scale(22),
     overflow: "hidden",
     backgroundColor: "#E8F4FF",
-  },
-  niiceAvatarInnerWithRing: {
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
   },
   niiceAvatar: {
     width: "100%",
@@ -563,19 +544,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#E8F4FF",
-  },
-  niiceBlindBadge: {
-    position: "absolute",
-    bottom: -2,
-    right: -2,
-    width: scale(18),
-    height: scale(18),
-    borderRadius: scale(9),
-    backgroundColor: BLUE,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
   },
   
   // Info Section

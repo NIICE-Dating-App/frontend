@@ -1,3 +1,4 @@
+// app/(onboarding)/(common)/vehicles_signup.tsx
 import { Fonts } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
 import { moderateScale, scale, verticalScale } from "@/utils/responsive";
@@ -6,18 +7,17 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useCallback, useRef, useState } from "react";
 import {
-  Alert,
-  Animated,
-  LayoutAnimation,
-  Platform,
-  Pressable,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TextInput,
-  UIManager,
-  View,
+    Alert,
+    Animated,
+    LayoutAnimation,
+    Platform,
+    Pressable,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    UIManager,
+    View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -28,33 +28,24 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
 const BG = "#EAF1F8";
 const INK = "#000910";
 const BLUE = "#1B44CD";
-const INK_SOFT = "#1B2B44";
 
 // ==========================================
-// COMMUNITY OPTIONS
+// VEHICLE OPTIONS (matches vehicle_enum)
 // ==========================================
 const OPTIONS = [
-  "🌿 Environmentalism",
-  "✊ Social justice",
-  "🏳️‍🌈 LGBTQIA+",
-  "♀️ Feminism",
-  "🧠 Mental health awareness",
-  "✊🏾 Black community",
-  "🧧 Asian community",
-  "🪅 Latino/Hispanic community",
-  "✡️ Jewish community",
-  "☪️ Muslim community",
-  "♿ Disability awareness",
-  "💖 Body positivity",
-  "🐾 Animal rights",
-  "🌍 Climate action",
-  "✨ Other",
+  { value: "car", label: "🚗 Car", icon: "car" },
+  { value: "motorcycle", label: "🏍️ Motorcycle", icon: "bicycle" },
+  { value: "bicycle", label: "🚴 Bicycle", icon: "bicycle" },
+  { value: "scooter", label: "🛵 Scooter", icon: "bicycle" },
+  { value: "boat", label: "⛵ Boat", icon: "boat" },
+  { value: "plane", label: "✈️ Plane", icon: "airplane" },
+  { value: "none", label: "🚶 None / Walking", icon: "walk" },
 ];
 
 // ==========================================
 // CHIP COMPONENT
 // ==========================================
-const OptionChip = React.memo(
+const VehicleChip = React.memo(
   ({
     label,
     selected,
@@ -99,25 +90,31 @@ const OptionChip = React.memo(
 // ==========================================
 // MAIN COMPONENT
 // ==========================================
-export default function CommunitiesSignup() {
+export default function VehiclesSignup() {
   const [selected, setSelected] = useState<string[]>([]);
-  const [otherText, setOtherText] = useState("");
 
-  const toggleOption = useCallback((option: string) => {
+  const toggleOption = useCallback((value: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setSelected((prev) => {
-      const has = prev.includes(option);
+      // If selecting "none", clear everything and only select "none"
+      if (value === "none") {
+        return prev.includes("none") ? [] : ["none"];
+      }
 
-      // Deselect
-      if (has) return prev.filter((x) => x !== option);
+      // If selecting something else, remove "none" if it's selected
+      const withoutNone = prev.filter((x) => x !== "none");
 
-      // Prevent selecting more than 4
-      if (prev.length >= 4) {
-        Alert.alert("Limit reached", "You can select up to 4 communities.");
+      if (withoutNone.includes(value)) {
+        return withoutNone.filter((x) => x !== value);
+      }
+
+      // Max 5 vehicles (excluding none)
+      if (withoutNone.length >= 5) {
+        Alert.alert("Limit reached", "You can select up to 5 vehicles.");
         return prev;
       }
 
-      return [...prev, option];
+      return [...withoutNone, value];
     });
   }, []);
 
@@ -126,22 +123,17 @@ export default function CommunitiesSignup() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) throw new Error("No active session");
 
-      const finalSelections = selected.includes("✨ Other")
-        ? [...selected.filter((x) => x !== "✨ Other"), otherText.trim() || "Other"]
-        : selected;
+      // Only update if user selected something
+      if (selected.length > 0) {
+        const { error } = await supabase
+          .from("profiles")
+          .update({ vehicles: selected })
+          .eq("id", session.user.id);
 
-      const payload = {
-        user_id: session.user.id,
-        communities: finalSelections.length > 0 ? finalSelections : null,
-      };
+        if (error) throw error;
+      }
 
-      const { error } = await supabase
-      .from("lifestyle")
-      .upsert(payload, { onConflict: "user_id" });
-    if (error) throw error;
-
-
-      router.push("/(onboarding)/maritial_status_signup");
+      router.push("/(onboarding)/(common)/prompt_signup");
     } catch (e: any) {
       Alert.alert("Error", e.message);
     }
@@ -180,31 +172,36 @@ export default function CommunitiesSignup() {
           paddingTop: verticalScale(35),
         }}
       >
-        <Text style={styles.title}>Pick the communities you support.</Text>
+        <Text style={styles.title}>How do you get around?</Text>
         <Text style={styles.subtitle}>
-          Select all that apply – this helps you connect with like-minded people.
+          Select your transportation options — helps with planning meetups!
         </Text>
+
+        {/* Selected Count */}
+        {selected.length > 0 && (
+          <View style={styles.countBadge}>
+            <Ionicons name="car-sport" size={moderateScale(16)} color={BLUE} />
+            <Text style={styles.countText}>
+              {selected.includes("none") ? "No vehicle" : `${selected.length} selected`}
+            </Text>
+          </View>
+        )}
 
         <View style={styles.optionGroup}>
           {OPTIONS.map((opt) => (
-            <React.Fragment key={opt}>
-              <OptionChip
-                label={opt}
-                selected={selected.includes(opt)}
-                onPress={() => toggleOption(opt)}
-              />
-              {opt === "✨ Other" && selected.includes("✨ Other") && (
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="Type your community..."
-                  placeholderTextColor="#7A838E"
-                  value={otherText}
-                  onChangeText={setOtherText}
-                />
-              )}
-            </React.Fragment>
+            <VehicleChip
+              key={opt.value}
+              label={opt.label}
+              selected={selected.includes(opt.value)}
+              onPress={() => toggleOption(opt.value)}
+            />
           ))}
         </View>
+
+        {/* Helper Text */}
+        <Text style={styles.helperText}>
+          Select all that apply. Choose "None" if you prefer walking or public transit.
+        </Text>
       </ScrollView>
 
       {/* Next Button */}
@@ -221,7 +218,6 @@ export default function CommunitiesSignup() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BG },
 
-  // Match distancepref_signup positions
   backButton: {
     position: "absolute",
     top: verticalScale(58),
@@ -258,7 +254,7 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: verticalScale(6),
-    width: "76.44%",
+    width: "90%", // Last step before prompt
     backgroundColor: BLUE,
     borderRadius: scale(3),
   },
@@ -275,14 +271,32 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(17),
     lineHeight: verticalScale(26),
     color: BLUE,
-    marginBottom: verticalScale(20),
+    marginBottom: verticalScale(16),
+  },
+
+  countBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: scale(6),
+    backgroundColor: "#E4ECFF",
+    paddingHorizontal: scale(12),
+    paddingVertical: verticalScale(6),
+    borderRadius: scale(20),
+    marginBottom: verticalScale(16),
+  },
+  countText: {
+    fontFamily: Fonts.bold,
+    fontSize: moderateScale(14),
+    color: BLUE,
   },
 
   optionGroup: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "flex-start",
-    gap: scale(10),
+    gap: scale(12),
+    marginBottom: verticalScale(20),
   },
   shadowWrapper: {
     shadowColor: "#1B44CD",
@@ -291,33 +305,29 @@ const styles = StyleSheet.create({
     borderRadius: scale(30),
   },
   optionChip: {
-    paddingVertical: verticalScale(10),
-    paddingHorizontal: scale(20),
+    paddingVertical: verticalScale(14),
+    paddingHorizontal: scale(24),
     borderRadius: scale(30),
-    minWidth: scale(120),
+    minWidth: scale(140),
     alignItems: "center",
     justifyContent: "center",
   },
   optionText: {
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(15),
+    fontSize: moderateScale(16),
     color: "#1B2B44",
     textAlign: "center",
   },
   optionTextSelected: { color: "#FFFFFF" },
-  textInput: {
-    width: "100%",
-    borderColor: "#C8CDD2",
-    borderWidth: 1,
-    borderRadius: scale(12),
-    paddingVertical: verticalScale(10),
-    paddingHorizontal: scale(14),
+
+  helperText: {
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(15),
-    color: INK_SOFT,
-    marginTop: verticalScale(10),
-    backgroundColor: "#FFFFFF",
+    fontSize: moderateScale(14),
+    color: "#7A838E",
+    textAlign: "center",
+    lineHeight: verticalScale(22),
   },
+
   nextButton: {
     position: "absolute",
     bottom: verticalScale(40),

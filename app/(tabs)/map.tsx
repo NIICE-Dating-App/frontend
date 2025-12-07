@@ -3,7 +3,6 @@ import { Fonts } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
 import { scale, verticalScale } from "@/utils/responsive";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { BlurView } from "expo-blur";
 import * as Font from "expo-font";
 import { LinearGradient } from "expo-linear-gradient";
@@ -74,6 +73,16 @@ const signPath = async (path: string | null): Promise<string | null> => {
   return data?.signedUrl ?? null;
 };
 
+// Capitalize first letter of each word in a name
+const capitalizeWords = (str: string | null | undefined): string => {
+  if (!str) return '';
+  return str
+    .toLowerCase()
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+};
+
 /* ===================== USER & EVENT TYPES ===================== */
 interface UserMapCard {
   user_id: string;
@@ -81,12 +90,11 @@ interface UserMapCard {
   age: number;
   bio: string;
   frame_id: string | null;
-  mode: string;
   approx_lat: number;
   approx_lng: number;
   main_photo_url: string | null;
-  last_seen?: string; // 🔥 Track when user was last active
-  gender?: string; // 🔥 For gender filtering (needs backend RPC update)
+  last_seen?: string; // Track when user was last active
+  gender?: string; // For gender filtering (needs backend RPC update)
 }
 
 interface FilterState {
@@ -105,17 +113,9 @@ interface UserPreferences {
 
 interface MatchStatus {
   status: "pending" | "accepted" | "denied" | "rejected" | null;
-  connection_visibility: "full_profile" | "blind" | null;
-  chat_allowed: boolean;
   is_requester: boolean;
   match_id: string | null;
-  place_role?: "none" | "requester" | "target" | null;
-  blind_meet_time?: string | null;
-  blind_location_name?: string | null;
-  blind_lat?: number | null;
-  blind_lng?: number | null;
   sender_message?: string | null;
-  response_message?: string | null;
 }
 
 type EventCategory = 
@@ -202,20 +202,20 @@ const updateUserLocationInDB = async (userId: string, lat: number, lng: number):
         lat: lat,
         lng: lng,
         distance_meters: 4000, // 4km default radius
-        discoverable: true, // 🔥 Ensure user is discoverable
+        discoverable: true, // Ensure user is discoverable
         last_seen: new Date().toISOString(),
       })
       .eq('id', userId);
     
     if (error) {
-      console.error("❌ Error updating user location in DB:", error);
+      console.error("[ERROR] Error updating user location in DB:", error);
       return false;
     } else {
-      console.log("✅ User location & last_seen updated in DB:", lat.toFixed(6), lng.toFixed(6));
+      console.log("User location & last_seen updated in DB:", lat.toFixed(6), lng.toFixed(6));
       return true;
     }
   } catch (error) {
-    console.error("❌ Exception updating location:", error);
+    console.error("[ERROR] Exception updating location:", error);
     return false;
   }
 };
@@ -421,7 +421,7 @@ const UserMarker: React.FC<{ user: UserMapCard; hasFrame: boolean }> = memo(({ u
   const USER_MARKER_SIZE = 48;
   const USER_RING_SIZE = 52;
   
-  // 🔥 Check if user is currently online (active in last 2 minutes)
+  // Check if user is currently online (active in last 2 minutes)
   const isOnline = user.last_seen && 
     (Date.now() - new Date(user.last_seen).getTime()) < 2 * 60 * 1000;
   
@@ -440,7 +440,7 @@ const UserMarker: React.FC<{ user: UserMapCard; hasFrame: boolean }> = memo(({ u
         }} />
       )}
       
-      {/* 🔥 Online indicator dot */}
+      {/* Online indicator dot */}
       {isOnline && (
         <View style={{
           position: "absolute",
@@ -468,7 +468,7 @@ const UserMarker: React.FC<{ user: UserMapCard; hasFrame: boolean }> = memo(({ u
             backgroundColor: "#fff",
             borderWidth: 2,
             borderColor: BLUES.b50,
-            opacity: isOnline ? 1 : 0.7, // 🔥 Dim offline users
+            opacity: isOnline ? 1 : 0.7, // Dim offline users
           }}
         />
       ) : (
@@ -481,7 +481,7 @@ const UserMarker: React.FC<{ user: UserMapCard; hasFrame: boolean }> = memo(({ u
           borderColor: BLUES.b50,
           alignItems: "center",
           justifyContent: "center",
-          opacity: isOnline ? 1 : 0.7, // 🔥 Dim offline users
+          opacity: isOnline ? 1 : 0.7, // Dim offline users
         }}>
           <Text style={{
             fontSize: 16,
@@ -661,7 +661,7 @@ const IiLoader: React.FC = () => {
           <Text style={iStyle}>I</Text>
         </RNAnimated.View>
       </View>
-      <Text style={styles.loadingText}>Locating you…</Text>
+      <Text style={styles.loadingText}>Locating you...</Text>
       <View style={styles.progressOuter} onLayout={(e) => setBarW(e.nativeEvent.layout.width)}>
         <View style={styles.progressTrack}>
           <LinearGradient colors={["rgba(255,255,255,0.55)", "rgba(255,255,255,0.25)"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill} />
@@ -749,21 +749,10 @@ const UserProfileModal: React.FC<{
     looking_for_friend: string[] | null;
     value_friend: string[] | null;
   }>({ sexual_orientation: null, looking_for_friend: null, value_friend: null });
-  // Blind date flow states
-  const [blindDateStep, setBlindDateStep] = useState<'initial' | 'place_role' | 'details' | 'message_only' | 'accept_location' | 'accept_simple' | null>(null);
-  const [blindDateForm, setBlindDateForm] = useState<{
-    placeRole: 'requester' | 'target' | null;
-    locationName: string;
-    locationCoords: { lat: number; lng: number } | null;
-    meetTime: Date | null;
-    message: string;
-  }>({ placeRole: null, locationName: '', locationCoords: null, meetTime: null, message: '' });
-  const [responseMessage, setResponseMessage] = useState('');
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showDatePickerMode, setShowDatePickerMode] = useState<'date' | 'time'>('date');
-  const [showLocationPicker, setShowLocationPicker] = useState(false);
-  const [tempPickedLocation, setTempPickedLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const locationPickerMapRef = useRef<MapView>(null);
+  
+  // Match request message state
+  const [requestMessage, setRequestMessage] = useState('');
+  const [showMessageInput, setShowMessageInput] = useState(false);
   
   // Calculate distance
   const calculateDistance = useCallback((lat1: number, lng1: number, lat2: number, lng2: number): number => {
@@ -782,14 +771,10 @@ const UserProfileModal: React.FC<{
   useEffect(() => {
     if (visible && user) {
       fetchMatchStatus();
-      fetchUserPreview();
       fetchUserFrames();
       setProfilePhoto(user.main_photo_url);
-      setBlindDateStep(null);
-      setBlindDateForm({ placeRole: null, locationName: '', locationCoords: null, meetTime: null, message: '' });
-      setResponseMessage('');
-      setShowLocationPicker(false);
-      setTempPickedLocation(null);
+      setRequestMessage('');
+      setShowMessageInput(false);
       
       RNAnimated.spring(slideAnim, { 
         toValue: 0, 
@@ -803,7 +788,7 @@ const UserProfileModal: React.FC<{
         duration: 250, 
         useNativeDriver: true 
       }).start();
-      setBlindDateStep(null);
+      setShowMessageInput(false);
     }
   }, [visible, user]);
   
@@ -814,9 +799,8 @@ const UserProfileModal: React.FC<{
       // Direct query - simple and reliable
       const { data, error } = await supabase
         .from('match_requests')
-        .select('id, status, connection_visibility, chat_allowed, requester_id, target_id, place_role, blind_meet_time, blind_location_name, sender_message, response_message')
+        .select('id, status, requester_id, target_id, sender_message')
         .or(`and(requester_id.eq.${currentUserId},target_id.eq.${user.user_id}),and(requester_id.eq.${user.user_id},target_id.eq.${currentUserId})`)
-        .eq('match_mode', user.mode === 'friend' ? 'friend' : 'dating')
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -824,21 +808,13 @@ const UserProfileModal: React.FC<{
       if (data && !error) {
         setMatchStatus({
           status: data.status,
-          connection_visibility: data.connection_visibility,
-          chat_allowed: data.chat_allowed,
           is_requester: data.requester_id === currentUserId,
           match_id: data.id,
-          place_role: data.place_role,
-          blind_meet_time: data.blind_meet_time,
-          blind_location_name: data.blind_location_name,
           sender_message: data.sender_message,
-          response_message: data.response_message,
         });
       } else {
         setMatchStatus({
           status: null,
-          connection_visibility: null,
-          chat_allowed: false,
           is_requester: false,
           match_id: null
         });
@@ -846,63 +822,6 @@ const UserProfileModal: React.FC<{
     } catch (error) {
       console.error("Error fetching match status:", error);
     }
-  };
-  
-  // Fetch preview data using RPC (bypasses RLS)
-
-  const fetchUserPreview = async () => {
-    if (!user) return;
-    
-    // Fetch friend mode data using RPC (bypasses RLS)
-    let friendModeData: { looking_for_friend: string[] | null; value_friend: string[] | null } | null = null;
-    
-    try {
-      const { data, error } = await supabase.rpc('get_user_friend_mode', {
-        target_user_id: user.user_id
-      });
-      
-      if (error) {
-        console.log("❌ Error fetching friend mode data:", error);
-      } else if (data && data.length > 0) {
-        friendModeData = data[0];
-        console.log("✅ Friend mode data fetched:", JSON.stringify(friendModeData));
-      } else {
-        console.log("⚠️ No friend mode data found for user");
-      }
-    } catch (err) {
-      console.log("❌ Exception fetching friend mode data:", err);
-    }
-    
-    // Now try to get extended preview data (sexual_orientation)
-    let sexualOrientation: string | null = null;
-    
-    try {
-      const { data, error } = await supabase.rpc('get_user_preview_extended', {
-        target_user_id: user.user_id
-      });
-      
-      if (data && Array.isArray(data) && data.length > 0 && !error) {
-        sexualOrientation = data[0].sexual_orientation || null;
-        console.log("✅ RPC preview data:", data[0]);
-      } else if (data && !Array.isArray(data) && !error) {
-        sexualOrientation = data.sexual_orientation || null;
-        console.log("✅ RPC preview data (single):", data);
-      } else {
-        console.log("⚠️ RPC returned no data or error:", error);
-      }
-    } catch (err) {
-      console.log("⚠️ RPC not available (ok):", err);
-    }
-    
-    // Set the preview data with whatever we got
-    const finalPreviewData = {
-      sexual_orientation: sexualOrientation,
-      looking_for_friend: friendModeData?.looking_for_friend || null,
-      value_friend: friendModeData?.value_friend || null
-    };
-    
-    console.log("📋 Final preview data being set:", JSON.stringify(finalPreviewData));
-    setPreviewData(finalPreviewData);
   };
   
   const fetchUserFrames = async () => {
@@ -937,91 +856,29 @@ const UserProfileModal: React.FC<{
     }
   };
   
-  const handleLike = async (isBlindDate: boolean = false, placeRole: 'requester' | 'target' | null = null) => {
+  const handleLike = async () => {
     if (!user || !currentUserId || loading) return;
-    
-    // Use passed placeRole or fall back to state
-    const effectivePlaceRole = placeRole || blindDateForm.placeRole;
     
     setLoading(true);
     try {
-      let error: any = null;
+      // Use the new RPC for match requests
+      const { error: rpcError } = await supabase.rpc('send_match_request_with_context', {
+        p_target_id: user.user_id,
+        p_message: requestMessage || null
+      });
       
-      if (isBlindDate && effectivePlaceRole) {
-        // Use RPC for blind date requests (handles geography point properly)
-        const { error: rpcError } = await supabase.rpc('send_blind_date_request', {
-          p_target_id: user.user_id,
-          p_match_mode: user.mode === 'friend' ? 'friend' : 'dating',
-          p_place_role: effectivePlaceRole,
-          p_location_name: blindDateForm.locationName || null,
-          p_latitude: blindDateForm.locationCoords?.lat || null,
-          p_longitude: blindDateForm.locationCoords?.lng || null,
-          p_meet_time: blindDateForm.meetTime?.toISOString() || null,
-          p_sender_message: blindDateForm.message || null
-        });
-        
-        if (rpcError) {
-          // Fallback to direct insert (without location point)
-          console.log("RPC not available, using direct insert:", rpcError);
-          const insertData: any = {
-            requester_id: currentUserId,
-            target_id: user.user_id,
-            match_mode: user.mode === 'friend' ? 'friend' : 'dating',
-            connection_visibility: 'blind',
-            status: 'pending',
-            place_role: effectivePlaceRole,
-            chat_allowed: false,
-            sender_message: blindDateForm.message || null
-          };
-          
-          if (effectivePlaceRole === 'requester') {
-            if (blindDateForm.locationName) {
-              insertData.blind_location_name = blindDateForm.locationName;
-            }
-            if (blindDateForm.meetTime) {
-              insertData.blind_meet_time = blindDateForm.meetTime.toISOString();
-            }
-          }
-          
-          const { error: insertError } = await supabase
-            .from('match_requests')
-            .insert(insertData);
-          
-          error = insertError;
+      if (rpcError) {
+        if (rpcError.code === '23505') {
+          Alert.alert("Already sent", "You've already sent a request to this Niice");
+        } else {
+          console.error("RPC error:", rpcError);
+          Alert.alert("Error", "Failed to send request");
         }
       } else {
-        // Regular match request
-        const insertData: any = {
-          requester_id: currentUserId,
-          target_id: user.user_id,
-          match_mode: user.mode === 'friend' ? 'friend' : 'dating',
-          connection_visibility: isBlindDate ? 'blind' : 'full_profile',
-          status: 'pending'
-        };
-        
-        const { error: insertError } = await supabase
-          .from('match_requests')
-          .insert(insertData);
-        
-        error = insertError;
-      }
-      
-      if (!error) {
-        Alert.alert(
-          "Success", 
-          isBlindDate 
-            ? "Blind meeting request sent! They'll see your request without your full profile." 
-            : "Friend request sent!"
-        );
+        Alert.alert("Success", "Niice request sent!");
         await fetchMatchStatus();
-        setBlindDateStep(null);
-        setBlindDateForm({ placeRole: null, locationName: '', locationCoords: null, meetTime: null, message: '' });
-        setResponseMessage('');
-      } else if (error.code === '23505') {
-        Alert.alert("Already sent", "You've already sent a request to this person");
-      } else {
-        console.error("Insert error:", error);
-        Alert.alert("Error", "Failed to send request");
+        setRequestMessage('');
+        setShowMessageInput(false);
       }
     } catch (error) {
       console.error("Error sending like:", error);
@@ -1041,8 +898,6 @@ const UserProfileModal: React.FC<{
         .insert({
           requester_id: currentUserId,
           target_id: user.user_id,
-          match_mode: user.mode === 'friend' ? 'friend' : 'dating',
-          connection_visibility: 'full_profile',
           status: 'denied'
         });
       
@@ -1057,19 +912,6 @@ const UserProfileModal: React.FC<{
   const handleAcceptRequest = async () => {
     if (!matchStatus?.match_id || !currentUserId || loading) return;
     
-    // Check if this is a blind date
-    if (matchStatus.connection_visibility === 'blind') {
-      if (matchStatus.place_role === 'target') {
-        // Target needs to provide location and time - show the accept_location flow
-        setBlindDateStep('accept_location');
-      } else {
-        // Requester already provided location - show simple accept with message
-        setBlindDateStep('accept_simple');
-      }
-      return;
-    }
-    
-    // Regular accept
     setLoading(true);
     try {
       const { error } = await supabase
@@ -1090,153 +932,6 @@ const UserProfileModal: React.FC<{
       Alert.alert("Error", "Failed to accept request");
     } finally {
       setLoading(false);
-    }
-  };
-  
-  // Accept blind date with location (target providing details)
-  const handleAcceptBlindDateWithLocation = async () => {
-    if (!matchStatus?.match_id || !currentUserId || loading) return;
-    
-    if (!blindDateForm.locationName || !blindDateForm.locationCoords || !blindDateForm.meetTime) {
-      Alert.alert("Missing Info", "Please provide location and time for the blind date");
-      return;
-    }
-    
-    setLoading(true);
-    try {
-      // Try using the RPC first
-      const { data, error: rpcError } = await supabase.rpc('accept_blind_date_with_location', {
-        p_match_id: matchStatus.match_id,
-        p_location_name: blindDateForm.locationName,
-        p_latitude: blindDateForm.locationCoords.lat,
-        p_longitude: blindDateForm.locationCoords.lng,
-        p_meet_time: blindDateForm.meetTime.toISOString(),
-        p_response_message: responseMessage || null
-      });
-      
-      if (rpcError) {
-        // Fallback to direct update if RPC doesn't exist
-        console.log("RPC not available, using direct update");
-        const { error } = await supabase
-          .from('match_requests')
-          .update({
-            status: 'accepted',
-            responded_at: new Date().toISOString(),
-            blind_location_name: blindDateForm.locationName,
-            blind_meet_time: blindDateForm.meetTime.toISOString(),
-            response_message: responseMessage || null,
-          })
-          .eq('id', matchStatus.match_id)
-          .eq('target_id', currentUserId);
-        
-        if (error) throw error;
-      }
-      
-      Alert.alert("Success", "Blind meeting accepted! You've set the meetup spot.");
-      setBlindDateStep(null);
-      setBlindDateForm({ placeRole: null, locationName: '', locationCoords: null, meetTime: null, message: '' });
-      setResponseMessage('');
-      await fetchMatchStatus();
-    } catch (error) {
-      console.error("Error accepting blind date:", error);
-      Alert.alert("Error", "Failed to accept blind meeting");
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  // Accept blind date simple (when requester already provided location)
-  const handleAcceptBlindDateSimple = async () => {
-    if (!matchStatus?.match_id || !currentUserId || loading) return;
-    
-    setLoading(true);
-    try {
-      const { error: rpcError } = await supabase.rpc('accept_blind_date_simple', {
-        p_match_id: matchStatus.match_id,
-        p_response_message: responseMessage || null
-      });
-      
-      if (rpcError) {
-        // Fallback to direct update
-        console.log("RPC not available, using direct update");
-        const { error } = await supabase
-          .from('match_requests')
-          .update({
-            status: 'accepted',
-            responded_at: new Date().toISOString(),
-            response_message: responseMessage || null,
-          })
-          .eq('id', matchStatus.match_id)
-          .eq('target_id', currentUserId)
-          .eq('status', 'pending');
-        
-        if (error) throw error;
-      }
-      
-      Alert.alert("Success", "Blind meeting accepted!");
-      setBlindDateStep(null);
-      setBlindDateForm({ placeRole: null, locationName: '', locationCoords: null, meetTime: null, message: '' });
-      setResponseMessage('');
-      await fetchMatchStatus();
-    } catch (error) {
-      console.error("Error accepting blind date:", error);
-      Alert.alert("Error", "Failed to accept blind meeting");
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  // Date picker handler
-  const handleDateTimeChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
-    if (Platform.OS === 'android') {
-      setShowDatePicker(false);
-    }
-    
-    if (event.type === 'set' && selectedDate) {
-      if (showDatePickerMode === 'date') {
-        // After picking date, show time picker
-        setBlindDateForm(prev => ({ ...prev, meetTime: selectedDate }));
-        if (Platform.OS === 'android') {
-          // On Android, we need to show time picker separately
-          setTimeout(() => {
-            setShowDatePickerMode('time');
-            setShowDatePicker(true);
-          }, 100);
-        } else {
-          setShowDatePickerMode('time');
-        }
-      } else {
-        // Time picked - combine with date
-        const currentDate = blindDateForm.meetTime || new Date();
-        const combined = new Date(currentDate);
-        combined.setHours(selectedDate.getHours());
-        combined.setMinutes(selectedDate.getMinutes());
-        setBlindDateForm(prev => ({ ...prev, meetTime: combined }));
-        setShowDatePicker(false);
-        setShowDatePickerMode('date');
-      }
-    } else if (event.type === 'dismissed') {
-      setShowDatePicker(false);
-      setShowDatePickerMode('date');
-    }
-  };
-  
-  // Show date picker
-  const openDatePicker = () => {
-    setShowDatePickerMode('date');
-    setShowDatePicker(true);
-  };
-  
-  // Location picker handlers
-  const handleMapPress = (event: any) => {
-    const { latitude, longitude } = event.nativeEvent.coordinate;
-    setTempPickedLocation({ lat: latitude, lng: longitude });
-  };
-  
-  const confirmLocationPick = () => {
-    if (tempPickedLocation) {
-      setBlindDateForm(prev => ({ ...prev, locationCoords: tempPickedLocation }));
-      setShowLocationPicker(false);
     }
   };
   
@@ -1263,7 +958,7 @@ const UserProfileModal: React.FC<{
     
     Alert.alert(
       "Block User",
-      `Are you sure you want to block ${user.full_name}?`,
+      `Are you sure you want to block ${capitalizeWords(user.full_name)}?`,
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -1287,49 +982,14 @@ const UserProfileModal: React.FC<{
     );
   };
   
-  // Start blind date flow
-  const startBlindDateFlow = () => {
-    setBlindDateStep('place_role');
-  };
-  
-  // Handle place role selection
-  const handlePlaceRoleSelect = (role: 'requester' | 'target') => {
-    console.log('🔴🔴🔴 handlePlaceRoleSelect called with role:', role, '🔴🔴🔴');
-    setBlindDateForm(prev => ({ ...prev, placeRole: role }));
-    if (role === 'requester') {
-      setBlindDateStep('details');
-    } else {
-      // They pick the place - show message step first
-      setBlindDateStep('message_only');
-    }
-  };
-  
-  // Format date for display
-  const formatDateTime = (date: Date | null) => {
-    if (!date) return 'Select date & time';
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return `${days[date.getDay()]}, ${date.getDate()} ${months[date.getMonth()]} at ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
-  };
-  
   if (!user) return null;
   
   const isMatched = matchStatus?.status === 'accepted';
   const isPending = matchStatus?.status === 'pending';
   const isDenied = matchStatus?.status === 'denied';
   const isRequester = matchStatus?.is_requester;
-  const isBlindConnection = matchStatus?.connection_visibility === 'blind';
   const hasFrames = userFrames.length > 0;
-  const targetNeedsToPick = isBlindConnection && matchStatus?.place_role === 'target' && !isRequester;
-  
-  // DEBUG LOGGING - Remove after fixing
-  console.log('=== DEBUG MATCH STATUS ===');
-  console.log('matchStatus:', JSON.stringify(matchStatus, null, 2));
-  console.log('isBlindConnection:', isBlindConnection);
-  console.log('place_role:', matchStatus?.place_role);
-  console.log('isRequester:', isRequester);
-  console.log('targetNeedsToPick:', targetNeedsToPick);
-  console.log('========================');
+
   
   // Format looking for display
 
@@ -1393,13 +1053,13 @@ const UserProfileModal: React.FC<{
     if (displayLabels.length === 2) {
       const sorted = [...displayLabels].sort();
       const key = sorted.join("|||");
-      return combinations[key] || displayLabels.join(" · ");
+      return combinations[key] || displayLabels.join(" - ");
     }
     
     // For more than 2, use first two for combination
     const firstTwo = displayLabels.slice(0, 2).sort();
     const key = firstTwo.join("|||");
-    return combinations[key] || displayLabels.slice(0, 2).join(" · ");
+    return combinations[key] || displayLabels.slice(0, 2).join(" - ");
   };
   
   // Format friend values display
@@ -1430,11 +1090,22 @@ const UserProfileModal: React.FC<{
     return displayMap[value] || value.replace(/_/g, ' ');
   };
   
-  // Format distance
+  // Format distance - approximated for security
   const formatDistance = () => {
     if (distanceKm === null) return null;
-    if (distanceKm < 1) return `${Math.round(distanceKm * 1000)}m away`;
-    return `${distanceKm.toFixed(1)}km away`;
+    // Approximate distance for security - don't reveal exact location
+    if (distanceKm < 0.5) {
+      return "< 1km away";
+    } else if (distanceKm < 1) {
+      return "< 1km away";
+    } else if (distanceKm < 10) {
+      // Round to nearest km
+      return `~${Math.round(distanceKm)}km away`;
+    } else {
+      // Round to nearest 5km for larger distances
+      const rounded = Math.round(distanceKm / 5) * 5;
+      return `~${rounded}km away`;
+    }
   };
   
 
@@ -1501,7 +1172,7 @@ const UserProfileModal: React.FC<{
               
               {/* Name, Age, Distance */}
               <View style={styles.userSheetInfo}>
-                <Text style={styles.userSheetName}>{user.full_name}, {user.age}</Text>
+                <Text style={styles.userSheetName}>{capitalizeWords(user.full_name)}, {user.age}</Text>
                 {formatDistance() && (
                   <View style={styles.userSheetDistanceRow}>
                     <Ionicons name="location-outline" size={14} color="rgba(10, 14, 26, 0.5)" />
@@ -1542,7 +1213,7 @@ const UserProfileModal: React.FC<{
               <View style={[styles.userSheetStatusBadge, { backgroundColor: "#E8F5E9" }]}>
                 <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
                 <Text style={[styles.userSheetStatusText, { color: "#4CAF50" }]}>
-                  {isBlindConnection ? "Blind meeting connected!" : "You're connected!"}
+                  You're connected!
                 </Text>
               </View>
             )}
@@ -1554,13 +1225,9 @@ const UserProfileModal: React.FC<{
             )}
             {isPending && !isRequester && (
               <View style={[styles.userSheetStatusBadge, { backgroundColor: "rgba(27, 68, 205, 0.08)" }]}>
-                <Ionicons name={targetNeedsToPick ? "location-outline" : "mail-outline"} size={16} color={BLUE} />
+                <Ionicons name="mail-outline" size={16} color={BLUE} />
                 <Text style={[styles.userSheetStatusText, { color: BLUE }]}>
-                  {targetNeedsToPick 
-                    ? `${user.full_name} wants you to pick the spot` 
-                    : isBlindConnection 
-                      ? "Sent you a blind meeting request" 
-                      : "Sent you a friend request"}
+                  Sent you a match request
                 </Text>
               </View>
             )}
@@ -1574,467 +1241,105 @@ const UserProfileModal: React.FC<{
             
             {/* Action Buttons */}
             <View style={styles.userSheetActions}>
-              {!isMatched && !isPending && !isDenied && !blindDateStep && (
+              {!isMatched && !isPending && !isDenied && (
                 <>
-                  {/* Primary: Blind Meeting */}
-                  <TouchableOpacity 
-                    style={styles.userSheetPrimaryBtn}
-                    onPress={startBlindDateFlow}
-                    disabled={loading}
-                    activeOpacity={0.8}
-                  >
-                    <LinearGradient 
-                      colors={[BLUES.b50, BLUES.b70]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.userSheetPrimaryBtnGradient}
+                  {/* Message Input (optional) */}
+                  {showMessageInput ? (
+                    <View style={styles.messageInputContainer}>
+                      <View style={styles.messageInputWrap}>
+                        <Ionicons name="chatbubble-outline" size={20} color={BLUE} style={{ marginRight: 10 }} />
+                        <TextInput
+                          style={styles.messageInput}
+                          placeholder="Add a message (optional)"
+                          placeholderTextColor="rgba(10, 14, 26, 0.4)"
+                          value={requestMessage}
+                          onChangeText={setRequestMessage}
+                          maxLength={200}
+                          multiline
+                        />
+                      </View>
+                      <View style={styles.messageInputActions}>
+                        <TouchableOpacity 
+                          style={styles.messageInputCancelBtn}
+                          onPress={() => {
+                            setShowMessageInput(false);
+                            setRequestMessage('');
+                          }}
+                        >
+                          <Text style={styles.messageInputCancelText}>Cancel</Text>
+                        </TouchableOpacity>
+                        
+                        <TouchableOpacity 
+                          style={styles.userSheetPrimaryBtn}
+                          onPress={handleLike}
+                          disabled={loading}
+                          activeOpacity={0.8}
+                        >
+                          <LinearGradient 
+                            colors={[BLUES.b50, BLUES.b70]}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={styles.userSheetPrimaryBtnGradient}
+                          >
+                            <Ionicons name="paper-plane-outline" size={20} color="#FFF" />
+                            <Text style={styles.userSheetPrimaryBtnText}>
+                              {loading ? 'Sending...' : 'Send Request'}
+                            </Text>
+                          </LinearGradient>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ) : (
+                    <TouchableOpacity 
+                      style={styles.userSheetPrimaryBtn}
+                      onPress={() => setShowMessageInput(true)}
+                      disabled={loading}
+                      activeOpacity={0.8}
                     >
-                      <Ionicons name="eye-off-outline" size={20} color="#FFF" />
-                      <Text style={styles.userSheetPrimaryBtnText}>Blind Meeting</Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                  
-                  {/* Secondary: Friend Request */}
-                  <TouchableOpacity 
-                    style={styles.userSheetSecondaryBtn}
-                    onPress={() => handleLike(false)}
-                    disabled={loading}
-                    activeOpacity={0.8}
-                  >
-                    <Ionicons name="person-add-outline" size={20} color={BLUE} />
-                    <Text style={styles.userSheetSecondaryBtnText}>Send Friend Request</Text>
-                  </TouchableOpacity>
+                      <LinearGradient 
+                        colors={[BLUES.b50, BLUES.b70]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.userSheetPrimaryBtnGradient}
+                      >
+                        <Ionicons name="heart-outline" size={20} color="#FFF" />
+                        <Text style={styles.userSheetPrimaryBtnText}>Connect</Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  )}
                 </>
               )}
               
-              {/* Blind Date Step 1: Who picks the place? */}
-              {/* Blind Meeting Step 1: Who picks the place? */}
-              {blindDateStep === 'place_role' && (
-                <View style={styles.blindDateFlow}>
-                  <Text style={styles.blindDateFlowTitle}>Who picks the place?</Text>
-                  <Text style={styles.blindDateFlowDesc}>
-                    Your profiles stay hidden until after you meet up
-                  </Text>
-                  
-                  <View style={styles.blindDateFlowOptions}>
-                    <TouchableOpacity 
-                      style={styles.blindDateFlowOption}
-                      onPress={() => handlePlaceRoleSelect('requester')}
-                      activeOpacity={0.8}
-                    >
-                      <View style={styles.blindDateFlowOptionIcon}>
-                        <Ionicons name="location" size={24} color={BLUE} />
-                      </View>
-                      <Text style={styles.blindDateFlowOptionText}>I'll pick</Text>
-                      <Text style={styles.blindDateFlowOptionHint}>Suggest a spot</Text>
-                    </TouchableOpacity>
-                    
-                    <TouchableOpacity 
-                      style={styles.blindDateFlowOption}
-                      onPress={() => handlePlaceRoleSelect('target')}
-                      activeOpacity={0.8}
-                    >
-                      <View style={styles.blindDateFlowOptionIcon}>
-                        <Ionicons name="person" size={24} color={BLUE} />
-                      </View>
-                      <Text style={styles.blindDateFlowOptionText}>They pick</Text>
-                      <Text style={styles.blindDateFlowOptionHint}>Let them decide</Text>
-                    </TouchableOpacity>
-                  </View>
-                  
-                  <TouchableOpacity 
-                    style={styles.blindDateFlowCancel}
-                    onPress={() => setBlindDateStep(null)}
-                  >
-                    <Text style={styles.blindDateFlowCancelText}>Cancel</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-              
-              {/* Blind Date Step 2: Location & Time Details */}
-              {/* Blind Meeting Step 2: Location & Time Details */}
-              {blindDateStep === 'details' && (
-                <View style={styles.blindDateFlow}>
-                  <Text style={styles.blindDateFlowTitle}>Suggest a spot</Text>
-                  <Text style={styles.blindDateFlowDesc}>
-                    Add details for your blind meeting
-                  </Text>
-                  
-                  <View style={styles.blindDateFlowInputs}>
-                    {/* Location Name Input */}
-                    <View style={styles.blindDateFlowInputWrap}>
-                      <Ionicons name="business-outline" size={20} color={BLUE} style={{ marginRight: 10 }} />
-                      <TextInput
-                        style={styles.blindDateFlowInput}
-                        placeholder="Place name (e.g., Caffè Nero)"
-                        placeholderTextColor="rgba(10, 14, 26, 0.4)"
-                        value={blindDateForm.locationName}
-                        onChangeText={(text) => setBlindDateForm(prev => ({ ...prev, locationName: text }))}
-                      />
-                    </View>
-                    
-                    {/* Location Picker Button */}
-                    <TouchableOpacity 
-                      style={styles.blindDateFlowInputWrap}
-                      onPress={() => {
-                        setTempPickedLocation(blindDateForm.locationCoords || (userPosition ? { lat: userPosition.lat, lng: userPosition.lng } : null));
-                        setShowLocationPicker(true);
-                      }}
-                    >
-                      <Ionicons name="location-outline" size={20} color={BLUE} style={{ marginRight: 10 }} />
-                      <Text style={[
-                        styles.blindDateFlowInputText,
-                        !blindDateForm.locationCoords && { color: "rgba(10, 14, 26, 0.4)" }
-                      ]}>
-                        {blindDateForm.locationCoords 
-                          ? `📍 Location set` 
-                          : 'Pick location on map'}
-                      </Text>
-                      <Ionicons name="chevron-forward" size={18} color="rgba(10, 14, 26, 0.3)" />
-                    </TouchableOpacity>
-                    
-                    {/* Date Time Picker Button */}
-                    <TouchableOpacity 
-                      style={styles.blindDateFlowInputWrap}
-                      onPress={openDatePicker}
-                    >
-                      <Ionicons name="calendar-outline" size={20} color={BLUE} style={{ marginRight: 10 }} />
-                      <Text style={[
-                        styles.blindDateFlowInputText,
-                        !blindDateForm.meetTime && { color: "rgba(10, 14, 26, 0.4)" }
-                      ]}>
-                        {formatDateTime(blindDateForm.meetTime)}
-                      </Text>
-                      <Ionicons name="chevron-forward" size={18} color="rgba(10, 14, 26, 0.3)" />
-                    </TouchableOpacity>
-                    
-                    {/* Message Input */}
-                    <View style={styles.blindDateFlowInputWrap}>
-                      <Ionicons name="chatbubble-outline" size={20} color={BLUE} style={{ marginRight: 10 }} />
-                      <TextInput
-                        style={[styles.blindDateFlowInput, { flex: 1 }]}
-                        placeholder="Say something... (optional)"
-                        placeholderTextColor="rgba(10, 14, 26, 0.4)"
-                        value={blindDateForm.message}
-                        onChangeText={(text) => setBlindDateForm(prev => ({ ...prev, message: text }))}
-                        maxLength={200}
-                      />
-                    </View>
-                  </View>
-                  
-                  <View style={styles.blindDateFlowActions}>
-                    <TouchableOpacity 
-                      style={styles.blindDateFlowBackBtn}
-                      onPress={() => setBlindDateStep('place_role')}
-                    >
-                      <Text style={styles.blindDateFlowBackText}>Back</Text>
-                    </TouchableOpacity>
-                    
-                    <TouchableOpacity 
-                      style={[
-                        styles.blindDateFlowSendBtn,
-                        (!blindDateForm.locationName || !blindDateForm.locationCoords || !blindDateForm.meetTime) && { opacity: 0.5 }
-                      ]}
-                      onPress={() => handleLike(true, 'requester')}
-                      disabled={loading || !blindDateForm.locationName || !blindDateForm.locationCoords || !blindDateForm.meetTime}
-                    >
-                      <LinearGradient 
-                        colors={[BLUES.b50, BLUES.b70]}
-                        style={styles.blindDateFlowSendGradient}
-                      >
-                        <Text style={styles.blindDateFlowSendText}>
-                          {loading ? 'Sending...' : 'Send Request'}
-                        </Text>
-                      </LinearGradient>
-                    </TouchableOpacity>
-                  </View>
-                  
-                  <TouchableOpacity 
-                    style={styles.blindDateFlowCancel}
-                    onPress={() => setBlindDateStep(null)}
-                  >
-                    <Text style={styles.blindDateFlowCancelText}>Cancel</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-              
-              {/* Message Only Step - When sender chooses "They pick" */}
-              {/* Message Only Step - When sender chooses "They pick" */}
-              {blindDateStep === 'message_only' && (
-                <View style={styles.blindDateFlow}>
-                  <Text style={styles.blindDateFlowTitle}>Add a message</Text>
-                  <Text style={styles.blindDateFlowDesc}>
-                    Send a message with your blind meeting request
-                  </Text>
-                  
-                  <View style={styles.blindDateFlowInputs}>
-                    <View style={styles.blindDateFlowInputWrap}>
-                      <Ionicons name="chatbubble-outline" size={20} color={BLUE} style={{ marginRight: 10 }} />
-                      <TextInput
-                        style={[styles.blindDateFlowInput, { flex: 1 }]}
-                        placeholder="Say something... (optional)"
-                        placeholderTextColor="rgba(10, 14, 26, 0.4)"
-                        value={blindDateForm.message}
-                        onChangeText={(text) => setBlindDateForm(prev => ({ ...prev, message: text }))}
-                        maxLength={200}
-                      />
-                    </View>
-                  </View>
-                  
-                  <View style={styles.blindDateFlowActions}>
-                    <TouchableOpacity 
-                      style={styles.blindDateFlowBackBtn}
-                      onPress={() => setBlindDateStep('place_role')}
-                    >
-                      <Text style={styles.blindDateFlowBackText}>Back</Text>
-                    </TouchableOpacity>
-                    
-                    <TouchableOpacity 
-                      style={styles.blindDateFlowSendBtn}
-                      onPress={() => handleLike(true, 'target')}
-                      disabled={loading}
-                    >
-                      <LinearGradient 
-                        colors={[BLUES.b50, BLUES.b70]}
-                        style={styles.blindDateFlowSendGradient}
-                      >
-                        <Text style={styles.blindDateFlowSendText}>
-                          {loading ? 'Sending...' : 'Send Request'}
-                        </Text>
-                      </LinearGradient>
-                    </TouchableOpacity>
-                  </View>
-                  
-                  <TouchableOpacity 
-                    style={styles.blindDateFlowCancel}
-                    onPress={() => setBlindDateStep(null)}
-                  >
-                    <Text style={styles.blindDateFlowCancelText}>Cancel</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-              
-              {/* Accept Blind Date - Target provides location */}
-              {/* Accept Blind Meeting - Target provides location */}
-              {blindDateStep === 'accept_location' && (
-                <View style={styles.blindDateFlow}>
-                  <Text style={styles.blindDateFlowTitle}>Pick the spot</Text>
-                  <Text style={styles.blindDateFlowDesc}>
-                    They want you to choose where to meet up
-                  </Text>
-                  
-                  <View style={styles.blindDateFlowInputs}>
-                    {/* Location Name Input */}
-                    <View style={styles.blindDateFlowInputWrap}>
-                      <Ionicons name="business-outline" size={20} color={BLUE} style={{ marginRight: 10 }} />
-                      <TextInput
-                        style={styles.blindDateFlowInput}
-                        placeholder="Place name (e.g., Central Park Café)"
-                        placeholderTextColor="rgba(10, 14, 26, 0.4)"
-                        value={blindDateForm.locationName}
-                        onChangeText={(text) => setBlindDateForm(prev => ({ ...prev, locationName: text }))}
-                      />
-                    </View>
-                    
-                    {/* Location Picker Button */}
-                    <TouchableOpacity 
-                      style={styles.blindDateFlowInputWrap}
-                      onPress={() => {
-                        setTempPickedLocation(blindDateForm.locationCoords || (userPosition ? { lat: userPosition.lat, lng: userPosition.lng } : null));
-                        setShowLocationPicker(true);
-                      }}
-                    >
-                      <Ionicons name="location-outline" size={20} color={BLUE} style={{ marginRight: 10 }} />
-                      <Text style={[
-                        styles.blindDateFlowInputText,
-                        !blindDateForm.locationCoords && { color: "rgba(10, 14, 26, 0.4)" }
-                      ]}>
-                        {blindDateForm.locationCoords 
-                          ? `📍 Location set` 
-                          : 'Pick location on map'}
-                      </Text>
-                      <Ionicons name="chevron-forward" size={18} color="rgba(10, 14, 26, 0.3)" />
-                    </TouchableOpacity>
-                    
-                    {/* Date Time Picker Button */}
-                    <TouchableOpacity 
-                      style={styles.blindDateFlowInputWrap}
-                      onPress={openDatePicker}
-                    >
-                      <Ionicons name="calendar-outline" size={20} color={BLUE} style={{ marginRight: 10 }} />
-                      <Text style={[
-                        styles.blindDateFlowInputText,
-                        !blindDateForm.meetTime && { color: "rgba(10, 14, 26, 0.4)" }
-                      ]}>
-                        {formatDateTime(blindDateForm.meetTime)}
-                      </Text>
-                      <Ionicons name="chevron-forward" size={18} color="rgba(10, 14, 26, 0.3)" />
-                    </TouchableOpacity>
-                    
-                    {/* Response Message Input */}
-                    <View style={styles.blindDateFlowInputWrap}>
-                      <Ionicons name="chatbubble-outline" size={20} color={BLUE} style={{ marginRight: 10 }} />
-                      <TextInput
-                        style={[styles.blindDateFlowInput, { flex: 1 }]}
-                        placeholder="Reply to their message... (optional)"
-                        placeholderTextColor="rgba(10, 14, 26, 0.4)"
-                        value={responseMessage}
-                        onChangeText={setResponseMessage}
-                        maxLength={200}
-                      />
-                    </View>
-                  </View>
-                  
-                  <View style={styles.blindDateFlowActions}>
-                    <TouchableOpacity 
-                      style={styles.blindDateFlowBackBtn}
-                      onPress={() => setBlindDateStep(null)}
-                    >
-                      <Text style={styles.blindDateFlowBackText}>Cancel</Text>
-                    </TouchableOpacity>
-                    
-                    <TouchableOpacity 
-                      style={[
-                        styles.blindDateFlowSendBtn,
-                        (!blindDateForm.locationName || !blindDateForm.locationCoords || !blindDateForm.meetTime) && { opacity: 0.5 }
-                      ]}
-                      onPress={handleAcceptBlindDateWithLocation}
-                      disabled={loading || !blindDateForm.locationName || !blindDateForm.locationCoords || !blindDateForm.meetTime}
-                    >
-                      <LinearGradient 
-                        colors={["#4CAF50", "#66BB6A"]}
-                        style={styles.blindDateFlowSendGradient}
-                      >
-                        <Text style={styles.blindDateFlowSendText}>
-                          {loading ? 'Accepting...' : 'Accept & Set Meetup Spot'}
-                        </Text>
-                      </LinearGradient>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
-              
-              {/* Accept Simple - When requester already provided location */}
-              {/* Accept Simple - When requester already provided location */}
-              {blindDateStep === 'accept_simple' && (
-                <View style={styles.blindDateFlow}>
-                  <Text style={styles.blindDateFlowTitle}>Accept blind meeting</Text>
-                  <Text style={styles.blindDateFlowDesc}>
-                    They've already set the spot - just send a reply!
-                  </Text>
-                  
-                  {matchStatus?.blind_location_name && (
-                    <View style={styles.blindDateInfoBox}>
-                      <Ionicons name="location" size={16} color={BLUE} />
-                      <Text style={styles.blindDateInfoText}>{matchStatus.blind_location_name}</Text>
-                    </View>
-                  )}
-                  
-                  <View style={styles.blindDateFlowInputs}>
-                    <View style={styles.blindDateFlowInputWrap}>
-                      <Ionicons name="chatbubble-outline" size={20} color={BLUE} style={{ marginRight: 10 }} />
-                      <TextInput
-                        style={[styles.blindDateFlowInput, { flex: 1 }]}
-                        placeholder="Reply to their message... (optional)"
-                        placeholderTextColor="rgba(10, 14, 26, 0.4)"
-                        value={responseMessage}
-                        onChangeText={setResponseMessage}
-                        maxLength={200}
-                      />
-                    </View>
-                  </View>
-                  
-                  <View style={styles.blindDateFlowActions}>
-                    <TouchableOpacity 
-                      style={styles.blindDateFlowBackBtn}
-                      onPress={() => setBlindDateStep(null)}
-                    >
-                      <Text style={styles.blindDateFlowBackText}>Cancel</Text>
-                    </TouchableOpacity>
-                    
-                    <TouchableOpacity 
-                      style={styles.blindDateFlowSendBtn}
-                      onPress={handleAcceptBlindDateSimple}
-                      disabled={loading}
-                    >
-                      <LinearGradient 
-                        colors={["#4CAF50", "#66BB6A"]}
-                        style={styles.blindDateFlowSendGradient}
-                      >
-                        <Text style={styles.blindDateFlowSendText}>
-                          {loading ? 'Accepting...' : 'Accept Meeting'}
-                        </Text>
-                      </LinearGradient>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
               
               {/* Matched Actions */}
               {isMatched && (
                 <View style={styles.userSheetMatchedActions}>
-                  {/* Show blind date info for blind connections */}
-                  {isBlindConnection && (
-                    <View style={styles.blindDateMatchedInfo}>
-                      <Ionicons name="eye-off" size={18} color={BLUE} />
-                      <Text style={styles.blindDateMatchedText}>
-                        Profile hidden until after your meetup
-                      </Text>
-                      {matchStatus?.blind_location_name && (
-                        <View style={styles.blindDateMatchedDetail}>
-                          <Ionicons name="location" size={14} color="rgba(27, 68, 205, 0.7)" />
-                          <Text style={styles.blindDateMatchedDetailText}>{matchStatus.blind_location_name}</Text>
-                        </View>
-                      )}
-                      {matchStatus?.blind_meet_time && (
-                        <View style={styles.blindDateMatchedDetail}>
-                          <Ionicons name="calendar" size={14} color="rgba(27, 68, 205, 0.7)" />
-                          <Text style={styles.blindDateMatchedDetailText}>
-                            {new Date(matchStatus.blind_meet_time).toLocaleString(undefined, {
-                              weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
-                            })}
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                  )}
+                  <TouchableOpacity 
+                    style={styles.userSheetSecondaryBtn}
+                    onPress={handleViewProfile}
+                  >
+                    <Ionicons name="person-outline" size={20} color={BLUE} />
+                    <Text style={styles.userSheetSecondaryBtnText}>View Profile</Text>
+                  </TouchableOpacity>
                   
-                  {/* Only show View Profile for non-blind connections */}
-                  {!isBlindConnection && (
-                    <TouchableOpacity 
-                      style={styles.userSheetSecondaryBtn}
-                      onPress={handleViewProfile}
+                  <TouchableOpacity 
+                    style={styles.userSheetPrimaryBtn}
+                    onPress={handleStartChat}
+                  >
+                    <LinearGradient 
+                      colors={[BLUES.b50, BLUES.b70]}
+                      style={styles.userSheetPrimaryBtnGradient}
                     >
-                      <Ionicons name="person-outline" size={20} color={BLUE} />
-                      <Text style={styles.userSheetSecondaryBtnText}>View Profile</Text>
-                    </TouchableOpacity>
-                  )}
-                  
-                  {matchStatus?.chat_allowed && (
-                    <TouchableOpacity 
-                      style={styles.userSheetPrimaryBtn}
-                      onPress={handleStartChat}
-                    >
-                      <LinearGradient 
-                        colors={[BLUES.b50, BLUES.b70]}
-                        style={styles.userSheetPrimaryBtnGradient}
-                      >
-                        <Ionicons name="chatbubbles-outline" size={20} color="#FFF" />
-                        <Text style={styles.userSheetPrimaryBtnText}>Start Chat</Text>
-                      </LinearGradient>
-                    </TouchableOpacity>
-                  )}
+                      <Ionicons name="chatbubbles-outline" size={20} color="#FFF" />
+                      <Text style={styles.userSheetPrimaryBtnText}>Start Chat</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
                 </View>
               )}
               
               {/* Incoming Request Actions */}
-              {isPending && !isRequester && !blindDateStep && (
+              {isPending && !isRequester && (
                 <View style={styles.userSheetIncomingActions}>
-                  {targetNeedsToPick && (
-                    <Text style={styles.targetPickHint}>
-                      Pick a spot and time for your blind meeting
-                    </Text>
-                  )}
                   <View style={styles.userSheetIncomingBtns}>
                     <TouchableOpacity 
                       style={styles.userSheetDeclineBtn}
@@ -2050,13 +1355,11 @@ const UserProfileModal: React.FC<{
                       disabled={loading}
                     >
                       <LinearGradient 
-                        colors={targetNeedsToPick ? [BLUES.b50, BLUES.b70] : ["#4CAF50", "#66BB6A"]}
+                        colors={["#4CAF50", "#66BB6A"]}
                         style={styles.userSheetAcceptBtnGradient}
                       >
-                        <Ionicons name={targetNeedsToPick ? "location" : "checkmark"} size={24} color="#FFF" />
-                        <Text style={styles.userSheetAcceptBtnText}>
-                          {targetNeedsToPick ? 'Pick Spot & Accept' : 'Accept Request'}
-                        </Text>
+                        <Ionicons name="checkmark" size={24} color="#FFF" />
+                        <Text style={styles.userSheetAcceptBtnText}>Accept Request</Text>
                       </LinearGradient>
                     </TouchableOpacity>
                   </View>
@@ -2066,142 +1369,18 @@ const UserProfileModal: React.FC<{
             </ScrollView>
             
             {/* Footer Links */}
-            {!blindDateStep && (
-              <View style={styles.userSheetFooter}>
-                <TouchableOpacity onPress={handleBlock}>
-                  <Text style={styles.userSheetFooterLink}>Block</Text>
-                </TouchableOpacity>
-                <Text style={styles.userSheetFooterDot}>•</Text>
-                <TouchableOpacity onPress={() => Alert.alert("Report", "Report feature coming soon")}>
-                  <Text style={styles.userSheetFooterLink}>Report</Text>
-                </TouchableOpacity>
-              </View>
-            )}
+            <View style={styles.userSheetFooter}>
+              <TouchableOpacity onPress={handleBlock}>
+                <Text style={styles.userSheetFooterLink}>Block</Text>
+              </TouchableOpacity>
+              <Text style={styles.userSheetFooterDot}>Ã¢â‚¬Â¢</Text>
+              <TouchableOpacity onPress={() => Alert.alert("Report", "Report feature coming soon")}>
+                <Text style={styles.userSheetFooterLink}>Report</Text>
+              </TouchableOpacity>
+            </View>
           </Pressable>
         </RNAnimated.View>
       </Pressable>
-      
-      {/* Location Picker Modal */}
-      <Modal 
-        visible={showLocationPicker} 
-        animationType="slide" 
-        transparent={false}
-        onRequestClose={() => setShowLocationPicker(false)}
-      >
-        <View style={styles.locationPickerContainer}>
-          <View style={styles.locationPickerHeader}>
-            <TouchableOpacity 
-              style={styles.locationPickerCloseBtn}
-              onPress={() => setShowLocationPicker(false)}
-            >
-              <Ionicons name="close" size={24} color="#0A0E1A" />
-            </TouchableOpacity>
-            <Text style={styles.locationPickerTitle}>Pick Location</Text>
-            <TouchableOpacity 
-              style={[
-                styles.locationPickerConfirmBtn,
-                !tempPickedLocation && { opacity: 0.5 }
-              ]}
-              onPress={confirmLocationPick}
-              disabled={!tempPickedLocation}
-            >
-              <Text style={styles.locationPickerConfirmText}>Confirm</Text>
-            </TouchableOpacity>
-          </View>
-          
-          <View style={styles.locationPickerMapContainer}>
-            <MapView
-              ref={locationPickerMapRef}
-              style={styles.locationPickerMap}
-              provider={PROVIDER_GOOGLE}
-              initialRegion={{
-                latitude: userPosition?.lat || 41.0082,
-                longitude: userPosition?.lng || 28.9784,
-                latitudeDelta: 0.01,
-                longitudeDelta: 0.01,
-              }}
-              onPress={handleMapPress}
-              showsUserLocation
-              showsMyLocationButton
-            >
-              {tempPickedLocation && (
-                <Marker
-                  coordinate={{
-                    latitude: tempPickedLocation.lat,
-                    longitude: tempPickedLocation.lng
-                  }}
-                  pinColor={BLUE}
-                />
-              )}
-            </MapView>
-            
-            {/* Center Pin Overlay */}
-            <View style={styles.locationPickerPinOverlay} pointerEvents="none">
-              <Ionicons name="location" size={40} color={BLUE} />
-            </View>
-          </View>
-          
-          <View style={styles.locationPickerFooter}>
-            <Text style={styles.locationPickerHint}>
-              Tap on the map to select location
-            </Text>
-            {tempPickedLocation && (
-              <Text style={styles.locationPickerCoords}>
-                {tempPickedLocation.lat.toFixed(5)}, {tempPickedLocation.lng.toFixed(5)}
-              </Text>
-            )}
-          </View>
-        </View>
-      </Modal>
-      
-      {/* Date Time Picker - Wrapped in Modal for iOS */}
-      {showDatePicker && Platform.OS === 'ios' && (
-        <Modal transparent animationType="fade" visible={showDatePicker}>
-          <View style={styles.datePickerOverlay}>
-            <Pressable style={styles.datePickerBackdrop} onPress={() => setShowDatePicker(false)} />
-            <View style={styles.datePickerContainer}>
-              <View style={styles.datePickerHeader}>
-                <TouchableOpacity onPress={() => setShowDatePicker(false)}>
-                  <Text style={styles.datePickerCancel}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => {
-                  if (showDatePickerMode === 'date') {
-                    setShowDatePickerMode('time');
-                  } else {
-                    setShowDatePicker(false);
-                    setShowDatePickerMode('date');
-                  }
-                }}>
-                  <Text style={styles.datePickerDone}>
-                    {showDatePickerMode === 'date' ? 'Next' : 'Done'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-              <DateTimePicker
-                value={blindDateForm.meetTime || new Date()}
-                mode={showDatePickerMode}
-                display="spinner"
-                onChange={(event, date) => {
-                  if (date) {
-                    setBlindDateForm(prev => ({ ...prev, meetTime: date }));
-                  }
-                }}
-                minimumDate={new Date()}
-                style={{ height: 200 }}
-              />
-            </View>
-          </View>
-        </Modal>
-      )}
-      {showDatePicker && Platform.OS === 'android' && (
-        <DateTimePicker
-          value={blindDateForm.meetTime || new Date()}
-          mode={showDatePickerMode}
-          display="default"
-          onChange={handleDateTimeChange}
-          minimumDate={new Date()}
-        />
-      )}
     </Modal>
   );
 };
@@ -2235,7 +1414,7 @@ const EventDetailsModal: React.FC<{
 
   // Debug: Track apply modal visibility
   useEffect(() => {
-    console.log(`🔍 Apply Modal visibility changed: ${showApplyModal}`);
+    console.log(`Apply Modal visibility changed: ${showApplyModal}`);
   }, [showApplyModal]);
 
   useEffect(() => {
@@ -2244,13 +1423,13 @@ const EventDetailsModal: React.FC<{
       setApplyMessage('');
       // Initialize application status from event data if available
       const initialStatus = event?.user_application_status;
-      console.log(`🎫 EventDetailsModal opened for "${event?.event_name}": user_application_status=${initialStatus}`);
+      console.log(`EventDetailsModal opened for "${event?.event_name}": user_application_status=${initialStatus}`);
       
       if (initialStatus && initialStatus !== 'none' && initialStatus !== 'cancelled') {
-        console.log(`   → Setting applicationStatus to: ${initialStatus}`);
+        console.log(`   Ã¢â‚¬â„¢ Setting applicationStatus to: ${initialStatus}`);
         setApplicationStatus(initialStatus as 'pending' | 'approved' | 'rejected');
       } else {
-        console.log(`   → Setting applicationStatus to: none`);
+        console.log(`   Ã¢â‚¬â„¢ Setting applicationStatus to: none`);
         setApplicationStatus('none');
       }
       RNAnimated.spring(slideAnim, { toValue: 0, useNativeDriver: true, tension: 65, friction: 11 }).start();
@@ -2281,7 +1460,7 @@ const EventDetailsModal: React.FC<{
       }
       
       if (data) {
-        console.log(`📋 Found existing application for event ${event.id}: status=${data.status}`);
+        console.log(`Found existing application for event ${event.id}: status=${data.status}`);
         setApplicationStatus(data.status as any);
       }
     } catch (err: any) {
@@ -2295,13 +1474,13 @@ const EventDetailsModal: React.FC<{
   const eventTypeInfo = eventTypeDisplayNames[event.event_type || 'public'];
   
   // Debug: Log the event type when modal opens
-  console.log(`🎫 EventDetailsModal: "${event.event_name}" - type=${event.event_type || 'undefined'}, badge=${eventTypeInfo.label}, isOwn=${isOwnEvent}`);
+  console.log(`EventDetailsModal: "${event.event_name}" - type=${event.event_type || 'undefined'}, badge=${eventTypeInfo.label}, isOwn=${isOwnEvent}`);
   
   const formatTime = (dateString: string) => {
     const date = new Date(dateString);
     const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    return `${days[date.getDay()]}, ${date.getDate()} ${months[date.getMonth()]} · ${date.getHours().toString().padStart(2, "0")}:${date.getMinutes().toString().padStart(2, "0")}`;
+    return `${days[date.getDay()]}, ${date.getDate()} ${months[date.getMonth()]} - ${date.getHours().toString().padStart(2, "0")}:${date.getMinutes().toString().padStart(2, "0")}`;
   };
 
   // Check if user can see exact location
@@ -2399,7 +1578,7 @@ const EventDetailsModal: React.FC<{
   const handleApply = async () => {
     if (!event || !currentUserId) return;
     
-    console.log(`🎟️ Attempting to join event: "${event.event_name}" (${event.id})`);
+    console.log(`Ã‚Â Attempting to join event: "${event.event_name}" (${event.id})`);
     setApplyLoading(true);
     try {
       // Call the 2-parameter RPC function (returns JSON)
@@ -2418,7 +1597,7 @@ const EventDetailsModal: React.FC<{
       if (rpcResult) {
         if (rpcResult.success) {
           const newStatus = rpcResult.status as 'approved' | 'pending';
-          console.log(`✅ Join successful! New status: ${newStatus}`);
+          console.log(`Join successful! New status: ${newStatus}`);
           Alert.alert("Success!", rpcResult.message);
           setApplicationStatus(newStatus);
           setShowApplyModal(false);
@@ -2431,14 +1610,14 @@ const EventDetailsModal: React.FC<{
               user_application_status: newStatus,
               accepted_count: newStatus === 'approved' ? (event.accepted_count || 0) + 1 : event.accepted_count,
             };
-            console.log(`📝 Calling onEventUpdate with status=${newStatus}, accepted_count=${updatedEvent.accepted_count}`);
+            console.log(`Calling onEventUpdate with status=${newStatus}, accepted_count=${updatedEvent.accepted_count}`);
             onEventUpdate(updatedEvent);
           }
           
           onApplySuccess?.();
         } else {
           // Check if it's "already applied" - update status accordingly
-          console.log(`⚠️ Join failed: ${rpcResult.error}, current status: ${rpcResult.status}`);
+          console.log(`[WARN] Â Join failed: ${rpcResult.error}, current status: ${rpcResult.status}`);
           if (rpcResult.status) {
             setApplicationStatus(rpcResult.status as 'approved' | 'pending' | 'rejected');
           }
@@ -2468,7 +1647,7 @@ const EventDetailsModal: React.FC<{
   
   // Get action button text
   const getActionButtonText = () => {
-    if (applicationStatus === 'approved') return 'Joined ✓';
+    if (applicationStatus === 'approved') return 'Joined ' ;
     if (applicationStatus === 'pending') return 'Pending...';
     if (applicationStatus === 'rejected') return 'Rejected';
     if (!isEligible) return ineligibilityReason || 'Not Eligible';
@@ -2644,7 +1823,7 @@ const EventDetailsModal: React.FC<{
                     </View>
                     <View style={styles.detailBox}>
                       <Ionicons name="person-outline" size={18} color={BLUE} />
-                      <Text style={styles.detailBoxText}>{event.age_min}–{event.age_max} y/o</Text>
+                      <Text style={styles.detailBoxText}>{event.age_min}-{event.age_max} y/o</Text>
                     </View>
                   </View>
                   
@@ -2700,17 +1879,17 @@ const EventDetailsModal: React.FC<{
                   // Non-host actions
                   <TouchableOpacity 
                     onPress={() => {
-                  console.log(`🎯 Apply button pressed - canApply=${canApply}, isEligible=${isEligible}, requiresApplication=${requiresApplication}, eventType=${event.event_type}`);
+                  console.log(`Apply button pressed - canApply=${canApply}, isEligible=${isEligible}, requiresApplication=${requiresApplication}, eventType=${event.event_type}`);
                   if (canApply) {
                     if (requiresApplication) {
-                      console.log('📝 Navigating to application page for', event.event_type, 'event');
+                      console.log('Navigating to application page for', event.event_type, 'event');
                       onClose();
                       router.push({
                         pathname: "/(tabs_support)/event_application_user",
                         params: { eventId: event.id }
                       });
                     } else {
-                      console.log('⚡ Direct join for', event.event_type, 'event');
+                      console.log('Direct join for', event.event_type, 'event');
                       handleApply();
                     }
                   }
@@ -3063,7 +2242,6 @@ export default function MapScreen() {
   const [users, setUsers] = useState<UserMapCard[]>([]);
   const [selectedUser, setSelectedUser] = useState<UserMapCard | null>(null);
   const [showUserModal, setShowUserModal] = useState(false);
-  const [currentUserMode, setCurrentUserMode] = useState<'dating' | 'friend'>('friend');
   const [showFrameViewerMain, setShowFrameViewerMain] = useState(false);
   const [frameViewerFrames, setFrameViewerFrames] = useState<any[]>([]);
   
@@ -3144,7 +2322,7 @@ export default function MapScreen() {
         const { data: { session } } = await supabase.auth.getSession();
         
         if (session?.user && mounted) {
-          console.log("✅ User authenticated:", session.user.id);
+          console.log("User authenticated:", session.user.id);
           setCurrentUserId(session.user.id);
           
           // Fetch user profile photo - same approach as profile.tsx
@@ -3191,13 +2369,13 @@ export default function MapScreen() {
             });
           }
         } else {
-          console.log("❌ No session found");
+          console.log("[ERROR] No session found");
         }
         
         // Listen for auth changes
         const { data } = supabase.auth.onAuthStateChange((_event, session) => {
           if (session?.user && mounted) {
-            console.log("✅ Auth state changed, user:", session.user.id);
+            console.log("Auth state changed, user:", session.user.id);
             setCurrentUserId(session.user.id);
           }
         });
@@ -3230,28 +2408,28 @@ export default function MapScreen() {
       });
 
       if (error) {
-        console.error("❌ Error fetching events:", error);
+        console.error("[ERROR] Error fetching events:", error);
         return;
       }
       
       if (data && data.length > 0) {
-        console.log(`📍 RPC returned ${data.length} events`);
+        console.log(`RPC returned ${data.length} events`);
         
         // Filter events based on time and coordinates
         const validEvents = data.filter((event: any) => {
           if (!event.latitude || !event.longitude) {
-            console.log(`   ⚠️ Skipping ${event.event_name}: missing lat/lng`);
+            console.log(`   [WARN] Â Skipping ${event.event_name}: missing lat/lng`);
             return false;
           }
           const eventEndTime = new Date(event.time_end).getTime();
           const isValid = eventEndTime >= Date.now();
           if (!isValid) {
-            console.log(`   ⚠️ Skipping ${event.event_name}: expired`);
+            console.log(`   [WARN] Â Skipping ${event.event_name}: expired`);
           }
           return isValid;
         });
         
-        console.log(`📍 After time filter: ${validEvents.length} valid events`);
+        console.log(`After time filter: ${validEvents.length} valid events`);
         
         const eventIds = validEvents.map((e: any) => e.id);
         let userApplicationMap = new Map<string, string>();
@@ -3270,7 +2448,7 @@ export default function MapScreen() {
               userAppData.forEach((a: any) => {
                 userApplicationMap.set(a.event_id, a.status);
               });
-              console.log(`📋 Found ${userAppData.length} applications for current user`);
+              console.log(`Found ${userAppData.length} applications for current user`);
             }
           } catch (err) {
             console.warn("Could not fetch user applications");
@@ -3335,14 +2513,14 @@ export default function MapScreen() {
           return false;
         });
         
-        console.log(`✅ Loaded ${visibleEvents.length} events to display`);
+        console.log(`Loaded ${visibleEvents.length} events to display`);
         visibleEvents.forEach((e: any) => {
-          console.log(`   📍 ${e.event_name}: type=${e.event_type}, count=${e.accepted_count}, status=${e.user_application_status}`);
+          console.log(`   ${e.event_name}: type=${e.event_type}, count=${e.accepted_count}, status=${e.user_application_status}`);
         });
         
         setEvents(visibleEvents as EventData[]);
       } else {
-        console.log(`📍 RPC returned no events`);
+        console.log(`RPC returned no events`);
         setEvents([]);
       }
     } catch (error) {
@@ -3353,26 +2531,26 @@ export default function MapScreen() {
   // Fetch users from Supabase
   const fetchUsers = useCallback(async (retryCount: number = 0) => {
     if (!currentUserId) {
-      console.log("⚠️ No currentUserId, can't fetch users");
+      console.log("[WARN] Â No currentUserId, can't fetch users");
       return;
     }
     
     try {
-      console.log(`🔍 Fetching users for mode: ${currentUserMode} (attempt ${retryCount + 1})`);
-      console.log("📌 Current user ID:", currentUserId);
+      console.log(`Fetching users (attempt ${retryCount + 1})`);
+      console.log("Current user ID:", currentUserId);
       
       // Use regular get_map_cards (works without time filter)
       const { data, error } = await supabase.rpc('get_map_cards', {
-        p_mode: currentUserMode
+        
       });
 
       if (error) {
-        console.error("❌ Error fetching users:", error);
+        console.error("[ERROR] Error fetching users:", error);
         return;
       }
       
       if (data && data.length > 0) {
-        console.log(`✅ Loaded ${data.length} user(s) on map`);
+        console.log(`Loaded ${data.length} user(s) on map`);
         
         // Fetch gender data for all users (since get_map_cards doesn't return it)
         const userIds = data.map((u: any) => u.user_id);
@@ -3389,7 +2567,7 @@ export default function MapScreen() {
         
         // Debug: Log each user found
         data.forEach((u: any) => {
-          console.log(`   👤 ${u.full_name}, age ${u.age}, gender: ${genderMap[u.user_id] || 'unknown'}, mode: ${u.mode}`);
+          console.log(`   ${u.full_name}, age ${u.age}, gender: ${genderMap[u.user_id] || 'unknown'}, `);
         });
         
         // Process photo URLs with signed URLs and add gender
@@ -3412,20 +2590,20 @@ export default function MapScreen() {
         
         setUsers(usersWithPhotosAndGender as UserMapCard[]);
       } else if (data) {
-        console.log("📭 No users found on map");
+        console.log("No users found on map");
         setUsers([]);
       }
     } catch (error) {
       console.error("Exception in fetchUsers:", error);
     }
-  }, [currentUserId, currentUserMode]);
+  }, [currentUserId]);
 
   const fetchEventsRef = useRef(fetchEvents);
   useEffect(() => {
     fetchEventsRef.current = fetchEvents;
   }, [fetchEvents]);
 
-  // 🔥 Add fetchUsersRef for real-time subscription
+  // Add fetchUsersRef for real-time subscription
   const fetchUsersRef = useRef(fetchUsers);
   useEffect(() => {
     fetchUsersRef.current = fetchUsers;
@@ -3451,7 +2629,7 @@ export default function MapScreen() {
         if (!isMounted) return;
         
         if (retryDelays[i] > 0) {
-          console.log(`🔄 Retry ${i}: waiting ${retryDelays[i]}ms before fetching users...`);
+          console.log(`Retry ${i}: waiting ${retryDelays[i]}ms before fetching users...`);
           await new Promise(resolve => setTimeout(resolve, retryDelays[i]));
         }
         
@@ -3470,7 +2648,7 @@ export default function MapScreen() {
   // Refresh events and users when screen comes into focus (e.g., returning from add_event)
   useFocusEffect(
     useCallback(() => {
-      console.log("🔄 Map screen focused - refreshing events and users");
+      console.log("Map screen focused - refreshing events and users");
       if (pos) {
         fetchEvents();
         if (currentUserId) {
@@ -3482,7 +2660,7 @@ export default function MapScreen() {
 
   // Set up real-time subscription ONCE on mount
   useEffect(() => {
-    console.log("📡 Setting up real-time subscriptions...");
+    console.log("Setting up real-time subscriptions...");
 
     const eventsChannel = supabase
       .channel("events_updates")
@@ -3494,10 +2672,10 @@ export default function MapScreen() {
           table: "events"
         },
         (payload) => {
-          console.log("🔔 Real-time event:", payload.eventType);
+          console.log("Real-time event:", payload.eventType);
           
           if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
-            console.log("♻️ Refetching events");
+            console.log("Â¯Ã‚Â¸Ã‚Â Refetching events");
             fetchEventsRef.current();
           } else if (payload.eventType === "DELETE") {
             const eventId = (payload.old as any)?.id;
@@ -3509,11 +2687,11 @@ export default function MapScreen() {
       )
       .subscribe((status) => {
         if (status === "SUBSCRIBED") {
-          console.log("✅ Events real-time connected");
+          console.log("Events real-time connected");
         }
       });
 
-    // 🔥 Subscribe to event_applications to update counts when people join/leave events
+    // Subscribe to event_applications to update counts when people join/leave events
     const applicationsChannel = supabase
       .channel("event_applications_updates")
       .on(
@@ -3524,7 +2702,7 @@ export default function MapScreen() {
           table: "event_applications"
         },
         (payload) => {
-          console.log("🔔 Event application changed:", payload.eventType, payload.new || payload.old);
+          console.log("Event application changed:", payload.eventType, payload.new || payload.old);
           
           // Get the event_id from the payload
           const eventId = (payload.new as any)?.event_id || (payload.old as any)?.event_id;
@@ -3555,7 +2733,7 @@ export default function MapScreen() {
                   if (event.id !== eventId) return event;
                   
                   const newCount = Math.max(0, (event.accepted_count || 0) + countDelta);
-                  console.log(`   📊 Updating ${event.event_name} count: ${event.accepted_count} → ${newCount}`);
+                  console.log(`   Updating ${event.event_name} count: ${event.accepted_count} Ã¢â‚¬â„¢ ${newCount}`);
                   return {
                     ...event,
                     accepted_count: newCount,
@@ -3567,7 +2745,7 @@ export default function MapScreen() {
               setSelectedEvent(prev => {
                 if (!prev || prev.id !== eventId) return prev;
                 const newCount = Math.max(0, (prev.accepted_count || 0) + countDelta);
-                console.log(`   📊 Updating selected event count: ${prev.accepted_count} → ${newCount}`);
+                console.log(`   Updating selected event count: ${prev.accepted_count} Ã¢â‚¬â„¢ ${newCount}`);
                 return {
                   ...prev,
                   accepted_count: newCount,
@@ -3579,11 +2757,11 @@ export default function MapScreen() {
       )
       .subscribe((status) => {
         if (status === "SUBSCRIBED") {
-          console.log("✅ Event applications real-time connected");
+          console.log("Event applications real-time connected");
         }
       });
 
-    // 🔥 Also subscribe to profile updates to detect when other users come online
+    // Also subscribe to profile updates to detect when other users come online
     const profilesChannel = supabase
       .channel("profiles_updates")
       .on(
@@ -3595,7 +2773,7 @@ export default function MapScreen() {
         },
         (payload) => {
           // When any profile updates (like location/last_seen), refresh users
-          console.log("🔔 Profile updated, refreshing users...");
+          console.log("Profile updated, refreshing users...");
           // Use a small delay to avoid hammering the API
           setTimeout(() => {
             fetchUsersRef.current?.();
@@ -3604,7 +2782,7 @@ export default function MapScreen() {
       )
       .subscribe((status) => {
         if (status === "SUBSCRIBED") {
-          console.log("✅ Profiles real-time connected");
+          console.log("Profiles real-time connected");
         }
       });
 
@@ -3622,7 +2800,7 @@ export default function MapScreen() {
         const now = Date.now();
         const active = prev.filter(e => new Date(e.time_end).getTime() > now);
         if (active.length !== prev.length) {
-          console.log(`🧹 Removed ${prev.length - active.length} expired events`);
+          console.log(`Removed ${prev.length - active.length} expired events`);
         }
         return active;
       });
@@ -3657,7 +2835,7 @@ export default function MapScreen() {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== "granted") {
-          console.log("📍 Location permission denied, using fallback location");
+          console.log("Location permission denied, using fallback location");
           const fallback = { lat: FALLBACK.lat, lng: FALLBACK.lng, acc: 100 };
           setPos(fallback);
           smoothPosRef.current = { lat: fallback.lat, lng: fallback.lng };
@@ -3683,7 +2861,7 @@ export default function MapScreen() {
             accuracy: Location.Accuracy.Balanced,
           });
         } catch (locationError) {
-          console.log("📍 Could not get current location, using fallback:", locationError);
+          console.log("Could not get current location, using fallback:", locationError);
           const fallback = { lat: FALLBACK.lat, lng: FALLBACK.lng, acc: 100 };
           setPos(fallback);
           smoothPosRef.current = { lat: fallback.lat, lng: fallback.lng };
@@ -3702,25 +2880,25 @@ export default function MapScreen() {
         }
 
         const init = { lat: initial.coords.latitude, lng: initial.coords.longitude, acc: initial.coords.accuracy ?? 30 };
-        console.log("📍 Got user location:", init.lat, init.lng);
+        console.log("Got user location:", init.lat, init.lng);
         setPos(init);
         lastSetPosRef.current = { lat: init.lat, lng: init.lng };
         lastRawPosRef.current = { lat: init.lat, lng: init.lng };
         smoothPosRef.current = { lat: init.lat, lng: init.lng };
         cameraPositionRef.current = { lat: init.lat, lng: init.lng };
 
-        // 🔥 Save location to database - AWAIT to ensure it's saved before fetching users
+        // Save location to database - AWAIT to ensure it's saved before fetching users
         if (currentUserId) {
-          console.log("📍 Saving initial location to database...");
+          console.log("Saving initial location to database...");
           const saved = await updateUserLocationInDB(currentUserId, init.lat, init.lng);
           if (saved) {
-            console.log("✅ Location saved successfully, users can now discover this user");
+            console.log("Location saved successfully, users can now discover this user");
           } else {
-            console.warn("⚠️ Failed to save location, other users may not see this user");
+            console.warn("[WARN] Â Failed to save location, other users may not see this user");
           }
         }
 
-        // 🔥 Set up periodic location updates to database (every 30 seconds)
+        // Set up periodic location updates to database (every 30 seconds)
         locationUpdateTimer = setInterval(() => {
           if (currentUserId && smoothPosRef.current) {
             updateUserLocationInDB(currentUserId, smoothPosRef.current.lat, smoothPosRef.current.lng);
@@ -3750,12 +2928,12 @@ export default function MapScreen() {
                 const jump = haversineMeters(prevRaw, raw);
                 // More aggressive filtering: reject large jumps when accuracy is poor
                 if ((locAcc ?? 999) > 80 && jump > 50) {
-                  console.log("📍 Rejected GPS jump:", jump.toFixed(1), "m, accuracy:", locAcc);
+                  console.log("Rejected GPS jump:", jump.toFixed(1), "m, accuracy:", locAcc);
                   return;
                 }
                 // Even with good accuracy, reject unrealistic jumps
                 if (jump > 200) {
-                  console.log("📍 Rejected unrealistic jump:", jump.toFixed(1), "m");
+                  console.log("Rejected unrealistic jump:", jump.toFixed(1), "m");
                   return;
                 }
               }
@@ -3773,7 +2951,7 @@ export default function MapScreen() {
                 setPos({ lat: smoothed.lat, lng: smoothed.lng, acc: locAcc ?? 25 });
                 lastSetPosRef.current = { lat: smoothed.lat, lng: smoothed.lng };
                 
-                // 🔥 Update database if moved >50 meters
+                // Update database if moved >50 meters
                 if (currentUserId && movedSinceSet > 50) {
                   updateUserLocationInDB(currentUserId, smoothed.lat, smoothed.lng);
                 }
@@ -3793,7 +2971,7 @@ export default function MapScreen() {
                 // - Rate limit to max once per 1.2 seconds
                 // - Require decent accuracy
                 if (distFromCamera > 15 && now - lastCam >= 1200 && (locAcc ?? 999) < 100) {
-                  console.log("📍 Following user - moved", distFromCamera.toFixed(1), "m from camera");
+                  console.log("Following user - moved", distFromCamera.toFixed(1), "m from camera");
                   mapRef.current?.animateCamera(
                     { center: { latitude: smoothed.lat, longitude: smoothed.lng }, pitch: 0, heading: 0 },
                     { duration: 400 }
@@ -3805,7 +2983,7 @@ export default function MapScreen() {
             }
           );
         } catch (watchError) {
-          console.log("📍 Could not watch position, using static location:", watchError);
+          console.log("Could not watch position, using static location:", watchError);
         }
 
         // Watch heading updates
@@ -3815,10 +2993,10 @@ export default function MapScreen() {
             setHeadingDeg(deg);
           });
         } catch (headingError) {
-          console.log("📍 Could not watch heading:", headingError);
+          console.log("Could not watch heading:", headingError);
         }
       } catch (error) {
-        console.error("📍 Location setup error:", error);
+        console.error("Location setup error:", error);
         // Final fallback
         const fallback = { lat: FALLBACK.lat, lng: FALLBACK.lng, acc: 100 };
         setPos(fallback);
@@ -3855,12 +3033,12 @@ export default function MapScreen() {
   }, [pos, fabRotation]);
 
   
-  // 🔥 Auto-refresh live users every 30 seconds
+  // Auto-refresh live users every 30 seconds
   useEffect(() => {
     if (!currentUserId || !pos) return;
     
     const refreshInterval = setInterval(() => {
-      console.log("♻️ Refreshing live users...");
+      console.log("Â¯Ã‚Â¸Ã‚Â Refreshing live users...");
       fetchUsers(0); // Pass 0 as retry count for periodic refresh
     }, 30000); // Every 30 seconds
     
@@ -3872,12 +3050,6 @@ export default function MapScreen() {
     if (!pos) return users;
     
     const filtered = users.filter(user => {
-      // MODE FILTER - ONLY show friend mode users (CRITICAL - reject dating mode)
-      if (user.mode !== 'friend') {
-        console.log(`❌ Rejected user ${user.full_name}: mode is '${user.mode}', not 'friend'`);
-        return false;
-      }
-
       
       // Age filter
       if (user.age < filters.ageMin || user.age > filters.ageMax) return false;
@@ -3898,7 +3070,7 @@ export default function MapScreen() {
     });
     
     
-    console.log(`🔍 Filter applied: ${filtered.length}/${users.length} users shown (mode: friend ONLY, age: ${filters.ageMin}-${filters.ageMax}, dist: ${filters.distanceKm}km, genders: ${filters.genders.join(',')})`);
+    console.log(`Filter applied: ${filtered.length}/${users.length} users shown (age: ${filters.ageMin}-${filters.ageMax}, dist: ${filters.distanceKm}km, genders: ${filters.genders.join(',')})`);
     return filtered;
   }, [users, filters, pos, haversineMeters]);
   
@@ -3979,7 +3151,7 @@ export default function MapScreen() {
               anchor={{ x: 0.5, y: 1 }}
               tracksViewChanges={false}
               onPress={() => {
-                console.log(`👆 Event marker pressed: "${event.event_name}", status=${event.user_application_status}, count=${event.accepted_count}`);
+                console.log(`Event marker pressed: "${event.event_name}", status=${event.user_application_status}, count=${event.accepted_count}`);
                 setSelectedEvent(event);
                 setShowEventModal(true);
               }}
@@ -4012,7 +3184,7 @@ export default function MapScreen() {
               />
               {searchQuery.length > 0 && (
                 <Pressable onPress={() => setSearchQuery("")} style={styles.clearBtn}>
-                  <Text style={styles.clearTxt}>×</Text>
+                  <Text style={styles.clearTxt}>X</Text>
                 </Pressable>
               )}
             </View>
@@ -4109,7 +3281,7 @@ export default function MapScreen() {
                       console.error("Delete error:", error);
                       Alert.alert("Error", "Failed to delete event. Please try again.");
                     } else {
-                      console.log("✅ Event deleted:", selectedEvent.id);
+                      console.log("Event deleted:", selectedEvent.id);
                       // Remove from local state immediately
                       setEvents(prev => prev.filter(e => e.id !== selectedEvent.id));
                       // Close modal
@@ -4136,10 +3308,10 @@ export default function MapScreen() {
           // user_application_status and accepted_count
           // Calling fetchEvents was causing a race condition where the async
           // fetch would overwrite the local updates before they were reflected
-          console.log("✅ Event join successful - local state updated via onEventUpdate");
+          console.log("Event join successful - local state updated via onEventUpdate");
         }}
         onEventUpdate={(updatedEvent) => {
-          console.log(`📊 onEventUpdate: "${updatedEvent.event_name}", status=${updatedEvent.user_application_status}, count=${updatedEvent.accepted_count}`);
+          console.log(`onEventUpdate: "${updatedEvent.event_name}", status=${updatedEvent.user_application_status}, count=${updatedEvent.accepted_count}`);
           // Update selectedEvent
           setSelectedEvent(updatedEvent);
           // Update the event in events array
@@ -4155,7 +3327,7 @@ export default function MapScreen() {
         onClose={() => setShowFilterModal(false)}
         filters={filters}
         onApply={(newFilters) => {
-          console.log("🎯 Applying new filters:", newFilters);
+          console.log("Applying new filters:", newFilters);
           setFilters(newFilters);
           // Trigger immediate refresh to get fresh data
           fetchUsers(0);
@@ -4730,6 +3902,46 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.bold,
     color: BLUE,
     letterSpacing: 0.3,
+  },
+  messageInputContainer: {
+    width: '100%',
+    gap: 12,
+  },
+  messageInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: 'rgba(27, 68, 205, 0.04)',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderWidth: 1.5,
+    borderColor: 'rgba(27, 68, 205, 0.12)',
+  },
+  messageInput: {
+    flex: 1,
+    fontSize: 15,
+    fontFamily: Fonts.primary,
+    color: '#0A0E1A',
+    minHeight: 60,
+    maxHeight: 100,
+    textAlignVertical: 'top',
+  },
+  messageInputActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  messageInputCancelBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: 'rgba(10, 14, 26, 0.05)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  messageInputCancelText: {
+    fontSize: 15,
+    fontFamily: Fonts.bold,
+    color: 'rgba(10, 14, 26, 0.5)',
   },
   userSheetBlindConfirm: {
     alignItems: "center",

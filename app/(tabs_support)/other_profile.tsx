@@ -46,7 +46,6 @@ interface PromptAnswer {
   answer: string;
 }
 
-// ✅ Interface for profile data to fix TypeScript errors
 interface ProfileData {
   full_name?: string | null;
   age?: number | null;
@@ -59,7 +58,106 @@ interface ProfileData {
   prompt_answers?: any[] | null;
   lat?: number | null;
   lng?: number | null;
+  looking_for?: string[] | null;
+  values?: string[] | null;
+  marital_status?: string | null;
+  vehicles?: string[] | null;
+  hometown?: string | null;
 }
+
+// ========== UNIFIED LOOKING_FOR DISPLAY MAPPING ==========
+const LOOKING_FOR_DISPLAY: Record<string, string> = {
+  // Dating focused
+  long_term_relationship: "Long-term relationship",
+  life_partner: "Life partner",
+  casual_dates: "Casual dates",
+  intimacy: "Intimacy",
+  marriage: "Marriage",
+  short_term_relationship: "Short-term relationship",
+  // Friends focused
+  new_friends: "New friends",
+  close_friendships: "Close friendships",
+  casual_hangouts: "Casual hangouts",
+  professional_networking: "Professional networking",
+  workout_fitness_buddy: "Workout/fitness buddy",
+  travel_companions: "Travel companions",
+  activity_hobby_partners: "Activity/hobby partners",
+  // Events & Activities
+  event_buddies: "Event buddies",
+  group_activities: "Group activities",
+  local_exploration: "Local exploration",
+  adventure_partners: "Adventure partners",
+  cultural_events: "Cultural events",
+  sports_events: "Sports events",
+  food_and_drinks: "Food & drinks",
+  nightlife_partners: "Nightlife partners",
+  outdoor_activities: "Outdoor activities",
+  learning_together: "Learning together",
+  // Neutral
+  figuring_it_out: "Figuring it out",
+};
+
+// ========== UNIFIED VALUES DISPLAY MAPPING ==========
+const VALUES_DISPLAY: Record<string, string> = {
+  // Relationship focused
+  honesty: "Honesty",
+  kindness: "Kindness",
+  sense_of_humor: "Sense of humor",
+  good_communication: "Good communication",
+  ambition: "Ambition",
+  loyalty: "Loyalty",
+  emotional_intelligence: "Emotional intelligence",
+  adventurous_spirit: "Adventurous spirit",
+  intelligence: "Intelligence",
+  affectionate: "Affectionate",
+  family_oriented: "Family oriented",
+  open_mindedness: "Open-mindedness",
+  active_lifestyle: "Active lifestyle",
+  romantic: "Romantic",
+  confidence: "Confidence",
+  financial_stability: "Financial stability",
+  // Friendship focused
+  trustworthy: "Trustworthy",
+  good_listener: "Good listener",
+  supportive: "Supportive",
+  non_judgmental: "Non-judgmental",
+  reliable: "Reliable",
+  fun_to_be_around: "Fun to be around",
+  authenticity: "Authenticity",
+  similar_values: "Similar values",
+  shared_interests: "Shared interests",
+  understanding: "Understanding",
+  deep_conversations: "Deep conversations",
+  positive_energy: "Positive energy",
+  low_maintenance: "Low maintenance",
+  makes_time_for_me: "Makes time for me",
+  encouraging: "Encouraging",
+  respectful_of_boundaries: "Respectful of boundaries",
+  growth_minded: "Growth minded",
+};
+
+// ========== MARITAL STATUS DISPLAY MAPPING ==========
+const MARITAL_STATUS_DISPLAY: Record<string, string> = {
+  single: "Single",
+  in_relationship: "In a relationship",
+  engaged: "Engaged",
+  married: "Married",
+  divorced: "Divorced",
+  widowed: "Widowed",
+  separated: "Separated",
+  its_complicated: "It's complicated",
+};
+
+// ========== VEHICLE DISPLAY MAPPING ==========
+const VEHICLE_DISPLAY: Record<string, string> = {
+  car: "Car",
+  motorcycle: "Motorcycle",
+  bicycle: "Bicycle",
+  scooter: "Scooter",
+  boat: "Boat",
+  plane: "Plane",
+  none: "None",
+};
 
 // Utils
 const toTitleCase = (str: string | null | undefined): string =>
@@ -106,9 +204,9 @@ const signPath = async (path: string | null): Promise<string | null> => {
   return data?.signedUrl ?? null;
 };
 
-// ✅ Distance calculation helper
+// Distance calculation helper - approximated for security (same as map.tsx)
 const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): string => {
-  const R = 6371; // Earth's radius in km
+  const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLon = ((lng2 - lng1) * Math.PI) / 180;
   const a = 
@@ -117,44 +215,22 @@ const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: numbe
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   const distance = R * c;
   
-  if (distance < 1) {
-    return `${Math.round(distance * 1000)}m away`;
+  // Approximate distance for security - don't reveal exact location
+  if (distance < 0.5) {
+    return "< 1km away";
+  } else if (distance < 1) {
+    return "< 1km away";
+  } else if (distance < 5) {
+    // Round to nearest km for close distances
+    return `~${Math.round(distance)}km away`;
+  } else if (distance < 10) {
+    // Round to nearest km
+    return `~${Math.round(distance)}km away`;
+  } else {
+    // Round to nearest 5km for larger distances
+    const rounded = Math.round(distance / 5) * 5;
+    return `~${rounded}km away`;
   }
-  return `${distance.toFixed(1)}km away`;
-};
-
-// Combination display logic for FRIEND MODE "What I'm Looking For"
-const getCombinedLookingFor = (options: string[]): string => {
-  if (!options || options.length === 0) return "";
-  if (options.length === 1) return options[0];
-
-  const combinations: Record<string, string> = {
-    "Activity/hobby partners|||Casual hangouts": "Hobby partners & casual hangouts",
-    "Activity/hobby partners|||Close friendships": "Close friends for hobbies",
-    "Activity/hobby partners|||New friends nearby": "New local hobby friends",
-    "Activity/hobby partners|||Professional networking": "Networking through shared hobbies",
-    "Activity/hobby partners|||Travel companions": "Travel & hobby buddies",
-    "Activity/hobby partners|||Workout/fitness buddy": "Active hobby & workout buddies",
-    "Casual hangouts|||Close friendships": "Close friends & casual hangouts",
-    "Casual hangouts|||New friends nearby": "New friends for casual hangouts",
-    "Casual hangouts|||Professional networking": "Networking & hangouts",
-    "Casual hangouts|||Travel companions": "Travel & casual hangouts",
-    "Casual hangouts|||Workout/fitness buddy": "Workout & casual hangouts",
-    "Close friendships|||New friends nearby": "Close local friends",
-    "Close friendships|||Professional networking": "Close friends & networking",
-    "Close friendships|||Travel companions": "Close friends to travel with",
-    "Close friendships|||Workout/fitness buddy": "Close friends & workout buddies",
-    "New friends nearby|||Professional networking": "Local friends & networking",
-    "New friends nearby|||Travel companions": "Local travel buddies",
-    "New friends nearby|||Workout/fitness buddy": "Local workout friends",
-    "Professional networking|||Travel companions": "Network & travel buddies",
-    "Professional networking|||Workout/fitness buddy": "Workout & networking",
-    "Travel companions|||Workout/fitness buddy": "Active travel & workout buddies",
-  };
-
-  const sorted = [...options].map((s) => s.trim()).sort();
-  const key = sorted.join("|||");
-  return combinations[key] || sorted.join(" · ");
 };
 
 // Lifestyle icon mapping
@@ -175,6 +251,10 @@ const getLifestyleIcon = (key: string) => {
     love_language: { name: "heart-outline", library: "ionicons" },
     pets: { name: "paw-outline", library: "ionicons" },
     kids: { name: "baby-face-outline", library: "material" },
+    hometown: { name: "home-outline", library: "ionicons" },
+    marital_status: { name: "heart-circle-outline", library: "ionicons" },
+    vehicles: { name: "car-outline", library: "ionicons" },
+    languages: { name: "language-outline", library: "ionicons" },
   };
   return iconMap[key] || { name: "help-circle-outline", library: "ionicons" };
 };
@@ -285,10 +365,10 @@ export default function OtherProfileScreen() {
   const [showActionModal, setShowActionModal] = useState(false);
   const [blocking, setBlocking] = useState(false);
 
-  // ✅ Distance state
+  // Distance state
   const [distance, setDistance] = useState<string | null>(null);
 
-  // ✅ Friend request status
+  // Match/connection status
   const [matchStatus, setMatchStatus] = useState<{
     status: 'pending' | 'accepted' | 'denied' | null;
     isRequester: boolean;
@@ -300,7 +380,14 @@ export default function OtherProfileScreen() {
     fullName: string; age: number | null; bio: string | null; genderSubtype: string | null; heightCm: number | null;
     education: string | null; sexualOrientation: string | null; institution: string | null;
     promptAnswers?: PromptAnswer[] | null;
-  }>({ fullName: "", age: null, bio: null, genderSubtype: null, heightCm: null, education: null, sexualOrientation: null, institution: null, promptAnswers: null });
+    maritalStatus: string | null;
+    vehicles: string[] | null;
+    hometown: string | null;
+  }>({ 
+    fullName: "", age: null, bio: null, genderSubtype: null, heightCm: null, 
+    education: null, sexualOrientation: null, institution: null, promptAnswers: null,
+    maritalStatus: null, vehicles: null, hometown: null
+  });
 
   const [lifestyle, setLifestyle] = useState<{
     drinking: string | null; smoking: string | null; zodiac: string | null; religion: string | null; politics: string | null;
@@ -311,6 +398,7 @@ export default function OtherProfileScreen() {
   const [photos, setPhotos] = useState<{ avatar: string | null; first: string | null; second: string | null; third: string | null; }>({ avatar: null, first: null, second: null, third: null });
   const [modes, setModes] = useState<{ looking: string[]; values: string[] }>({ looking: [], values: [] });
   const [hobbies, setHobbies] = useState<string[]>([]);
+  const [languages, setLanguages] = useState<{ id: number; code: string; label: string }[]>([]);
 
   // Frames
   const [activeFrames, setActiveFrames] = useState<any[]>([]);
@@ -374,7 +462,7 @@ export default function OtherProfileScreen() {
     }
   };
 
-  // ✅ Check match status
+  // Check match status
   const checkMatchStatus = async (currentUid: string, targetUid: string) => {
     try {
       const { data } = await supabase
@@ -392,7 +480,6 @@ export default function OtherProfileScreen() {
           isRequester: data.requester_id === currentUid,
           matchId: data.id,
         });
-        console.log("✅ Match status:", data.status, "isRequester:", data.requester_id === currentUid);
       } else {
         setMatchStatus({ status: null, isRequester: false, matchId: null });
       }
@@ -401,8 +488,8 @@ export default function OtherProfileScreen() {
     }
   };
 
-  // ✅ Send friend request
-  const handleSendFriendRequest = async () => {
+  // Send connection request
+  const handleSendRequest = async () => {
     if (!currentUserId || !targetUserId || sendingRequest) return;
 
     setSendingRequest(true);
@@ -412,25 +499,22 @@ export default function OtherProfileScreen() {
         .insert({
           requester_id: currentUserId,
           target_id: targetUserId,
-          match_mode: 'friend',
-          connection_visibility: 'full_profile',
           status: 'pending',
         });
 
       if (error) {
         if (error.code === '23505') {
-          Alert.alert("Already Sent", "You've already sent a friend request to this person.");
+          Alert.alert("Already Sent", "You've already sent a request to this person.");
         } else {
           throw error;
         }
       } else {
-        Alert.alert("Success", "Friend request sent!");
-        // Refresh match status
+        Alert.alert("Success", "Request sent!");
         await checkMatchStatus(currentUserId, targetUserId);
       }
     } catch (error) {
-      console.error("Error sending friend request:", error);
-      Alert.alert("Error", "Failed to send friend request. Please try again.");
+      console.error("Error sending request:", error);
+      Alert.alert("Error", "Failed to send request. Please try again.");
     } finally {
       setSendingRequest(false);
     }
@@ -448,7 +532,7 @@ export default function OtherProfileScreen() {
       const currentUid = auth?.user?.id ?? null;
       setCurrentUserId(currentUid);
 
-      // ✅ Get current user's location
+      // Get current user's location
       let currentUserLat: number | null = null;
       let currentUserLng: number | null = null;
       if (currentUid) {
@@ -463,11 +547,10 @@ export default function OtherProfileScreen() {
         }
       }
 
-      // ✅ STEP 1: Check match status FIRST (before fetching data)
-      let isFriend = false;
+      // Check match status
+      let isConnected = false;
       if (currentUid) {
         await checkMatchStatus(currentUid, targetUserId);
-        // Check the match status we just set
         const { data: matchCheck } = await supabase
           .from('match_requests')
           .select('status')
@@ -475,78 +558,60 @@ export default function OtherProfileScreen() {
           .eq('status', 'accepted')
           .maybeSingle();
         
-        isFriend = !!matchCheck;
-        console.log(isFriend ? "✅ FRIEND - Full visibility enabled" : "⚠️ NON-FRIEND - Limited visibility");
+        isConnected = !!matchCheck;
       }
 
       // Fetch active frames
       await fetchActiveFrames(targetUserId);
 
-      // ✅ STEP 2: Fetch data based on friend status
+      // Fetch profile data with new unified fields
       let targetProfileData: ProfileData | null = null;
-      let friendMode;
 
-      if (isFriend) {
-        // ✅ FULL VISIBILITY - Fetch everything directly when friends
+      if (isConnected) {
+        // Full visibility - fetch everything directly when connected
         const { data: fullProfile } = await supabase
           .from("profiles")
-          .select("full_name, age, bio, gender_subtype, height_cm, education, sexual_orientation, institution, prompt_answers, lat, lng")
+          .select("full_name, age, bio, gender_subtype, height_cm, education, sexual_orientation, institution, prompt_answers, lat, lng, looking_for, values, marital_status, vehicles, hometown")
           .eq("id", targetUserId)
           .single();
         
         targetProfileData = fullProfile;
-        
-        // Get full friend mode data directly
-        const { data: fullFriendMode } = await supabase
-          .from("user_modes")
-          .select("looking_for_friend, value_friend")
-          .eq("user_id", targetUserId)
-          .eq("mode", "friend")
-          .maybeSingle();
-        
-        friendMode = fullFriendMode || {};
       } else {
-        // ✅ LIMITED VISIBILITY - Use RPC for non-friends
+        // Limited visibility - use RPC for non-connected users
         const { data: rpcProfile } = await supabase.rpc('get_matched_user_profile', { 
           target_user_id: targetUserId 
         });
         targetProfileData = (Array.isArray(rpcProfile) ? rpcProfile[0] : rpcProfile) as ProfileData;
-
-        const { data: rpcFriendMode } = await supabase.rpc('get_user_friend_mode', { 
-          target_user_id: targetUserId 
-        });
-        friendMode = Array.isArray(rpcFriendMode) ? rpcFriendMode[0] : (rpcFriendMode || {});
       }
 
       const p: ProfileData = targetProfileData || {};
-      console.log("✅ Friend mode data:", friendMode);
 
-      // ✅ Calculate distance if both coordinates exist
+      // Calculate distance if both coordinates exist
       if (currentUserLat && currentUserLng && p.lat && p.lng) {
         const dist = calculateDistance(currentUserLat, currentUserLng, p.lat, p.lng);
         setDistance(dist);
-        console.log("📍 Distance calculated:", dist);
       }
 
-      // ✅ STEP 3: Fetch additional data with appropriate visibility
-      let lifeRes, mainRes, othersRes, hobbiesRes;
+      // Fetch additional data with appropriate visibility
+      let lifeRes, mainRes, othersRes, hobbiesRes, languagesRes;
 
-      if (isFriend) {
-        // ✅ FULL VISIBILITY - Fetch all data directly
-        [lifeRes, mainRes, othersRes, hobbiesRes] = await Promise.all([
+      if (isConnected) {
+        // Full visibility
+        [lifeRes, mainRes, othersRes, hobbiesRes, languagesRes] = await Promise.all([
           supabase.from("lifestyle").select("drinking, smoking, zodiac, religion, politics, workout, communication, love_language, pets, kids, communities").eq("user_id", targetUserId).maybeSingle(),
           supabase.from("user_photos").select("photo_url").eq("user_id", targetUserId).eq("is_main", true).maybeSingle(),
           supabase.from("user_photos").select("photo_url, created_at, is_main").eq("user_id", targetUserId).neq("is_main", true).order("created_at", { ascending: true }),
           supabase.from("user_hobbies").select("hobbies_master(label)").eq("user_id", targetUserId),
+          supabase.from("user_languages").select("language_id, languages_master(id, code, label)").eq("user_id", targetUserId),
         ]);
       } else {
-        // ✅ LIMITED VISIBILITY - Use RPC or restricted queries
-        // For non-friends, we might want to limit what's shown
-        [lifeRes, mainRes, othersRes, hobbiesRes] = await Promise.all([
-          supabase.from("lifestyle").select("drinking, smoking, zodiac").eq("user_id", targetUserId).maybeSingle(), // Limited fields
+        // Limited visibility
+        [lifeRes, mainRes, othersRes, hobbiesRes, languagesRes] = await Promise.all([
+          supabase.from("lifestyle").select("drinking, smoking, zodiac").eq("user_id", targetUserId).maybeSingle(),
           supabase.from("user_photos").select("photo_url").eq("user_id", targetUserId).eq("is_main", true).maybeSingle(),
-          Promise.resolve({ data: [] }), // No additional photos for non-friends
-          supabase.from("user_hobbies").select("hobbies_master(label)").eq("user_id", targetUserId).limit(3), // Limited hobbies
+          Promise.resolve({ data: [] }),
+          supabase.from("user_hobbies").select("hobbies_master(label)").eq("user_id", targetUserId).limit(3),
+          Promise.resolve({ data: [] }),
         ]);
       }
 
@@ -569,6 +634,9 @@ export default function OtherProfileScreen() {
         sexualOrientation: p.sexual_orientation ?? null,
         institution: p.institution ?? null,
         promptAnswers: prompts,
+        maritalStatus: p.marital_status ?? null,
+        vehicles: p.vehicles ?? null,
+        hometown: p.hometown ?? null,
       });
 
       // Lifestyle
@@ -581,9 +649,9 @@ export default function OtherProfileScreen() {
 
       // Communities
       const COMMUNITY_OPTIONS = [
-        "🌿 Environmentalism", "✊ Social justice", "🏳️‍🌈 LGBTQIA+", "♀️ Feminism", "🧠 Mental health awareness",
-        "✊🏾 Black community", "🧧 Asian community", "🪅 Latino/Hispanic community", "✡️ Jewish community",
-        "☪️ Muslim community", "♿ Disability awareness", "💖 Body positivity", "🐾 Animal rights", "🌍 Climate action",
+        "ðŸŒ¿ Environmentalism", "âœŠ Social justice", "ðŸ³ï¸â€ðŸŒˆ LGBTQIA+", "â™€ï¸ Feminism", "ðŸ§  Mental health awareness",
+        "âœŠðŸ¾ Black community", "ðŸ§§ Asian community", "ðŸª… Latino/Hispanic community", "âœ¡ï¸ Jewish community",
+        "â˜ªï¸ Muslim community", "â™¿ Disability awareness", "ðŸ’– Body positivity", "ðŸ¾ Animal rights", "ðŸŒ Climate action",
       ];
       const stripEmoji = (s: string) => s.replace(/^[^\w\s]+\s*/, '').trim();
       const normalizeLabel = (s: string) => stripEmoji(s).toLowerCase().trim();
@@ -614,52 +682,30 @@ export default function OtherProfileScreen() {
         third: thirdSigned ?? third?.photo_url ?? null,
       });
 
-      // ✅ Process friend mode data
-      const LOOKING_FOR_FRIEND_DISPLAY: Record<string, string> = {
-        new_friends_nearby: "New friends nearby",
-        workout_fitness_buddy: "Workout/fitness buddy",
-        travel_companions: "Travel companions",
-        activity_hobby_partners: "Activity/hobby partners",
-        casual_hangouts: "Casual hangouts",
-        professional_networking: "Professional networking",
-        close_friendships: "Close friendships",
-      };
-
-      const lookingForEnums: string[] = Array.isArray(friendMode.looking_for_friend)
-        ? friendMode.looking_for_friend
-        : [];
+      // Process unified looking_for and values from profiles
+      const lookingForEnums: string[] = Array.isArray(p.looking_for) ? p.looking_for : [];
+      const valuesEnums: string[] = Array.isArray(p.values) ? p.values : [];
 
       const lookingForDisplay = lookingForEnums
-        .map((e) => LOOKING_FOR_FRIEND_DISPLAY[e])
+        .map((e) => LOOKING_FOR_DISPLAY[e] || humanize(e))
         .filter(Boolean);
 
-      let combinedLooking = "";
-      if (lookingForDisplay.length === 1) {
-        combinedLooking = lookingForDisplay[0];
-      } else if (lookingForDisplay.length === 2) {
-        combinedLooking = getCombinedLookingFor(lookingForDisplay);
-      } else if (lookingForDisplay.length > 2) {
-        combinedLooking = getCombinedLookingFor(lookingForDisplay.slice(0, 2));
-      }
-
-      const parseListHelper = (raw: any): string[] => {
-        const list = Array.isArray(raw)
-          ? raw.map((s) => humanize(String(s)))
-          : typeof raw === "string"
-          ? raw.split(/[,/&]| and /i).map((s: string) => humanize(s.trim()))
-          : [];
-        return Array.from(new Set(list.filter(Boolean)));
-      };
+      const valuesDisplay = valuesEnums
+        .map((e) => VALUES_DISPLAY[e] || humanize(e))
+        .filter(Boolean);
 
       setModes({
-        looking: combinedLooking ? [combinedLooking] : [],
-        values: parseListHelper(friendMode.value_friend),
+        looking: lookingForDisplay,
+        values: valuesDisplay,
       });
 
-      console.log("✅ Set modes:", {
-        looking: combinedLooking ? [combinedLooking] : [],
-        values: parseListHelper(friendMode.value_friend),
-      });
+      // Languages
+      const langData = (languagesRes as any)?.data || [];
+      const userLanguages = langData
+        .map((item: any) => item?.languages_master)
+        .filter(Boolean)
+        .map((lang: any) => ({ id: lang.id, code: lang.code, label: lang.label }));
+      setLanguages(userLanguages);
 
       // Hobbies
       const hs = (hobbiesRes as any)?.data || [];
@@ -781,7 +827,7 @@ export default function OtherProfileScreen() {
   const displayName = useMemo(() => toTitleCase(profile.fullName) || "User", [profile.fullName]);
   const nameSize = useMemo(() => getNameFontSize(displayName.length), [displayName]);
 
-  // Lifestyle table logic - only show items that have values (no mandatory for other users)
+  // Lifestyle table logic
   const horizontalItems = useMemo(() => ([
     { key: "gender_subtype", value: profile.genderSubtype },
     { key: "height", value: profile.heightCm ? `${profile.heightCm} cm` : null },
@@ -796,6 +842,7 @@ export default function OtherProfileScreen() {
   const verticalItems = useMemo(() => ([
     { key: "sexual_orientation", value: profile.sexualOrientation },
     { key: "institution", value: profile.institution },
+    { key: "hometown", value: profile.hometown },
     { key: "workout", value: lifestyle.workout },
     { key: "communication", value: lifestyle.communication },
     { key: "love_language", value: lifestyle.love_language },
@@ -907,11 +954,18 @@ export default function OtherProfileScreen() {
               )}
             </View>
 
-            {/* Friend Status or Add Friend Button */}
+            {/* Distance indicator */}
+            {distance && (
+              <View style={styles.distanceRow}>
+                <Ionicons name="location-outline" size={14} color="rgba(10,14,26,0.5)" />
+                <Text style={styles.distanceText}>{distance}</Text>
+              </View>
+            )}
+
+            {/* Connection Actions */}
             {matchStatus.status === 'accepted' ? (
-              <View style={styles.friendBadge}>
-                <Ionicons name="checkmark-circle" size={16} color="#22C55E" style={{ marginRight: scale(6) }} />
-                <Text style={styles.friendBadgeText}>Friend</Text>
+              <View style={styles.connectedBadge}>
+                <Text style={styles.connectedBadgeText}>Connected</Text>
               </View>
             ) : matchStatus.status === 'pending' ? (
               matchStatus.isRequester ? (
@@ -926,7 +980,7 @@ export default function OtherProfileScreen() {
                     if (!matchStatus.matchId) return;
                     try {
                       await supabase.from('match_requests').update({ status: 'accepted' }).eq('id', matchStatus.matchId);
-                      Alert.alert("Success", "Friend request accepted!");
+                      Alert.alert("Success", "Request accepted!");
                       if (currentUserId) await checkMatchStatus(currentUserId, targetUserId);
                     } catch (error) {
                       Alert.alert("Error", "Failed to accept request");
@@ -948,16 +1002,16 @@ export default function OtherProfileScreen() {
             ) : (
               <TouchableOpacity 
                 activeOpacity={0.85} 
-                onPress={handleSendFriendRequest}
+                onPress={handleSendRequest}
                 disabled={sendingRequest}
-                style={styles.addFriendButton}
+                style={styles.connectButton}
               >
                 {sendingRequest ? (
                   <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
                   <>
                     <Ionicons name="person-add" size={16} color="#FFFFFF" style={{ marginRight: scale(6) }} />
-                    <Text style={styles.addFriendText}>Add Friend</Text>
+                    <Text style={styles.connectButtonText}>Connect</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -996,36 +1050,45 @@ export default function OtherProfileScreen() {
           </View>
         )}
 
-        {/* What I'm Looking For - Featured */}
+        {/* What They're Looking For */}
         {modes.looking.length > 0 && (
           <View style={styles.section}>
-            <View style={styles.featuredCard}>
+            <View style={styles.glassCard}>
               <LinearGradient
                 colors={["#FFFFFF", "#F8FAFF"]}
                 style={StyleSheet.absoluteFillObject}
               />
-              <View style={styles.featuredAccent} />
-              <View style={styles.featuredContent}>
-                <View style={styles.featuredLabel}>
-                  <Ionicons
-                    name="people-outline"
-                    size={16}
-                    color={BLUE}
-                    style={{ marginRight: scale(6) }}
-                  />
-                  <Text style={styles.featuredLabelText}>What They're Looking For</Text>
+              <View style={styles.cardHeader}>
+                <Ionicons name="search-outline" size={22} color={BLUE} style={styles.cardIcon} />
+                <Text style={styles.cardTitle}>What They're Looking For</Text>
+              </View>
+              <View style={styles.cardContent}>
+                <View style={styles.chipsGrid}>
+                  {modes.looking.map((tag, i) => (
+                    <View key={`looking-${i}`} style={styles.customChip}>
+                      <Text style={styles.chipLabel}>{tag}</Text>
+                    </View>
+                  ))}
                 </View>
-                <View style={styles.featuredChipWrapper}>
-                  <View style={styles.featuredChip}>
-                    <Ionicons
-                      name="people"
-                      size={20}
-                      color="rgba(255,255,255,0.9)"
-                      style={{ marginLeft: scale(10), marginRight: scale(10) }}
-                    />
-                    <Text style={styles.featuredChipText}>{modes.looking[0]}</Text>
-                  </View>
-                </View>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Marital Status */}
+        {profile.maritalStatus && (
+          <View style={styles.section}>
+            <View style={styles.statusCard}>
+              <LinearGradient
+                colors={["#FFFFFF", "#F8FAFF"]}
+                style={StyleSheet.absoluteFillObject}
+              />
+              <View style={styles.statusContent}>
+                <Ionicons name="heart-circle-outline" size={20} color={BLUE} style={{ marginRight: scale(8) }} />
+                <Text style={styles.statusLabel}>Relationship Status:</Text>
+                <Text style={styles.statusValue}>
+                  {MARITAL_STATUS_DISPLAY[profile.maritalStatus] || humanize(profile.maritalStatus)}
+                </Text>
               </View>
             </View>
           </View>
@@ -1041,7 +1104,7 @@ export default function OtherProfileScreen() {
           </View>
         )}
 
-        {/* Values in a Friend */}
+        {/* What They Value */}
         {modes.values.length > 0 && (
           <View style={styles.section}>
             <View style={styles.glassCard}>
@@ -1051,7 +1114,7 @@ export default function OtherProfileScreen() {
               />
               <View style={styles.cardHeader}>
                 <Ionicons name="sparkles-outline" size={22} color={BLUE} style={styles.cardIcon} />
-                <Text style={styles.cardTitle}>Values in a Friend</Text>
+                <Text style={styles.cardTitle}>What They Value</Text>
               </View>
               <View style={styles.cardContent}>
                 <View style={styles.chipsGrid}>
@@ -1244,6 +1307,56 @@ export default function OtherProfileScreen() {
           </View>
         )}
 
+        {/* Languages */}
+        {!!languages.length && (
+          <View style={styles.section}>
+            <View style={styles.glassCard}>
+              <LinearGradient
+                colors={["#FFFFFF", "#F8FAFF"]}
+                style={StyleSheet.absoluteFillObject}
+              />
+              <View style={styles.cardHeader}>
+                <Ionicons name="language-outline" size={22} color={BLUE} style={styles.cardIcon} />
+                <Text style={styles.cardTitle}>Languages</Text>
+              </View>
+              <View style={styles.cardContent}>
+                <View style={styles.chipsGrid}>
+                  {languages.map((lang, i) => (
+                    <View key={`lang-${i}`} style={styles.customChip}>
+                      <Text style={styles.chipLabel}>{lang.label}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Vehicles */}
+        {!!(profile.vehicles && profile.vehicles.length > 0 && profile.vehicles[0] !== 'none') && (
+          <View style={styles.section}>
+            <View style={styles.glassCard}>
+              <LinearGradient
+                colors={["#FFFFFF", "#F8FAFF"]}
+                style={StyleSheet.absoluteFillObject}
+              />
+              <View style={styles.cardHeader}>
+                <Ionicons name="car-outline" size={22} color={BLUE} style={styles.cardIcon} />
+                <Text style={styles.cardTitle}>Vehicles</Text>
+              </View>
+              <View style={styles.cardContent}>
+                <View style={styles.chipsGrid}>
+                  {profile.vehicles?.filter(v => v !== 'none').map((vehicle, i) => (
+                    <View key={`vehicle-${i}`} style={styles.customChip}>
+                      <Text style={styles.chipLabel}>{VEHICLE_DISPLAY[vehicle] || humanize(vehicle)}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            </View>
+          </View>
+        )}
+
         {/* Communities */}
         {communities.length > 0 && (
           <View style={styles.section}>
@@ -1254,7 +1367,7 @@ export default function OtherProfileScreen() {
               />
               <View style={styles.cardHeader}>
                 <MaterialCommunityIcons name="account-group-outline" size={22} color={BLUE} style={styles.cardIcon} />
-                <Text style={styles.cardTitle}>Communities I Support</Text>
+                <Text style={styles.cardTitle}>Communities They Support</Text>
               </View>
               <View style={styles.cardContent}>
                 <View style={styles.chipsGrid}>
@@ -1285,7 +1398,7 @@ export default function OtherProfileScreen() {
             onPress={() => setModalVisible(false)} 
             activeOpacity={0.8}
           >
-            <Text style={styles.closeButtonText}>✕</Text>
+            <Text style={styles.closeButtonText}>âœ•</Text>
           </TouchableOpacity>
           {!!selectedModalUri && (
             <Image 
@@ -1386,162 +1499,158 @@ const styles = StyleSheet.create({
     width: AVATAR_SIZE, 
     height: AVATAR_SIZE, 
     borderRadius: AVATAR_SIZE / 2, 
-    borderWidth: scale(2), 
-    borderColor: "#E0E0E0", 
+    backgroundColor: "#E8F0FF", 
     alignItems: "center", 
-    justifyContent: "center", 
-    marginRight: scale(16),
+    justifyContent: "center",
+    position: "relative",
   },
-  avatarRingActive: { 
-    borderWidth: 0,
+  avatarRingActive: {
+    padding: scale(3),
   },
   avatarGradient: {
-    position: "absolute",
-    width: "100%",
-    height: "100%",
+    ...StyleSheet.absoluteFillObject,
     borderRadius: AVATAR_SIZE / 2,
   },
-  avatarInner: { 
-    width: AVATAR_SIZE - scale(10), 
-    height: AVATAR_SIZE - scale(10), 
-    borderRadius: (AVATAR_SIZE - scale(10)) / 2, 
-    borderWidth: scale(2), 
-    borderColor: "#FFFFFF", 
-    alignItems: "center", 
-    justifyContent: "center", 
+  avatarInner: {
+    width: AVATAR_SIZE - scale(6),
+    height: AVATAR_SIZE - scale(6),
+    borderRadius: (AVATAR_SIZE - scale(6)) / 2,
+    overflow: "hidden",
     backgroundColor: "#FFFFFF",
   },
   avatar: { 
-    width: AVATAR_SIZE - scale(18), 
-    height: AVATAR_SIZE - scale(18), 
-    borderRadius: (AVATAR_SIZE - scale(18)) / 2 
+    width: "100%", 
+    height: "100%", 
+    borderRadius: (AVATAR_SIZE - scale(6)) / 2,
   },
   avatarPlaceholder: { 
-    backgroundColor: "#E8EFF7", 
     alignItems: "center", 
-    justifyContent: "center" 
+    justifyContent: "center", 
+    backgroundColor: "#E8F0FF" 
   },
   avatarPlaceholderText: { 
-    color: INK, 
+    fontFamily: Fonts.primary, 
     fontSize: scale(12), 
-    fontFamily: Fonts.primary 
+    color: "rgba(10,14,26,0.4)" 
   },
   nameContainer: { 
     flex: 1, 
-    justifyContent: "center" 
+    marginLeft: scale(16) 
   },
   nameRow: { 
     flexDirection: "row", 
-    alignItems: "baseline"
+    alignItems: "baseline", 
+    flexWrap: "wrap" 
   },
   nameText: { 
-    color: INK, 
     fontFamily: Fonts.bold, 
-    letterSpacing: 0.3 
+    color: INK, 
+    letterSpacing: 0.2 
   },
   ageText: { 
-    color: BLUE, 
-    fontFamily: Fonts.bold, 
-    letterSpacing: 0.3 
+    fontFamily: Fonts.primary, 
+    color: "rgba(10,14,26,0.6)" 
   },
-  // Friend Status Badge Styles
-  friendBadge: {
+  distanceRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: verticalScale(8),
-    backgroundColor: "rgba(34,197,94,0.1)",
-    paddingHorizontal: scale(12),
-    paddingVertical: verticalScale(6),
+    marginTop: verticalScale(4),
+    gap: scale(4),
+  },
+  distanceText: {
+    fontFamily: Fonts.primary,
+    fontSize: scale(13),
+    color: "rgba(10,14,26,0.5)",
+  },
+  connectedBadge: {
+    backgroundColor: "rgba(34, 197, 94, 0.1)",
     borderRadius: scale(16),
+    paddingVertical: verticalScale(6),
+    paddingHorizontal: scale(12),
+    marginTop: verticalScale(8),
     alignSelf: "flex-start",
     borderWidth: 1,
-    borderColor: "rgba(34,197,94,0.2)",
+    borderColor: "rgba(34, 197, 94, 0.2)",
   },
-  friendBadgeText: {
+  connectedBadgeText: {
     fontFamily: Fonts.bold,
     fontSize: scale(13),
     color: "#22C55E",
-    letterSpacing: 0.2,
   },
   pendingBadge: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: verticalScale(8),
-    backgroundColor: "rgba(245,158,11,0.1)",
-    paddingHorizontal: scale(12),
-    paddingVertical: verticalScale(6),
+    backgroundColor: "rgba(245, 158, 11, 0.1)",
     borderRadius: scale(16),
+    paddingVertical: verticalScale(6),
+    paddingHorizontal: scale(12),
+    marginTop: verticalScale(8),
     alignSelf: "flex-start",
     borderWidth: 1,
-    borderColor: "rgba(245,158,11,0.2)",
+    borderColor: "rgba(245, 158, 11, 0.2)",
   },
   pendingBadgeText: {
     fontFamily: Fonts.bold,
     fontSize: scale(13),
     color: "#F59E0B",
-    letterSpacing: 0.2,
   },
-  addFriendButton: {
+  acceptButton: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    backgroundColor: "#22C55E",
+    borderRadius: scale(20),
+    paddingVertical: verticalScale(8),
+    paddingHorizontal: scale(14),
     marginTop: verticalScale(8),
     alignSelf: "flex-start",
+  },
+  acceptButtonText: {
+    fontFamily: Fonts.bold,
+    fontSize: scale(13),
+    color: "#FFFFFF",
+  },
+  connectButton: {
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: BLUE,
-    paddingHorizontal: scale(16),
-    paddingVertical: verticalScale(8),
     borderRadius: scale(20),
+    paddingVertical: verticalScale(8),
+    paddingHorizontal: scale(14),
+    marginTop: verticalScale(8),
+    alignSelf: "flex-start",
     shadowColor: BLUE,
     shadowOpacity: 0.25,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 3 },
     elevation: 4,
   },
-  addFriendText: {
+  connectButtonText: {
     fontFamily: Fonts.bold,
-    fontSize: scale(14),
+    fontSize: scale(13),
     color: "#FFFFFF",
-    letterSpacing: 0.3,
-  },
-  acceptButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: verticalScale(8),
-    alignSelf: "flex-start",
-    backgroundColor: "#22C55E",
-    paddingHorizontal: scale(16),
-    paddingVertical: verticalScale(8),
-    borderRadius: scale(20),
-    shadowColor: "#22C55E",
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 4,
-  },
-  acceptButtonText: {
-    fontFamily: Fonts.bold,
-    fontSize: scale(14),
-    color: "#FFFFFF",
-    letterSpacing: 0.3,
   },
   eventsButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: verticalScale(8),
-    paddingVertical: verticalScale(10),
-    paddingHorizontal: scale(16),
-    borderRadius: scale(12),
-    backgroundColor: "rgba(27,68,205,0.08)",
+    paddingVertical: verticalScale(8),
+    paddingHorizontal: scale(10),
+    borderRadius: scale(28),
     borderWidth: 1,
     borderColor: "rgba(27,68,205,0.15)",
+    marginTop: verticalScale(8),
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(238,244,255,0.5)",
   },
   eventsButtonText: {
     fontFamily: Fonts.bold,
-    fontSize: scale(14),
+    fontSize: scale(13),
     color: BLUE,
     flex: 1,
+  },
+  section: { 
+    paddingHorizontal: scale(20), 
+    marginTop: verticalScale(16) 
   },
   bioSection: { 
     paddingHorizontal: scale(20), 
@@ -1574,39 +1683,6 @@ const styles = StyleSheet.create({
     lineHeight: verticalScale(22),
     fontWeight: "500",
   },
-  section: { 
-    paddingHorizontal: scale(20), 
-    marginTop: verticalScale(16) 
-  },
-  photoContainer: { 
-    paddingHorizontal: scale(20), 
-    marginTop: verticalScale(16) 
-  },
-  photoFrame: { 
-    borderRadius: scale(16), 
-    overflow: "hidden",
-    aspectRatio: 0.8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 4,
-    borderWidth: 1,
-    borderColor: "rgba(27,68,205,0.12)",
-  },
-  photoInner: { 
-    flex: 1, 
-    margin: scale(8), 
-    borderRadius: scale(12), 
-    overflow: "hidden",
-    backgroundColor: "#FFFFFF",
-  },
-  photoImage: { 
-    width: "100%", 
-    height: "100%" 
-  },
-  
-  // Glass card styles
   glassCard: {
     borderRadius: scale(20),
     overflow: "hidden",
@@ -1661,72 +1737,61 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     letterSpacing: 0.2,
   },
-
-  // Featured Card
-  featuredCard: {
-    borderRadius: scale(20),
+  photoContainer: { 
+    paddingHorizontal: scale(20), 
+    marginTop: verticalScale(16) 
+  },
+  photoFrame: {
+    borderRadius: scale(16),
+    overflow: "hidden",
+    aspectRatio: 0.8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: "rgba(27,68,205,0.12)",
+  },
+  photoInner: {
+    flex: 1,
+    margin: scale(8),
+    borderRadius: scale(12),
+    overflow: "hidden",
+    backgroundColor: "#FFFFFF",
+  },
+  photoImage: { 
+    width: "100%", 
+    height: "100%" 
+  },
+  statusCard: {
+    borderRadius: scale(16),
     overflow: "hidden",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
     borderWidth: 1,
-    borderColor: "rgba(27,68,205,0.15)",
-    marginBottom: verticalScale(8),
+    borderColor: "rgba(27,68,205,0.08)",
   },
-  featuredAccent: {
-    position: "absolute",
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: scale(4),
-    backgroundColor: BLUE,
-  },
-  featuredContent: {
-    paddingHorizontal: scale(20),
+  statusContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: scale(16),
     paddingVertical: verticalScale(14),
   },
-  featuredLabel: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: verticalScale(14),
-  },
-  featuredLabelText: {
-    fontSize: scale(12),
-    fontFamily: Fonts.bold,
-    color: BLUE,
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
-  },
-  featuredChipWrapper: {
-    alignItems: "center",
-  },
-  featuredChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: BLUE,
-    borderRadius: scale(28),
-    paddingVertical: verticalScale(10),
-    paddingHorizontal: scale(20),
-    minWidth: "80%",
-    shadowColor: BLUE,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  featuredChipText: {
+  statusLabel: {
+    fontFamily: Fonts.primary,
     fontSize: scale(14),
-    fontFamily: Fonts.bold,
-    color: "#FFFFFF",
-    letterSpacing: 0.3,
-    textAlign: "center",
+    color: "rgba(10,14,26,0.6)",
+    marginRight: scale(6),
   },
-
-  // Lifestyle table
+  statusValue: {
+    fontFamily: Fonts.bold,
+    fontSize: scale(14),
+    color: INK,
+  },
   lifestyleCard: {
     borderRadius: scale(20),
     overflow: "hidden",
@@ -1800,8 +1865,6 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(27,68,205,0.15)", 
     marginLeft: scale(48),
   },
-
-  // Prompts carousel
   promptPill: {
     backgroundColor: "rgba(27,68,205,0.08)",
     paddingHorizontal: scale(16),
@@ -1875,8 +1938,6 @@ const styles = StyleSheet.create({
     borderRadius: scale(5),
     backgroundColor: BLUE,
   },
-
-  // Modal styles
   modalBackdrop: { 
     flex: 1, 
     backgroundColor: "rgba(0,0,0,0.9)", 
@@ -1904,8 +1965,6 @@ const styles = StyleSheet.create({
     color: "#FFFFFF", 
     fontWeight: "300" 
   },
-
-  // Bottom Sheet
   sheetBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",

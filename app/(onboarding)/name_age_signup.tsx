@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { moderateScale, scale, verticalScale } from "@/utils/responsive";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   Alert,
   Keyboard,
@@ -135,7 +135,7 @@ export default function NameAgeSignup() {
           >
             <View style={styles.contentWrapper}>
               <Text style={styles.title}>
-                Let’s start with{"\n"}these simple questions
+                Let's start with{"\n"}these simple questions
               </Text>
 
               {/* First Name */}

@@ -1,23 +1,25 @@
+// app/(onboarding)/(common)/languages_signup.tsx
 import { Fonts } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
 import { moderateScale, scale, verticalScale } from "@/utils/responsive";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Alert,
-  Animated,
-  LayoutAnimation,
-  Platform,
-  Pressable,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TextInput,
-  UIManager,
-  View,
+    ActivityIndicator,
+    Alert,
+    Animated,
+    LayoutAnimation,
+    Platform,
+    Pressable,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TextInput,
+    UIManager,
+    View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -28,33 +30,17 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
 const BG = "#EAF1F8";
 const INK = "#000910";
 const BLUE = "#1B44CD";
-const INK_SOFT = "#1B2B44";
 
-// ==========================================
-// COMMUNITY OPTIONS
-// ==========================================
-const OPTIONS = [
-  "🌿 Environmentalism",
-  "✊ Social justice",
-  "🏳️‍🌈 LGBTQIA+",
-  "♀️ Feminism",
-  "🧠 Mental health awareness",
-  "✊🏾 Black community",
-  "🧧 Asian community",
-  "🪅 Latino/Hispanic community",
-  "✡️ Jewish community",
-  "☪️ Muslim community",
-  "♿ Disability awareness",
-  "💖 Body positivity",
-  "🐾 Animal rights",
-  "🌍 Climate action",
-  "✨ Other",
-];
+type Language = {
+  id: number;
+  code: string;
+  label: string;
+};
 
 // ==========================================
 // CHIP COMPONENT
 // ==========================================
-const OptionChip = React.memo(
+const LanguageChip = React.memo(
   ({
     label,
     selected,
@@ -99,25 +85,45 @@ const OptionChip = React.memo(
 // ==========================================
 // MAIN COMPONENT
 // ==========================================
-export default function CommunitiesSignup() {
-  const [selected, setSelected] = useState<string[]>([]);
-  const [otherText, setOtherText] = useState("");
+export default function LanguagesSignup() {
+  const [languages, setLanguages] = useState<Language[]>([]);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
 
-  const toggleOption = useCallback((option: string) => {
+  // Fetch languages from languages_master table
+  useEffect(() => {
+    const fetchLanguages = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("languages_master")
+          .select("id, code, label")
+          .order("label");
+
+        if (error) throw error;
+        setLanguages(data || []);
+      } catch (e: any) {
+        console.error("Error fetching languages:", e);
+        Alert.alert("Error", "Failed to load languages");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLanguages();
+  }, []);
+
+  const toggleLanguage = useCallback((id: number) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setSelected((prev) => {
-      const has = prev.includes(option);
-
-      // Deselect
-      if (has) return prev.filter((x) => x !== option);
-
-      // Prevent selecting more than 4
-      if (prev.length >= 4) {
-        Alert.alert("Limit reached", "You can select up to 4 communities.");
+    setSelectedIds((prev) => {
+      if (prev.includes(id)) {
+        return prev.filter((x) => x !== id);
+      }
+      if (prev.length >= 10) {
+        Alert.alert("Limit reached", "You can select up to 10 languages.");
         return prev;
       }
-
-      return [...prev, option];
+      return [...prev, id];
     });
   }, []);
 
@@ -126,26 +132,36 @@ export default function CommunitiesSignup() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) throw new Error("No active session");
 
-      const finalSelections = selected.includes("✨ Other")
-        ? [...selected.filter((x) => x !== "✨ Other"), otherText.trim() || "Other"]
-        : selected;
+      // Delete existing user languages first
+      await supabase
+        .from("user_languages")
+        .delete()
+        .eq("user_id", session.user.id);
 
-      const payload = {
-        user_id: session.user.id,
-        communities: finalSelections.length > 0 ? finalSelections : null,
-      };
+      // Insert new selections if any
+      if (selectedIds.length > 0) {
+        const inserts = selectedIds.map((langId) => ({
+          user_id: session.user.id,
+          language_id: langId,
+        }));
 
-      const { error } = await supabase
-      .from("lifestyle")
-      .upsert(payload, { onConflict: "user_id" });
-    if (error) throw error;
+        const { error } = await supabase
+          .from("user_languages")
+          .insert(inserts);
 
+        if (error) throw error;
+      }
 
-      router.push("/(onboarding)/maritial_status_signup");
+      router.push("/(onboarding)/vehicles_signup");
     } catch (e: any) {
       Alert.alert("Error", e.message);
     }
   };
+
+  // Filter languages based on search
+  const filteredLanguages = languages.filter((lang) =>
+    lang.label.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   // ==========================================
   // RENDER
@@ -179,32 +195,60 @@ export default function CommunitiesSignup() {
           paddingBottom: verticalScale(110),
           paddingTop: verticalScale(35),
         }}
+        keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.title}>Pick the communities you support.</Text>
+        <Text style={styles.title}>What languages do you speak?</Text>
         <Text style={styles.subtitle}>
-          Select all that apply – this helps you connect with like-minded people.
+          Select all that apply — this helps you connect with people who speak your language.
         </Text>
 
-        <View style={styles.optionGroup}>
-          {OPTIONS.map((opt) => (
-            <React.Fragment key={opt}>
-              <OptionChip
-                label={opt}
-                selected={selected.includes(opt)}
-                onPress={() => toggleOption(opt)}
-              />
-              {opt === "✨ Other" && selected.includes("✨ Other") && (
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="Type your community..."
-                  placeholderTextColor="#7A838E"
-                  value={otherText}
-                  onChangeText={setOtherText}
-                />
-              )}
-            </React.Fragment>
-          ))}
+        {/* Selected Count */}
+        {selectedIds.length > 0 && (
+          <View style={styles.countBadge}>
+            <Ionicons name="language" size={moderateScale(16)} color={BLUE} />
+            <Text style={styles.countText}>{selectedIds.length} selected</Text>
+          </View>
+        )}
+
+        {/* Search Input */}
+        <View style={styles.searchContainer}>
+          <Ionicons name="search" size={moderateScale(20)} color="#7A838E" />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search languages..."
+            placeholderTextColor="#7A838E"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          {searchQuery.length > 0 && (
+            <Pressable onPress={() => setSearchQuery("")}>
+              <Ionicons name="close-circle" size={moderateScale(20)} color="#7A838E" />
+            </Pressable>
+          )}
         </View>
+
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={BLUE} />
+            <Text style={styles.loadingText}>Loading languages...</Text>
+          </View>
+        ) : (
+          <View style={styles.optionGroup}>
+            {filteredLanguages.map((lang) => (
+              <LanguageChip
+                key={lang.id}
+                label={lang.label}
+                selected={selectedIds.includes(lang.id)}
+                onPress={() => toggleLanguage(lang.id)}
+              />
+            ))}
+            {filteredLanguages.length === 0 && (
+              <Text style={styles.noResultsText}>No languages found</Text>
+            )}
+          </View>
+        )}
       </ScrollView>
 
       {/* Next Button */}
@@ -221,7 +265,6 @@ export default function CommunitiesSignup() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BG },
 
-  // Match distancepref_signup positions
   backButton: {
     position: "absolute",
     top: verticalScale(58),
@@ -258,7 +301,7 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: verticalScale(6),
-    width: "76.44%",
+    width: "86%", // Incrementing from hometown
     backgroundColor: BLUE,
     borderRadius: scale(3),
   },
@@ -275,7 +318,54 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(17),
     lineHeight: verticalScale(26),
     color: BLUE,
-    marginBottom: verticalScale(20),
+    marginBottom: verticalScale(16),
+  },
+
+  countBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: scale(6),
+    backgroundColor: "#E4ECFF",
+    paddingHorizontal: scale(12),
+    paddingVertical: verticalScale(6),
+    borderRadius: scale(20),
+    marginBottom: verticalScale(12),
+  },
+  countText: {
+    fontFamily: Fonts.bold,
+    fontSize: moderateScale(14),
+    color: BLUE,
+  },
+
+  searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: scale(12),
+    paddingHorizontal: scale(14),
+    paddingVertical: verticalScale(10),
+    marginBottom: verticalScale(16),
+    borderWidth: 1,
+    borderColor: "#D4DAE1",
+    gap: scale(10),
+  },
+  searchInput: {
+    flex: 1,
+    fontFamily: Fonts.bold,
+    fontSize: moderateScale(15),
+    color: INK,
+  },
+
+  loadingContainer: {
+    alignItems: "center",
+    paddingVertical: verticalScale(40),
+  },
+  loadingText: {
+    fontFamily: Fonts.bold,
+    fontSize: moderateScale(15),
+    color: "#7A838E",
+    marginTop: verticalScale(12),
   },
 
   optionGroup: {
@@ -292,32 +382,29 @@ const styles = StyleSheet.create({
   },
   optionChip: {
     paddingVertical: verticalScale(10),
-    paddingHorizontal: scale(20),
+    paddingHorizontal: scale(18),
     borderRadius: scale(30),
-    minWidth: scale(120),
+    minWidth: scale(100),
     alignItems: "center",
     justifyContent: "center",
   },
   optionText: {
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(15),
+    fontSize: moderateScale(14),
     color: "#1B2B44",
     textAlign: "center",
   },
   optionTextSelected: { color: "#FFFFFF" },
-  textInput: {
-    width: "100%",
-    borderColor: "#C8CDD2",
-    borderWidth: 1,
-    borderRadius: scale(12),
-    paddingVertical: verticalScale(10),
-    paddingHorizontal: scale(14),
+
+  noResultsText: {
     fontFamily: Fonts.bold,
     fontSize: moderateScale(15),
-    color: INK_SOFT,
-    marginTop: verticalScale(10),
-    backgroundColor: "#FFFFFF",
+    color: "#7A838E",
+    textAlign: "center",
+    width: "100%",
+    paddingVertical: verticalScale(20),
   },
+
   nextButton: {
     position: "absolute",
     bottom: verticalScale(40),

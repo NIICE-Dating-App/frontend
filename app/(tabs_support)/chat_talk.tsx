@@ -32,9 +32,9 @@ const BLUE = Colors.BLUE;
 const CARD_BG = "#FFFFFF";
 const BORDER = "rgba(27, 68, 205, 0.08)";
 
-// ═══════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // Types
-// ═══════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 interface Message {
   id: string;
@@ -49,21 +49,17 @@ interface ChatPartner {
   name: string;
   age: number | null;
   avatarUrl: string | null;
-  isBlind: boolean;
 }
 
 interface MatchInfo {
   id: string;
   conversationId: string;
   otherUserId: string;
-  connectionVisibility: "full_profile" | "blind";
-  matchMode: "dating" | "friend";
-  chatAllowed: boolean;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // Utilities
-// ═══════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 const toStoragePath = (urlOrPath: string | null): string | null => {
   if (!urlOrPath) return null;
@@ -83,9 +79,9 @@ const signPath = async (path: string | null): Promise<string | null> => {
   return data?.signedUrl ?? null;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // Main Component
-// ═══════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 export default function ChatTalkScreen() {
   const params = useLocalSearchParams<{ matchId?: string; conversationId?: string }>();
@@ -113,9 +109,9 @@ export default function ChatTalkScreen() {
   const flatListRef = useRef<FlatList>(null);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // ═══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // Initialize chat
-  // ═══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
   const initializeChat = useCallback(async () => {
     setLoading(true);
@@ -131,15 +127,12 @@ export default function ChatTalkScreen() {
 
       let conversationId = conversationIdParam;
       let otherUserId: string | null = null;
-      let connectionVisibility: "full_profile" | "blind" = "full_profile";
-      let matchMode: "dating" | "friend" = "dating";
-      let chatAllowed = true;
 
       // If we have a matchId, get the match request info first
       if (matchId) {
         const { data: matchData, error: matchError } = await supabase
           .from("match_requests")
-          .select("id, requester_id, target_id, connection_visibility, match_mode, chat_allowed, status")
+          .select("id, requester_id, target_id, status")
           .eq("id", matchId)
           .single();
 
@@ -157,10 +150,6 @@ export default function ChatTalkScreen() {
         otherUserId = matchData.requester_id === user.id 
           ? matchData.target_id 
           : matchData.requester_id;
-
-        connectionVisibility = matchData.connection_visibility || "full_profile";
-        matchMode = matchData.match_mode || "dating";
-        chatAllowed = matchData.chat_allowed ?? true;
 
         // Get the conversation for this match
         const { data: convData, error: convError } = await supabase
@@ -193,7 +182,7 @@ export default function ChatTalkScreen() {
         if (convData.match_request_id) {
           const { data: matchData } = await supabase
             .from("match_requests")
-            .select("id, requester_id, target_id, connection_visibility, match_mode, chat_allowed")
+            .select("id, requester_id, target_id")
             .eq("id", convData.match_request_id)
             .single();
 
@@ -201,9 +190,6 @@ export default function ChatTalkScreen() {
             otherUserId = matchData.requester_id === user.id 
               ? matchData.target_id 
               : matchData.requester_id;
-            connectionVisibility = matchData.connection_visibility || "full_profile";
-            matchMode = matchData.match_mode || "dating";
-            chatAllowed = matchData.chat_allowed ?? true;
           }
         }
 
@@ -232,78 +218,57 @@ export default function ChatTalkScreen() {
         id: matchId || "",
         conversationId,
         otherUserId: otherUserId || "",
-        connectionVisibility,
-        matchMode,
-        chatAllowed,
       });
 
-      // Get partner info based on visibility
+      // Get partner info
       if (otherUserId) {
-        const isBlind = connectionVisibility === "blind";
-        
-        if (isBlind) {
-          // For blind matches, use placeholder
-          setPartner({
-            id: otherUserId,
-            name: matchMode === "dating" ? "Mystery Date" : "Mystery Friend",
-            age: null,
-            avatarUrl: null,
-            isBlind: true,
-          });
-        } else {
-          // For full_profile, try to get actual profile using the RPC function
-          try {
-            const { data: profileData, error: profileError } = await supabase
-              .rpc("get_profile_full_for_user", { target_user: otherUserId });
+        try {
+          const { data: profileData, error: profileError } = await supabase
+            .rpc("get_profile_full_for_user", { target_user: otherUserId });
 
-            if (profileError) {
-              console.warn("Profile fetch error:", profileError);
-              // Fallback to basic info
-              setPartner({
-                id: otherUserId,
-                name: "Match",
-                age: null,
-                avatarUrl: null,
-                isBlind: false,
-              });
-            } else if (profileData && profileData.length > 0) {
-              const profile = profileData[0];
-              let avatarUrl = profile.main_photo_url;
-              
-              // Sign the URL if needed
-              if (avatarUrl) {
-                const storagePath = toStoragePath(avatarUrl);
-                if (storagePath) {
-                  avatarUrl = await signPath(storagePath);
-                }
-              }
-
-              setPartner({
-                id: otherUserId,
-                name: profile.full_name || "Match",
-                age: profile.age || null,
-                avatarUrl,
-                isBlind: false,
-              });
-            } else {
-              setPartner({
-                id: otherUserId,
-                name: "Match",
-                age: null,
-                avatarUrl: null,
-                isBlind: false,
-              });
-            }
-          } catch (err) {
-            console.error("Error fetching partner profile:", err);
+          if (profileError) {
+            console.warn("Profile fetch error:", profileError);
+            // Fallback to basic info
             setPartner({
               id: otherUserId,
               name: "Match",
               age: null,
               avatarUrl: null,
-              isBlind: false,
+            });
+          } else if (profileData && profileData.length > 0) {
+            const profile = profileData[0];
+            let avatarUrl = profile.main_photo_url;
+            
+            // Sign the URL if needed
+            if (avatarUrl) {
+              const storagePath = toStoragePath(avatarUrl);
+              if (storagePath) {
+                avatarUrl = await signPath(storagePath);
+              }
+            }
+
+            setPartner({
+              id: otherUserId,
+              name: profile.full_name || "Match",
+              age: profile.age || null,
+              avatarUrl,
+            });
+          } else {
+            setPartner({
+              id: otherUserId,
+              name: "Match",
+              age: null,
+              avatarUrl: null,
             });
           }
+        } catch (err) {
+          console.error("Error fetching partner profile:", err);
+          setPartner({
+            id: otherUserId,
+            name: "Match",
+            age: null,
+            avatarUrl: null,
+          });
         }
       }
 
@@ -318,9 +283,9 @@ export default function ChatTalkScreen() {
     }
   }, [matchId, conversationIdParam]);
 
-  // ═══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // Load messages
-  // ═══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
   const loadMessages = async (conversationId: string, userId: string) => {
     const { data, error } = await supabase
@@ -363,9 +328,9 @@ export default function ChatTalkScreen() {
     flatListRef.current?.scrollToEnd({ animated: true });
   };
 
-  // ═══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // Mark as read
-  // ═══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
   const markAsRead = async (conversationId: string, userId: string) => {
     try {
@@ -383,9 +348,9 @@ export default function ChatTalkScreen() {
     }
   };
 
-  // ═══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // Send message
-  // ═══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
   const handleSend = async () => {
     if (!inputText.trim() || !matchInfo?.conversationId || !currentUserId || sending) return;
@@ -441,9 +406,9 @@ export default function ChatTalkScreen() {
     }
   };
 
-  // ═══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // Voice message handlers
-  // ═══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
   const startRecording = async () => {
     try {
@@ -536,9 +501,9 @@ export default function ChatTalkScreen() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // ═══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // Block and Report handlers
-  // ═══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
   const handleBlock = async () => {
     if (!currentUserId || !matchInfo?.otherUserId) return;
@@ -586,9 +551,9 @@ export default function ChatTalkScreen() {
     Alert.alert("Report", "Report functionality coming soon. For urgent matters, please contact support@niice.app");
   };
 
-  // ═══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // Real-time subscription for messages
-  // ═══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
   useEffect(() => {
     if (!matchInfo?.conversationId || !currentUserId) return;
@@ -631,9 +596,9 @@ export default function ChatTalkScreen() {
     };
   }, [matchInfo?.conversationId, currentUserId]);
 
-  // ═══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // Real-time subscription for read receipts (partner's last_read_at)
-  // ═══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
   useEffect(() => {
     if (!matchInfo?.conversationId || !matchInfo?.otherUserId) return;
@@ -663,9 +628,9 @@ export default function ChatTalkScreen() {
     };
   }, [matchInfo?.conversationId, currentUserId]);
 
-  // ═══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // Effects
-  // ═══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
   useEffect(() => {
     initializeChat();
@@ -683,9 +648,9 @@ export default function ChatTalkScreen() {
     };
   }, [recording]);
 
-  // ═══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // Helpers
-  // ═══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
   const formatMessageTime = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -745,9 +710,9 @@ export default function ChatTalkScreen() {
     return groups;
   }, [messages]);
 
-  // ═══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // Render
-  // ═══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
   const handleGoBack = () => {
     if (router.canGoBack()) {
@@ -758,7 +723,7 @@ export default function ChatTalkScreen() {
   };
 
   const handleViewProfile = () => {
-    if (partner?.id && !partner.isBlind) {
+    if (partner?.id) {
       router.push({
         pathname: "/(tabs_support)/other_profile",
         params: { userId: partner.id, matchId: matchId || matchInfo?.id || "" },
@@ -809,17 +774,11 @@ export default function ChatTalkScreen() {
         <TouchableOpacity 
           style={styles.headerCenter}
           onPress={handleViewProfile}
-          disabled={partner?.isBlind}
           activeOpacity={0.8}
         >
-          <View style={[
-            styles.headerAvatar,
-            partner?.isBlind && styles.headerAvatarBlind
-          ]}>
+          <View style={styles.headerAvatar}>
             {partner?.avatarUrl ? (
               <Image source={{ uri: partner.avatarUrl }} style={styles.headerAvatarImage} />
-            ) : partner?.isBlind ? (
-              <Ionicons name="eye-off" size={18} color="#FFFFFF" />
             ) : (
               <Ionicons name="person" size={18} color={BLUE} />
             )}
@@ -828,9 +787,6 @@ export default function ChatTalkScreen() {
             <Text style={styles.headerName} numberOfLines={1}>
               {partner?.name || "Chat"}{partner?.age ? `, ${partner.age}` : ""}
             </Text>
-            {partner?.isBlind && (
-              <Text style={styles.headerBlindLabel}>Blind Match</Text>
-            )}
           </View>
         </TouchableOpacity>
 
@@ -924,94 +880,83 @@ export default function ChatTalkScreen() {
           ListEmptyComponent={
             <View style={styles.emptyMessages}>
               <Ionicons 
-                name={partner?.isBlind ? "eye-off-outline" : "chatbubble-outline"} 
+                name="chatbubble-outline" 
                 size={40} 
                 color="rgba(10,14,26,0.15)" 
               />
               <Text style={styles.emptyMessagesText}>
-                {partner?.isBlind 
-                  ? "Start chatting with your mystery match!"
-                  : "Start the conversation!"
-                }
+                Start the conversation!
               </Text>
             </View>
           }
         />
 
         {/* Input - Clean style with voice message button */}
-        {matchInfo?.chatAllowed !== false ? (
-          <View style={styles.inputContainer}>
-            {isRecording ? (
-              // Recording UI
-              <View style={styles.recordingContainer}>
-                <TouchableOpacity 
-                  style={styles.recordingCancelBtn}
-                  onPress={cancelRecording}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="close" size={20} color="#EF4444" />
-                </TouchableOpacity>
-                
-                <View style={styles.recordingInfo}>
-                  <View style={styles.recordingDot} />
-                  <Text style={styles.recordingText}>
-                    {formatRecordingDuration(recordingDuration)}
-                  </Text>
-                </View>
-
-                <TouchableOpacity 
-                  style={styles.recordingSendBtn}
-                  onPress={stopRecording}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="send" size={18} color="#FFFFFF" />
-                </TouchableOpacity>
+        <View style={styles.inputContainer}>
+          {isRecording ? (
+            // Recording UI
+            <View style={styles.recordingContainer}>
+              <TouchableOpacity 
+                style={styles.recordingCancelBtn}
+                onPress={cancelRecording}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="close" size={20} color="#EF4444" />
+              </TouchableOpacity>
+              
+              <View style={styles.recordingInfo}>
+                <View style={styles.recordingDot} />
+                <Text style={styles.recordingText}>
+                  {formatRecordingDuration(recordingDuration)}
+                </Text>
               </View>
-            ) : (
-              // Normal input UI
-              <>
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="Type a message..."
-                  placeholderTextColor="rgba(10,14,26,0.4)"
-                  value={inputText}
-                  onChangeText={setInputText}
-                  multiline
-                  maxLength={1000}
-                />
-                
-                {inputText.trim() ? (
-                  <TouchableOpacity
-                    style={styles.sendButton}
-                    onPress={handleSend}
-                    disabled={sending}
-                    activeOpacity={0.7}
-                  >
-                    {sending ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <Ionicons name="send" size={16} color="#FFFFFF" />
-                    )}
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity
-                    style={styles.voiceButton}
-                    onPress={startRecording}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="mic" size={20} color={BLUE} />
-                  </TouchableOpacity>
-                )}
-              </>
-            )}
-          </View>
-        ) : (
-          <View style={styles.chatDisabledContainer}>
-            <Text style={styles.chatDisabledText}>
-              Chat is not available for this match
-            </Text>
-          </View>
-        )}
+
+              <TouchableOpacity 
+                style={styles.recordingSendBtn}
+                onPress={stopRecording}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="send" size={18} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            // Normal input UI
+            <>
+              <TextInput
+                style={styles.textInput}
+                placeholder="Type a message..."
+                placeholderTextColor="rgba(10,14,26,0.4)"
+                value={inputText}
+                onChangeText={setInputText}
+                multiline
+                maxLength={1000}
+              />
+              
+              {inputText.trim() ? (
+                <TouchableOpacity
+                  style={styles.sendButton}
+                  onPress={handleSend}
+                  disabled={sending}
+                  activeOpacity={0.7}
+                >
+                  {sending ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Ionicons name="send" size={16} color="#FFFFFF" />
+                  )}
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={styles.voiceButton}
+                  onPress={startRecording}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="mic" size={20} color={BLUE} />
+                </TouchableOpacity>
+              )}
+            </>
+          )}
+        </View>
       </KeyboardAvoidingView>
 
       {/* Action Menu Bottom Sheet */}
@@ -1066,9 +1011,9 @@ export default function ChatTalkScreen() {
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // Styles - Clean, no gradients, matching profile.tsx
-// ═══════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 const styles = StyleSheet.create({
   container: {
@@ -1154,10 +1099,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: BORDER,
   },
-  headerAvatarBlind: {
-    backgroundColor: BLUE,
-    borderColor: BLUE,
-  },
   headerAvatarImage: {
     width: "100%",
     height: "100%",
@@ -1170,12 +1111,6 @@ const styles = StyleSheet.create({
     fontSize: scale(16),
     color: INK,
     letterSpacing: 0.2,
-  },
-  headerBlindLabel: {
-    fontFamily: Fonts.primary,
-    fontSize: scale(11),
-    color: BLUE,
-    marginTop: verticalScale(1),
   },
   headerTitle: {
     flex: 1,
@@ -1428,18 +1363,6 @@ const styles = StyleSheet.create({
     backgroundColor: BLUE,
     alignItems: "center",
     justifyContent: "center",
-  },
-
-  chatDisabledContainer: {
-    paddingHorizontal: scale(16),
-    paddingVertical: verticalScale(16),
-    backgroundColor: "rgba(27,68,205,0.06)",
-    alignItems: "center",
-  },
-  chatDisabledText: {
-    fontFamily: Fonts.primary,
-    fontSize: scale(14),
-    color: "rgba(10,14,26,0.5)",
   },
 
   // Bottom Sheet for actions

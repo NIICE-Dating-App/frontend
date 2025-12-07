@@ -157,8 +157,107 @@ const getLifestyleIcon = (key: string) => {
     love_language: { name: "heart-outline", library: "ionicons" },
     pets: { name: "paw-outline", library: "ionicons" },
     kids: { name: "baby-face-outline", library: "material" },
+    // New fields
+    hometown: { name: "home-outline", library: "ionicons" },
+    marital_status: { name: "heart-circle-outline", library: "ionicons" },
+    vehicles: { name: "car-outline", library: "ionicons" },
+    languages: { name: "language-outline", library: "ionicons" },
   };
   return iconMap[key] || { name: "help-circle-outline", library: "ionicons" };
+};
+
+// ========== UNIFIED LOOKING_FOR DISPLAY MAPPING ==========
+const LOOKING_FOR_DISPLAY: Record<string, string> = {
+  // Dating focused
+  long_term_relationship: "Long-term relationship",
+  life_partner: "Life partner",
+  casual_dates: "Casual dates",
+  intimacy: "Intimacy",
+  marriage: "Marriage",
+  short_term_relationship: "Short-term relationship",
+  // Friends focused
+  new_friends: "New friends",
+  close_friendships: "Close friendships",
+  casual_hangouts: "Casual hangouts",
+  professional_networking: "Professional networking",
+  workout_fitness_buddy: "Workout/fitness buddy",
+  travel_companions: "Travel companions",
+  activity_hobby_partners: "Activity/hobby partners",
+  // Events & Activities
+  event_buddies: "Event buddies",
+  group_activities: "Group activities",
+  local_exploration: "Local exploration",
+  adventure_partners: "Adventure partners",
+  cultural_events: "Cultural events",
+  sports_events: "Sports events",
+  food_and_drinks: "Food & drinks",
+  nightlife_partners: "Nightlife partners",
+  outdoor_activities: "Outdoor activities",
+  learning_together: "Learning together",
+  // Neutral
+  figuring_it_out: "Figuring it out",
+};
+
+// ========== UNIFIED VALUES DISPLAY MAPPING ==========
+const VALUES_DISPLAY: Record<string, string> = {
+  // Relationship focused
+  honesty: "Honesty",
+  kindness: "Kindness",
+  sense_of_humor: "Sense of humor",
+  good_communication: "Good communication",
+  ambition: "Ambition",
+  loyalty: "Loyalty",
+  emotional_intelligence: "Emotional intelligence",
+  adventurous_spirit: "Adventurous spirit",
+  intelligence: "Intelligence",
+  affectionate: "Affectionate",
+  family_oriented: "Family oriented",
+  open_mindedness: "Open-mindedness",
+  active_lifestyle: "Active lifestyle",
+  romantic: "Romantic",
+  confidence: "Confidence",
+  financial_stability: "Financial stability",
+  // Friendship focused
+  trustworthy: "Trustworthy",
+  good_listener: "Good listener",
+  supportive: "Supportive",
+  non_judgmental: "Non-judgmental",
+  reliable: "Reliable",
+  fun_to_be_around: "Fun to be around",
+  authenticity: "Authenticity",
+  similar_values: "Similar values",
+  shared_interests: "Shared interests",
+  understanding: "Understanding",
+  deep_conversations: "Deep conversations",
+  positive_energy: "Positive energy",
+  low_maintenance: "Low maintenance",
+  makes_time_for_me: "Makes time for me",
+  encouraging: "Encouraging",
+  respectful_of_boundaries: "Respectful of boundaries",
+  growth_minded: "Growth minded",
+};
+
+// ========== MARITAL STATUS DISPLAY MAPPING ==========
+const MARITAL_STATUS_DISPLAY: Record<string, string> = {
+  single: "Single",
+  in_relationship: "In a relationship",
+  engaged: "Engaged",
+  married: "Married",
+  divorced: "Divorced",
+  widowed: "Widowed",
+  separated: "Separated",
+  its_complicated: "It's complicated",
+};
+
+// ========== VEHICLE DISPLAY MAPPING ==========
+const VEHICLE_DISPLAY: Record<string, string> = {
+  car: "Car",
+  motorcycle: "Motorcycle",
+  bicycle: "Bicycle",
+  scooter: "Scooter",
+  boat: "Boat",
+  plane: "Plane",
+  none: "None",
 };
 
 // Action Bottom Sheet
@@ -259,7 +358,17 @@ export default function ProfileTop() {
     fullName: string; age: number | null; bio: string | null; genderSubtype: string | null; heightCm: number | null;
     education: string | null; sexualOrientation: string | null; institution: string | null;
     promptAnswers?: PromptAnswer[] | null;
-  }>({ fullName: "", age: null, bio: null, genderSubtype: null, heightCm: null, education: null, sexualOrientation: null, institution: null, promptAnswers: null });
+    // New unified fields
+    maritalStatus: string | null;
+    vehicles: string[] | null;
+    hometown: string | null;
+    lookingFor: string[] | null;
+    values: string[] | null;
+  }>({ 
+    fullName: "", age: null, bio: null, genderSubtype: null, heightCm: null, 
+    education: null, sexualOrientation: null, institution: null, promptAnswers: null,
+    maritalStatus: null, vehicles: null, hometown: null, lookingFor: null, values: null
+  });
 
   const [lifestyle, setLifestyle] = useState<{
     drinking: string | null; smoking: string | null; zodiac: string | null; religion: string | null; politics: string | null;
@@ -271,6 +380,9 @@ export default function ProfileTop() {
   const [modes, setModes] = useState<{ looking: string[]; values: string[] }>({ looking: [], values: [] });
   const [hobbies, setHobbies] = useState<string[]>([]);
   const [pendingRequestCount, setPendingRequestCount] = useState(0);
+  
+  // New state for languages
+  const [languages, setLanguages] = useState<{ id: number; code: string; label: string }[]>([]);
 
   // UI controls
   const [isEditingBio, setIsEditingBio] = useState(false);
@@ -285,35 +397,6 @@ export default function ProfileTop() {
 
   // Animations
   const framesHeight = useRef(new RNAnimated.Value(0)).current;
-
-  // Niice + Friend header pop animation
-  const friendScale = useRef(new RNAnimated.Value(1)).current;
-
-  const handleFriendPressIn = () => {
-    RNAnimated.spring(friendScale, {
-      toValue: 0.94,
-      useNativeDriver: true,
-      friction: 6,
-      tension: 140,
-    }).start();
-  };
-
-  const handleFriendPressOut = () => {
-    RNAnimated.sequence([
-      RNAnimated.spring(friendScale, {
-        toValue: 1.08,
-        useNativeDriver: true,
-        friction: 4,
-        tension: 160,
-      }),
-      RNAnimated.spring(friendScale, {
-        toValue: 1,
-        useNativeDriver: true,
-        friction: 6,
-        tension: 140,
-      }),
-    ]).start();
-  };
 
   // Prompts carousel
   const [promptWidth, setPromptWidth] = useState(SCREEN_WIDTH);
@@ -441,19 +524,15 @@ export default function ProfileTop() {
 
       await fetchActiveFrames(userId);
 
-      const [profRes, lifeRes, mainRes, othersRes, modesRes, hobbiesRes] = await Promise.all([
-        supabase.from("profiles").select("full_name, age, bio, gender_subtype, height_cm, education, sexual_orientation, institution, prompt_answers").eq("id", userId).single(),
+      const [profRes, lifeRes, mainRes, othersRes, hobbiesRes, languagesRes] = await Promise.all([
+        // Updated profiles query with new unified fields
+        supabase.from("profiles").select("full_name, age, bio, gender_subtype, height_cm, education, sexual_orientation, institution, prompt_answers, marital_status, vehicles, hometown, looking_for, values").eq("id", userId).single(),
         supabase.from("lifestyle").select("drinking, smoking, zodiac, religion, politics, workout, communication, love_language, pets, kids, communities").eq("user_id", userId).maybeSingle(),
         supabase.from("user_photos").select("photo_url").eq("user_id", userId).eq("is_main", true).maybeSingle(),
         supabase.from("user_photos").select("photo_url, created_at, is_main").eq("user_id", userId).neq("is_main", true).order("created_at",{ ascending: true }),
-        // FRIEND MODE: use friend columns and restrict to mode = 'friend'
-        supabase
-          .from("user_modes")
-          .select("looking_for_friend, value_friend")
-          .eq("user_id", userId)
-          .eq("mode", "friend")
-          .maybeSingle(),
         supabase.from("user_hobbies").select("hobbies_master(label)").eq("user_id", userId),
+        // Fetch user languages with join to languages_master
+        supabase.from("user_languages").select("language_id, languages_master(id, code, label)").eq("user_id", userId),
       ]);
 
       // Fetch pending incoming requests count
@@ -485,6 +564,12 @@ export default function ProfileTop() {
         sexualOrientation: p.sexual_orientation ?? null,
         institution: p.institution ?? null,
         promptAnswers: prompts,
+        // New unified fields
+        maritalStatus: p.marital_status ?? null,
+        vehicles: p.vehicles ?? null,
+        hometown: p.hometown ?? null,
+        lookingFor: p.looking_for ?? null,
+        values: p.values ?? null,
       }));
 
       const l = (lifeRes as any).data || {};
@@ -496,21 +581,21 @@ export default function ProfileTop() {
 
       // ========== COMMUNITY OPTIONS ==========
       const COMMUNITY_OPTIONS = [
-        "🌿 Environmentalism",
-        "✊ Social justice",
-        "🏳️‍🌈 LGBTQIA+",
-        "♀️ Feminism",
-        "🧠 Mental health awareness",
-        "✊🏾 Black community",
-        "🧧 Asian community",
-        "🪅 Latino/Hispanic community",
-        "✡️ Jewish community",
-        "☪️ Muslim community",
-        "♿ Disability awareness",
-        "💖 Body positivity",
-        "🐾 Animal rights",
-        "🌍 Climate action",
-      ];
+  "🌿 Environmentalism",
+  "✊ Social justice",
+  "🏳️‍🌈 LGBTQIA+",
+  "♀️ Feminism",
+  "🧠 Mental health awareness",
+  "✊🏾 Black community",
+  "🧧 Asian community",
+  "🪅 Latino/Hispanic community",
+  "✡️ Jewish community",
+  "☪️ Muslim community",
+  "♿ Disability awareness",
+  "💖 Body positivity",
+  "🐾 Animal rights",
+  "🌍 Climate action",
+];
 
       const stripEmoji = (s: string) => s.replace(/^[^\w\s]+\s*/, '').trim();
       const normalizeLabel = (s: string) => stripEmoji(s).toLowerCase().trim();
@@ -547,54 +632,33 @@ export default function ProfileTop() {
         third: thirdSigned ?? third?.photo_url ?? null,
       });
 
-      // ========== MODES (FRIEND "LOOKING FOR" + VALUES) ==========
-      const m = (modesRes as any)?.data || {};
+      // ========== MODES (UNIFIED LOOKING_FOR + VALUES from profiles) ==========
+      // Use the unified looking_for and values arrays from profiles
+      const lookingForEnums: string[] = Array.isArray(p.looking_for) ? p.looking_for : [];
+      const valuesEnums: string[] = Array.isArray(p.values) ? p.values : [];
 
-      // Friend-mode enum → display labels
-      const LOOKING_FOR_FRIEND_DISPLAY: Record<string, string> = {
-        new_friends_nearby: "New friends nearby",
-        workout_fitness_buddy: "Workout/fitness buddy",
-        travel_companions: "Travel companions",
-        activity_hobby_partners: "Activity/hobby partners",
-        casual_hangouts: "Casual hangouts",
-        professional_networking: "Professional networking",
-        close_friendships: "Close friendships",
-      };
-
-      const lookingForEnums: string[] = Array.isArray(m.looking_for_friend)
-        ? m.looking_for_friend
-        : [];
-
+      // Convert enums to display labels using the unified mapping
       const lookingForDisplay = lookingForEnums
-        .map((e) => LOOKING_FOR_FRIEND_DISPLAY[e])
+        .map((e) => LOOKING_FOR_DISPLAY[e] || humanize(e))
         .filter(Boolean);
 
-      // Combine into a single headline string for the hero chip
-      let combinedLooking = "";
-      if (lookingForDisplay.length === 1) {
-        combinedLooking = lookingForDisplay[0];
-      } else if (lookingForDisplay.length === 2) {
-        combinedLooking = getCombinedLookingFor(lookingForDisplay);
-      } else if (lookingForDisplay.length > 2) {
-        // If more than 2, use the first two to generate a sensible combo
-        combinedLooking = getCombinedLookingFor(lookingForDisplay.slice(0, 2));
-      }
+      const valuesDisplay = valuesEnums
+        .map((e) => VALUES_DISPLAY[e] || humanize(e))
+        .filter(Boolean);
 
-      // Helper function to parse lists for values
-      const parseListHelper = (raw: any): string[] => {
-        const list =
-          Array.isArray(raw)
-            ? raw.map((s) => humanize(String(s)))
-            : typeof raw === "string"
-            ? raw.split(/[,/&]| and /i).map((s: string) => humanize(s.trim()))
-            : [];
-        return Array.from(new Set(list.filter(Boolean)));
-      };
-
+      // Pass all looking_for items as chips (unified system supports up to 7 selections)
       setModes({ 
-        looking: combinedLooking ? [combinedLooking] : [], 
-        values: parseListHelper(m.value_friend) 
+        looking: lookingForDisplay, 
+        values: valuesDisplay 
       });
+
+      // ========== LANGUAGES ==========
+      const langData = (languagesRes as any)?.data || [];
+      const userLanguages = langData
+        .map((item: any) => item?.languages_master)
+        .filter(Boolean)
+        .map((lang: any) => ({ id: lang.id, code: lang.code, label: lang.label }));
+      setLanguages(userLanguages);
 
       // ========== HOBBIES ==========
       const hs = (hobbiesRes as any)?.data || [];
@@ -659,8 +723,11 @@ export default function ProfileTop() {
   ].filter(i => i.mandatory || i.value)), [profile, lifestyle]);
 
   const verticalItems = useMemo(() => ([
-    { key: "sexual_orientation", value: profile.sexualOrientation, mandatory: true },
+    // sexual_orientation is now optional (nullable) - not mandatory
+    { key: "sexual_orientation", value: profile.sexualOrientation, mandatory: false },
     { key: "institution", value: profile.institution, mandatory: false },
+    // Add hometown to vertical items
+    { key: "hometown", value: profile.hometown, mandatory: false },
     { key: "workout", value: lifestyle.workout, mandatory: false },
     { key: "communication", value: lifestyle.communication, mandatory: false },
     { key: "love_language", value: lifestyle.love_language, mandatory: false },
@@ -686,27 +753,11 @@ export default function ProfileTop() {
 
       {/* Top Bar */}
       <View style={styles.topBar}>
-        <Pressable
-          onPressIn={handleFriendPressIn}
-          onPressOut={handleFriendPressOut}
-          hitSlop={10}
-        >
-          <RNAnimated.View
-            style={[
-              styles.logoRow,
-              { transform: [{ scale: friendScale }] },
-            ]}
-          >
-            <Image 
-              source={require("../../assets/images/niice_logo_icon.png")} 
-              resizeMode="contain" 
-              style={styles.logo} 
-            />
-            <View style={styles.friendPill}>
-              <Text style={styles.friendPillText}>Friend</Text>
-            </View>
-          </RNAnimated.View>
-        </Pressable>
+        <Image 
+          source={require("../../assets/images/niice_logo_icon.png")} 
+          resizeMode="contain" 
+          style={styles.logo} 
+        />
 
         <View style={styles.topRight}>
           <TouchableOpacity 
@@ -942,62 +993,56 @@ export default function ProfileTop() {
           </LinearGradient>
         </View>
 
-        {/* What I'm Looking For - Featured */}
+        {/* What I'm Looking For - Unified (matches What I Value design) */}
         <View style={styles.section}>
-          <View style={styles.featuredCard}>
+          <View style={styles.glassCard}>
             <LinearGradient
               colors={["#FFFFFF", "#F8FAFF"]}
               style={StyleSheet.absoluteFillObject}
             />
-            
-            {/* Accent border */}
-            <View style={styles.featuredAccent} />
-            
-            <View style={styles.featuredContent}>
-              {/* Small label with icon */}
-              <View style={styles.featuredLabel}>
-                <Ionicons
-                  name="people-outline"
-                  size={16}
-                  color={BLUE}
-                  style={{ marginRight: scale(6) }}
-                />
-                <Text style={styles.featuredLabelText}>What I'm Looking For</Text>
-              </View>
-
-              {/* Large prominent chip */}
+            <View style={styles.cardHeader}>
+              <Ionicons name="search-outline" size={22} color={BLUE} style={styles.cardIcon} />
+              <Text style={styles.cardTitle}>What I'm Looking For</Text>
+            </View>
+            <View style={styles.cardContent}>
               {modes.looking.length ? (
-                <View style={styles.featuredChipWrapper}>
-                  <View style={styles.featuredChip}>
-                    <Ionicons
-                      name="people"
-                      size={20}
-                      color="rgba(255,255,255,0.9)"
-                      style={{ marginLeft: scale(10), marginRight: scale(10) }}
-                    />
-                    <Text style={styles.featuredChipText}>
-                      {modes.looking[0]}
-                    </Text>
-                  </View>
+                <View style={styles.chipsGrid}>
+                  {modes.looking.map((tag, i) => (
+                    <View key={`looking-${i}`} style={styles.customChip}>
+                      <Text style={styles.chipLabel}>{tag}</Text>
+                    </View>
+                  ))}
                 </View>
               ) : (
-                <View style={styles.featuredChipWrapper}>
-                  <TouchableOpacity
-                    activeOpacity={0.9}
-                    onPress={() => router.push("/(edit_profile)/what_im_looking_for_edit")}
-                  >
-                    <View style={[styles.featuredChip, styles.featuredChipEmpty]}>
-                      <Text style={styles.featuredChipEmptyText}>
-                        + Set what you're looking for
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                </View>
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  onPress={() => router.push("/(edit_profile)/what_im_looking_for_edit")}
+                >
+                  <Text style={styles.emptyTextClickable}>+ Set what you're looking for</Text>
+                </TouchableOpacity>
               )}
-
             </View>
           </View>
         </View>
+
+        {/* Marital Status - displayed below What I'm Looking For */}
+        {profile.maritalStatus && (
+          <View style={styles.section}>
+            <View style={styles.statusCard}>
+              <LinearGradient
+                colors={["#FFFFFF", "#F8FAFF"]}
+                style={StyleSheet.absoluteFillObject}
+              />
+              <View style={styles.statusContent}>
+                <Ionicons name="heart-circle-outline" size={20} color={BLUE} style={{ marginRight: scale(8) }} />
+                <Text style={styles.statusLabel}>Relationship Status:</Text>
+                <Text style={styles.statusValue}>
+                  {MARITAL_STATUS_DISPLAY[profile.maritalStatus] || humanize(profile.maritalStatus)}
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
 
         {/* First Photo */}
         {photos.first && (
@@ -1009,7 +1054,7 @@ export default function ProfileTop() {
           </View>
         )}
 
-        {/* Values in a Partner */}
+        {/* Values - Unified (what user values in connections) */}
         <View style={styles.section}>
           <View style={styles.glassCard}>
             <LinearGradient
@@ -1018,7 +1063,7 @@ export default function ProfileTop() {
             />
             <View style={styles.cardHeader}>
               <Ionicons name="sparkles-outline" size={22} color={BLUE} style={styles.cardIcon} />
-              <Text style={styles.cardTitle}>Values in a Friend</Text>
+              <Text style={styles.cardTitle}>What I Value</Text>
             </View>
             <View style={styles.cardContent}>
               {modes.values.length ? (
@@ -1217,6 +1262,56 @@ export default function ProfileTop() {
           </View>
         )}
 
+        {/* Languages */}
+        {!!languages.length && (
+          <View style={styles.section}>
+            <View style={styles.glassCard}>
+              <LinearGradient
+                colors={["#FFFFFF", "#F8FAFF"]}
+                style={StyleSheet.absoluteFillObject}
+              />
+              <View style={styles.cardHeader}>
+                <Ionicons name="language-outline" size={22} color={BLUE} style={styles.cardIcon} />
+                <Text style={styles.cardTitle}>Languages</Text>
+              </View>
+              <View style={styles.cardContent}>
+                <View style={styles.chipsGrid}>
+                  {languages.map((lang, i) => (
+                    <View key={`lang-${i}`} style={styles.customChip}>
+                      <Text style={styles.chipLabel}>{lang.label}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Vehicles */}
+        {!!(profile.vehicles && profile.vehicles.length > 0 && profile.vehicles[0] !== 'none') && (
+          <View style={styles.section}>
+            <View style={styles.glassCard}>
+              <LinearGradient
+                colors={["#FFFFFF", "#F8FAFF"]}
+                style={StyleSheet.absoluteFillObject}
+              />
+              <View style={styles.cardHeader}>
+                <Ionicons name="car-outline" size={22} color={BLUE} style={styles.cardIcon} />
+                <Text style={styles.cardTitle}>Vehicles</Text>
+              </View>
+              <View style={styles.cardContent}>
+                <View style={styles.chipsGrid}>
+                  {profile.vehicles?.filter(v => v !== 'none').map((vehicle, i) => (
+                    <View key={`vehicle-${i}`} style={styles.customChip}>
+                      <Text style={styles.chipLabel}>{VEHICLE_DISPLAY[vehicle] || humanize(vehicle)}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            </View>
+          </View>
+        )}
+
         {/* Communities */}
         {!!communities.length && (
           <View style={styles.section}>
@@ -1256,7 +1351,7 @@ export default function ProfileTop() {
             onPress={() => setModalVisible(false)} 
             activeOpacity={0.8}
           >
-            <Text style={styles.closeButtonText}>✕</Text>
+            <Text style={styles.closeButtonText}>âœ•</Text>
           </TouchableOpacity>
           {!!selectedModalUri && (
             <Image 
@@ -1417,7 +1512,7 @@ const styles = StyleSheet.create({
     marginBottom: verticalScale(2),
   },
 
-  // ✅ Friend rectangle: same size, rounded like featured chip
+  // âœ… Friend rectangle: same size, rounded like featured chip
   friendPill: {
     marginLeft: scale(6),
     marginTop: verticalScale(4),
@@ -1574,7 +1669,7 @@ const styles = StyleSheet.create({
     marginTop: verticalScale(6),
   },
 
-  // ✅ Frames button: unified roundness & size style
+  // âœ… Frames button: unified roundness & size style
   framesButton: { 
     flexDirection: "row",
     alignItems: "center",
@@ -1602,7 +1697,7 @@ const styles = StyleSheet.create({
     gap: verticalScale(8),
   },
 
-  // ✅ Add New Frame / Frame Archive buttons: unified roundness & size
+  // âœ… Add New Frame / Frame Archive buttons: unified roundness & size
   frameActionButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -1725,6 +1820,43 @@ const styles = StyleSheet.create({
     color: "rgba(10,14,26,0.4)", 
     fontStyle: "italic" 
   },
+  emptyTextClickable: { 
+    fontSize: scale(14), 
+    fontFamily: Fonts.bold, 
+    color: BLUE, 
+    textAlign: "center",
+  },
+
+  // Marital Status Card
+  statusCard: {
+    borderRadius: scale(16),
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: "rgba(27,68,205,0.08)",
+  },
+  statusContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: scale(16),
+    paddingVertical: verticalScale(14),
+  },
+  statusLabel: {
+    fontSize: scale(14),
+    fontFamily: Fonts.primary,
+    color: "rgba(10,14,26,0.6)",
+    marginRight: scale(6),
+  },
+  statusValue: {
+    fontSize: scale(14),
+    fontFamily: Fonts.bold,
+    color: INK,
+  },
+
   photoContainer: { 
     paddingHorizontal: scale(20), 
     marginTop: verticalScale(16) 
@@ -2275,7 +2407,7 @@ const styles = StyleSheet.create({
     marginTop: verticalScale(8) 
   },
 
-  // ✅ Events button: unified roundness & size style
+  // âœ… Events button: unified roundness & size style
   eventsButton: {
     flexDirection: "row",
     alignItems: "center",

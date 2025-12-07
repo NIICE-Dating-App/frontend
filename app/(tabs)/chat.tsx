@@ -28,9 +28,9 @@ const BLUE = Colors.BLUE;
 
 type TabKey = "chat" | "groups" | "communities";
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Types
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 type ChatConversation = {
   id: string;
@@ -42,8 +42,6 @@ type ChatConversation = {
   updatedAt: string;
   unreadCount: number;
   matchRequestId: string | null;
-  isBlind: boolean;
-  matchMode: "dating" | "friend" | null;
   hasFrame: boolean;
 };
 
@@ -65,9 +63,9 @@ type Announcement = {
   authorName: string | null;
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Main Component
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function ChatScreen() {
   const [activeTab, setActiveTab] = useState<TabKey>("chat");
@@ -118,6 +116,15 @@ export default function ChatScreen() {
     return data?.signedUrl ?? urlOrPath;
   };
 
+  // Helper function to capitalize names
+  const capitalizeName = (name: string | null | undefined): string => {
+    if (!name) return "Unknown";
+    return name
+      .split(" ")
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(" ");
+  };
+
   const fetchChats = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
@@ -134,7 +141,7 @@ export default function ChatScreen() {
       }
 
       // Query conversations where user is a member
-      // For 1:1 chats (dating_match, blind_date, friend_match)
+      // For 1:1 chats (match)
       const { data: memberData, error: memberError } = await supabase
         .from("conversation_members")
         .select(`
@@ -150,8 +157,6 @@ export default function ChatScreen() {
               id,
               requester_id,
               target_id,
-              match_mode,
-              connection_visibility,
               status
             )
           )
@@ -172,7 +177,7 @@ export default function ChatScreen() {
       // Filter to only 1:1 match chats (not group/event/community chats)
       const matchChats = memberData.filter((m: any) => {
         const convType = m.conversations?.type;
-        return ["dating_match", "blind_date", "friend_match"].includes(convType);
+        return convType === "match";
       });
 
       // Build conversation list with other user's info
@@ -249,15 +254,13 @@ export default function ChatScreen() {
         const conversation: ChatConversation = {
           id: conv.id,
           type: conv.type,
-          name: profileData?.full_name || "Unknown",
+          name: capitalizeName(profileData?.full_name),
           avatarUrl: signedAvatarUrl,
           lastMessage: lastMsgData?.content || null,
           lastMessageAt: lastMsgData?.created_at || null,
           updatedAt: lastMsgData?.created_at || conv.updated_at || conv.created_at,
           unreadCount,
           matchRequestId: matchRequest.id,
-          isBlind: matchRequest.connection_visibility === "blind",
-          matchMode: matchRequest.match_mode as "dating" | "friend" | null,
           hasFrame,
         };
 
@@ -375,8 +378,6 @@ export default function ChatScreen() {
             updatedAt: lastMsg?.created_at || convData.updated_at,
             unreadCount,
             matchRequestId: null,
-            isBlind: false,
-            matchMode: null,
             hasFrame: false,
           };
 
@@ -520,8 +521,6 @@ export default function ChatScreen() {
           updatedAt: lastMsg?.created_at || convData.updated_at,
           unreadCount,
           matchRequestId: null,
-          isBlind: false,
-          matchMode: null,
           hasFrame: false,
         });
       } else {
@@ -723,7 +722,7 @@ export default function ChatScreen() {
                       {a.content}
                     </Text>
                     <Text style={styles.announcementMeta}>
-                      {a.authorName || "Admin"} · {formatTime(a.createdAt)}
+                      {a.authorName || "Admin"} Â· {formatTime(a.createdAt)}
                     </Text>
                   </View>
                 );
@@ -866,9 +865,9 @@ export default function ChatScreen() {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Sub-components
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 type TabButtonProps = {
   label: string;
@@ -894,7 +893,7 @@ type ChatRowProps = {
 };
 
 const ChatRow: React.FC<ChatRowProps> = ({ conversation, onPress }) => {
-  const { name, avatarUrl, lastMessage, updatedAt, unreadCount, isBlind, matchMode, hasFrame } = conversation;
+  const { name, avatarUrl, lastMessage, updatedAt, unreadCount, hasFrame } = conversation;
   const hasUnread = unreadCount > 0;
 
   const formatTime = (dateStr: string) => {
@@ -925,16 +924,7 @@ const ChatRow: React.FC<ChatRowProps> = ({ conversation, onPress }) => {
           />
         )}
         <View style={[styles.avatarInner, hasFrame && styles.avatarWithFrame]}>
-          {isBlind ? (
-            <View 
-              style={[
-                styles.avatarBlind,
-                { backgroundColor: matchMode === "dating" ? "#EF4444" : "#22C55E" }
-              ]}
-            >
-              <Ionicons name="eye-off" size={20} color="#FFFFFF" />
-            </View>
-          ) : avatarUrl ? (
+          {avatarUrl ? (
             <Image source={{ uri: avatarUrl }} style={styles.avatar} />
           ) : (
             <View style={styles.avatarPlaceholder}>
@@ -999,7 +989,7 @@ const CommunityRow: React.FC<CommunityRowProps> = ({ community, onPress }) => (
         </Text>
       </View>
       <Text style={styles.chatMessage} numberOfLines={1}>
-        {community.memberCount.toLocaleString()} members · {community.category}
+        {community.memberCount.toLocaleString()} members Â· {community.category}
       </Text>
     </View>
     <Ionicons name="chevron-forward" size={20} color="rgba(10,14,26,0.25)" />
@@ -1083,9 +1073,9 @@ const FilterModal: React.FC<{
   </Modal>
 );
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Styles - 2025 Modern Design
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const styles = StyleSheet.create({
   container: {
@@ -1139,11 +1129,11 @@ const styles = StyleSheet.create({
   },
   tabButtonActive: {
   backgroundColor: BLUE,
-  shadowColor: BLUE,  // ← ADD THIS LINE
-  shadowOffset: { width: 0, height: 4 },  // ← ADD THIS LINE
-  shadowOpacity: 0.25,  // ← ADD THIS LINE
-  shadowRadius: 8,  // ← ADD THIS LINE
-  elevation: 6,  // ← ADD THIS LINE
+  shadowColor: BLUE,  // â† ADD THIS LINE
+  shadowOffset: { width: 0, height: 4 },  // â† ADD THIS LINE
+  shadowOpacity: 0.25,  // â† ADD THIS LINE
+  shadowRadius: 8,  // â† ADD THIS LINE
+  elevation: 6,  // â† ADD THIS LINE
 },
   tabButtonText: {
     fontFamily: Fonts.bold,

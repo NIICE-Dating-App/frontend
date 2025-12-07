@@ -40,8 +40,7 @@ import {
   summarizeList,
   textOnly,
   toStoragePath,
-  toTitleCase,
-  uniq,
+  toTitleCase
 } from "@/components/profileeditutils";
 
 import { Colors } from "@/components/theme";
@@ -54,53 +53,96 @@ const EXTRA_GAP = scale(12);
 const H_PAD = scale(20);
 const EXTRA_SLOT_WIDTH = (SCREEN_WIDTH - H_PAD * 2 - EXTRA_GAP * 2) / 3;
 
-// Friend-mode "What I'm looking for" combination display names
-const getLookingForDisplayText = (items: string[]): string => {
-  if (items.length !== 2) return items[0] || "";
-
-  // Create normalized key (alphabetically sorted, trimmed)
-  const sorted = [...items].map((s) => s.trim()).sort();
-  const key = sorted.join("|||"); // Use unique separator
-
-  // Define combinations with the same key format (friendship mode)
-    // Define combinations with the same key format
-  const combinations: Record<string, string> = {
-  // Activity / hobby partners combos
-  "Activity/hobby partners|||Casual hangouts": "Hobby partners & casual hangouts",
-  "Activity/hobby partners|||Close friendships": "Close friends for hobbies",
-  "Activity/hobby partners|||New friends nearby": "New local hobby friends",
-  "Activity/hobby partners|||Professional networking": "Networking through shared hobbies",
-  "Activity/hobby partners|||Travel companions": "Travel & hobby buddies",
-  "Activity/hobby partners|||Workout/fitness buddy": "Active hobby & workout buddies",
-
-  // Casual hangouts combos
-  "Casual hangouts|||Close friendships": "Close friends & casual hangouts",
-  "Casual hangouts|||New friends nearby": "New friends for casual hangouts",
-  "Casual hangouts|||Professional networking": "Networking & hangouts",
-  "Casual hangouts|||Travel companions": "Travel & casual hangouts",
-  "Casual hangouts|||Workout/fitness buddy": "Workout & casual hangouts",
-
-  // Close friendships combos
-  "Close friendships|||New friends nearby": "Close local friends",
-  "Close friendships|||Professional networking": "Close friends & networking",
-  "Close friendships|||Travel companions": "Close friends to travel with",
-  "Close friendships|||Workout/fitness buddy": "Close friends & workout buddies",
-
-  // New friends nearby combos
-  "New friends nearby|||Professional networking": "Local friends & networking",
-  "New friends nearby|||Travel companions": "Local travel buddies",
-  "New friends nearby|||Workout/fitness buddy": "Local workout friends",
-
-  // Travel / networking / workout combos
-  "Professional networking|||Travel companions": "Network & travel buddies",
-  "Professional networking|||Workout/fitness buddy": "Workout & networking",
-  "Travel companions|||Workout/fitness buddy": "Active travel & workout buddies",
+// ========== UNIFIED LOOKING_FOR DISPLAY MAPPING ==========
+const LOOKING_FOR_DISPLAY: Record<string, string> = {
+  // Dating focused
+  long_term_relationship: "Long-term relationship",
+  life_partner: "Life partner",
+  casual_dates: "Casual dates",
+  intimacy: "Intimacy",
+  marriage: "Marriage",
+  short_term_relationship: "Short-term relationship",
+  // Friends focused
+  new_friends: "New friends",
+  close_friendships: "Close friendships",
+  casual_hangouts: "Casual hangouts",
+  professional_networking: "Professional networking",
+  workout_fitness_buddy: "Workout/fitness buddy",
+  travel_companions: "Travel companions",
+  activity_hobby_partners: "Activity/hobby partners",
+  // Events & Activities
+  event_buddies: "Event buddies",
+  group_activities: "Group activities",
+  local_exploration: "Local exploration",
+  adventure_partners: "Adventure partners",
+  cultural_events: "Cultural events",
+  sports_events: "Sports events",
+  food_and_drinks: "Food & drinks",
+  nightlife_partners: "Nightlife partners",
+  outdoor_activities: "Outdoor activities",
+  learning_together: "Learning together",
+  // Neutral
+  figuring_it_out: "Figuring it out",
 };
 
+// ========== UNIFIED VALUES DISPLAY MAPPING ==========
+const VALUES_DISPLAY: Record<string, string> = {
+  honesty: "Honesty",
+  kindness: "Kindness",
+  sense_of_humor: "Sense of humor",
+  good_communication: "Good communication",
+  ambition: "Ambition",
+  loyalty: "Loyalty",
+  emotional_intelligence: "Emotional intelligence",
+  adventurous_spirit: "Adventurous spirit",
+  intelligence: "Intelligence",
+  affectionate: "Affectionate",
+  family_oriented: "Family oriented",
+  open_mindedness: "Open-mindedness",
+  active_lifestyle: "Active lifestyle",
+  romantic: "Romantic",
+  confidence: "Confidence",
+  financial_stability: "Financial stability",
+  trustworthy: "Trustworthy",
+  good_listener: "Good listener",
+  supportive: "Supportive",
+  non_judgmental: "Non-judgmental",
+  reliable: "Reliable",
+  fun_to_be_around: "Fun to be around",
+  authenticity: "Authenticity",
+  similar_values: "Similar values",
+  shared_interests: "Shared interests",
+  understanding: "Understanding",
+  deep_conversations: "Deep conversations",
+  positive_energy: "Positive energy",
+  low_maintenance: "Low maintenance",
+  makes_time_for_me: "Makes time for me",
+  encouraging: "Encouraging",
+  respectful_of_boundaries: "Respectful of boundaries",
+  growth_minded: "Growth minded",
+};
 
-  return combinations[key] || items.join(" · ");
+// ========== MARITAL STATUS DISPLAY MAPPING ==========
+const MARITAL_STATUS_DISPLAY: Record<string, string> = {
+  single: "Single",
+  in_relationship: "In a relationship",
+  engaged: "Engaged",
+  married: "Married",
+  divorced: "Divorced",
+  widowed: "Widowed",
+  separated: "Separated",
+  its_complicated: "It's complicated",
+};
 
-
+// ========== VEHICLES DISPLAY MAPPING ==========
+const VEHICLES_DISPLAY: Record<string, string> = {
+  car: "Car",
+  motorcycle: "Motorcycle",
+  bicycle: "Bicycle",
+  scooter: "Scooter",
+  boat: "Boat",
+  plane: "Plane",
+  none: "None",
 };
 
 type PhotoRow = {
@@ -117,7 +159,13 @@ type ProfileRow = {
   education?: string | null;
   institution?: string | null;
   interested_in?: string[] | string | null;
-  prompt_answers?: { title?: string; answer?: string }[] | null;
+  prompt_answers?: { title?: string; answer?: string; slot?: number; category?: string; question?: string }[] | null;
+  // New unified fields
+  looking_for?: string[] | null;
+  values?: string[] | null;
+  marital_status?: string | null;
+  vehicles?: string[] | null;
+  hometown?: string | null;
 };
 
 type LifestyleRow = {
@@ -133,14 +181,6 @@ type LifestyleRow = {
   love_language?: string | null;
   pets?: string | null;
 };
-
-type ModesRow = { 
-  looking_for_date?: string[] | string | null; 
-  value_date?: string[] | string | null;
-  looking_for_friend?: string[] | string | null;
-  value_friend?: string[] | string | null;
-};
-
 
 type HobbyRow = {
   hobbies_master?: { label?: string | null } | null;
@@ -179,6 +219,11 @@ export default function EditProfileScreen() {
   const [hobbies, setHobbies] = useState<string[]>([]);
   const [communities, setCommunities] = useState<string[]>([]);
   const [prompts, setPrompts] = useState<PromptAnswer[]>([]);
+  // New unified fields
+  const [languages, setLanguages] = useState<string[]>([]);
+  const [hometown, setHometown] = useState<string | null>(null);
+  const [maritalStatus, setMaritalStatus] = useState<string | null>(null);
+  const [vehicles, setVehicles] = useState<string[]>([]);
   const [lifestyle, setLifestyle] = useState<{
     drinking: string | null;
     smoking: string | null;
@@ -282,28 +327,27 @@ export default function EditProfileScreen() {
       const userId = auth?.user?.id;
       if (!userId) return;
 
-      const [profRes, lifeRes, modesRes, hobbiesRes] = await Promise.all([
-  supabase
-    .from("profiles")
-    .select("full_name, height_cm, sexual_orientation, education, institution, interested_in, prompt_answers")
-    .eq("id", userId)
-    .single(),
-  supabase
-    .from("lifestyle")
-    .select("drinking, smoking, workout, religion, politics, kids, communities, zodiac, communication, love_language, pets")
-    .eq("user_id", userId)
-    .maybeSingle(),
-  supabase
-    .from("user_modes")
-    .select("looking_for_friend, value_friend")
-    .eq("user_id", userId)
-    .eq("mode", "friend")
-    .maybeSingle(),
-  supabase
-    .from("user_hobbies")
-    .select("hobbies_master(label)")
-    .eq("user_id", userId),
-]);
+      // Updated query: fetch from profiles with new unified fields (no more user_modes)
+      const [profRes, lifeRes, hobbiesRes, languagesRes] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select("full_name, height_cm, sexual_orientation, education, institution, interested_in, prompt_answers, looking_for, values, marital_status, vehicles, hometown")
+          .eq("id", userId)
+          .single(),
+        supabase
+          .from("lifestyle")
+          .select("drinking, smoking, workout, religion, politics, kids, communities, zodiac, communication, love_language, pets")
+          .eq("user_id", userId)
+          .maybeSingle(),
+        supabase
+          .from("user_hobbies")
+          .select("hobbies_master(label)")
+          .eq("user_id", userId),
+        supabase
+          .from("user_languages")
+          .select("language_id, languages_master(label)")
+          .eq("user_id", userId),
+      ]);
 
       const p = (profRes?.data ?? {}) as ProfileRow;
       setFullName(toTitleCase((p.full_name ?? "").trim()));
@@ -367,7 +411,7 @@ export default function EditProfileScreen() {
         const promptAnswers: PromptAnswer[] = Array.isArray(p.prompt_answers)
           ? p.prompt_answers
               .filter((x: any) => x?.answer && x?.title)
-              .map((x: any) => ({ title: String(x.title), answer: String(x.answer) }))
+              .map((x: any) => ({ title: String(x.title), answer: String(x.answer), slot: x.slot, category: x.category, question: x.question }))
               .slice(0, 3)
           : [];
         setPrompts(promptAnswers);
@@ -430,44 +474,31 @@ export default function EditProfileScreen() {
         });
       }
 
-      // What I'm Looking For (friend mode) temp storage check
-      // What I'm Looking For (friend mode) temp storage check
-// What I'm Looking For (friend mode) temp storage check
-const tempLookingForKey = `temp_looking_for_${userId}`;
-const tempLookingForData = await AsyncStorage.getItem(tempLookingForKey);
+      // What I'm Looking For - NEW UNIFIED SYSTEM
+      // Check temp storage first
+      const tempLookingForKey = `temp_looking_for_${userId}`;
+      const tempLookingForData = await AsyncStorage.getItem(tempLookingForKey);
 
-const m = (modesRes?.data ?? {}) as ModesRow;
+      if (tempLookingForData) {
+        const parsed = JSON.parse(tempLookingForData);
+        setLookingFor(parsed.lookingFor || []);
+        setPartnerValues(parsed.partnerValues || []);
+      } else {
+        // Load from profiles table using new unified fields
+        const lookingForEnums: string[] = Array.isArray(p.looking_for) ? p.looking_for : [];
+        const valuesEnums: string[] = Array.isArray(p.values) ? p.values : [];
 
-if (tempLookingForData) {
-  const parsed = JSON.parse(tempLookingForData);
-  setLookingFor(parsed.lookingFor || []);
-  setPartnerValues(parsed.partnerValues || []);
-} else {
-  // Friend-mode enum → display labels
-  const LOOKING_FOR_FRIEND_DISPLAY: Record<string, string> = {
-    new_friends_nearby: "New friends nearby",
-    workout_fitness_buddy: "Workout/fitness buddy",
-    travel_companions: "Travel companions",
-    activity_hobby_partners: "Activity/hobby partners",
-    casual_hangouts: "Casual hangouts",
-    professional_networking: "Professional networking",
-    close_friendships: "Close friendships",
-  };
+        // Convert enums to display labels using unified mapping
+        const lookingForDisplay = lookingForEnums
+          .map((e) => LOOKING_FOR_DISPLAY[e] || humanize(e))
+          .filter(Boolean);
+        setLookingFor(lookingForDisplay);
 
-  // Load looking_for_friend with exact display format
-  const lookingForEnums: string[] = Array.isArray(m.looking_for_friend)
-    ? m.looking_for_friend
-    : [];
-  const lookingForDisplay = lookingForEnums
-    .map((e) => LOOKING_FOR_FRIEND_DISPLAY[e])
-    .filter(Boolean);
-  setLookingFor(lookingForDisplay);
-
-  // Load value_friend with generic list parsing (e.g. "loyalty" → "Loyalty")
-  setPartnerValues(parseList(m.value_friend));
-}
-
-
+        const valuesDisplay = valuesEnums
+          .map((e) => VALUES_DISPLAY[e] || humanize(e))
+          .filter(Boolean);
+        setPartnerValues(valuesDisplay);
+      }
 
       // Check temp storage for interests & hobbies
       const tempInterestsKey = `temp_interests_hobbies_${userId}`;
@@ -498,18 +529,14 @@ if (tempLookingForData) {
 
         // Keep emojis for display (already in correct format from interests_and_hobbies_edit)
         const hobbyLabels = parsed.hobbies || [];
-        setHobbies(hobbyLabels);
+        setHobbies(hobbyLabels.map(humanize));
 
-        const communityLabels = parsed.communities || [];
-        setCommunities(communityLabels);
+        // Communities (already have emojis from interests_and_hobbies_edit)
+        setCommunities(parsed.communities || []);
       } else {
-        // Load hobbies from database
-        const hs = uniq(
-          ((hobbiesRes?.data as HobbyRow[] | null) ?? [])
-            .map((x) => x?.hobbies_master?.label)
-            .filter(Boolean) as string[]
-        );
-        setHobbies(hs.map(humanize));
+        // Load hobbies
+        const hs = (hobbiesRes?.data ?? []) as HobbyRow[];
+        setHobbies(hs.map((x) => x?.hobbies_master?.label).filter(Boolean).map(humanize) as string[]);
 
         // Load communities from lifestyle and match with emoji versions
         const communityList = Array.isArray(l.communities) ? l.communities : [];
@@ -527,6 +554,54 @@ if (tempLookingForData) {
         setCommunities(matchedCommunities);
       }
 
+      // ========== NEW FIELDS LOADING ==========
+
+      // Languages (from user_languages table)
+      const tempLanguagesKey = `temp_languages_${userId}`;
+      const tempLanguagesData = await AsyncStorage.getItem(tempLanguagesKey);
+      if (tempLanguagesData) {
+        const parsed = JSON.parse(tempLanguagesData);
+        setLanguages(parsed.selectedLabels || []);
+      } else {
+        const langs = (languagesRes?.data ?? []) as any[];
+        setLanguages(
+          langs
+            .map((x) => x?.languages_master?.label)
+            .filter(Boolean) as string[]
+        );
+      }
+
+      // Hometown
+      const tempHometownKey = `temp_hometown_${userId}`;
+      const tempHometownData = await AsyncStorage.getItem(tempHometownKey);
+      if (tempHometownData) {
+        const parsed = JSON.parse(tempHometownData);
+        setHometown(parsed.hometown || null);
+      } else {
+        setHometown(p.hometown ?? null);
+      }
+
+      // Marital Status
+      const tempMaritalStatusKey = `temp_marital_status_${userId}`;
+      const tempMaritalStatusData = await AsyncStorage.getItem(tempMaritalStatusKey);
+      if (tempMaritalStatusData) {
+        const parsed = JSON.parse(tempMaritalStatusData);
+        setMaritalStatus(parsed.selected || null);
+      } else {
+        setMaritalStatus(p.marital_status ?? null);
+      }
+
+      // Vehicles
+      const tempVehiclesKey = `temp_vehicles_${userId}`;
+      const tempVehiclesData = await AsyncStorage.getItem(tempVehiclesKey);
+      if (tempVehiclesData) {
+        const parsed = JSON.parse(tempVehiclesData);
+        setVehicles(parsed.selected || []);
+      } else {
+        setVehicles(Array.isArray(p.vehicles) ? p.vehicles : []);
+      }
+
+      // Reload photos
       await reloadPhotos(userId);
     } catch (e) {
       console.log("Edit screen load error:", e);
@@ -543,6 +618,7 @@ if (tempLookingForData) {
     }, [loadProfileData])
   );
 
+  // ========== HANDLE SAVE ==========
   const handleSave = async () => {
     try {
       const { data: auth } = await supabase.auth.getUser();
@@ -595,7 +671,7 @@ if (tempLookingForData) {
       if (tempOrientationData) {
         const parsed = JSON.parse(tempOrientationData);
         updates.sexual_orientation = parsed.normalizedOrientation;
-        updates.orientation_custom = parsed.customOrientation.trim() || null;
+        updates.orientation_custom = parsed.customOrientation?.trim() || null;
         updates.show_orientation_on_profile = parsed.showOnProfile;
         await AsyncStorage.removeItem(tempOrientationKey);
       }
@@ -680,32 +756,18 @@ if (tempLookingForData) {
         if (tempLifestyleData) await AsyncStorage.removeItem(tempLifestyleKey);
       }
 
-      // What I'm Looking For (friend mode)
-      // What I'm Looking For (friend mode)
-const tempLookingForKey = `temp_looking_for_${userId}`;
-const tempLookingForData = await AsyncStorage.getItem(tempLookingForKey);
-if (tempLookingForData) {
-  const parsed = JSON.parse(tempLookingForData);
+      // What I'm Looking For - NEW UNIFIED SYSTEM (profiles table, not user_modes)
+      const tempLookingForKey = `temp_looking_for_${userId}`;
+      const tempLookingForData = await AsyncStorage.getItem(tempLookingForKey);
+      if (tempLookingForData) {
+        const parsed = JSON.parse(tempLookingForData);
 
-  const { error: modesError } = await supabase
-    .from("user_modes")
-    .upsert(
-      {
-        user_id: userId,
-        mode: "friend",
-        looking_for_friend: parsed.normalizedLookingFor,
-        value_friend: parsed.normalizedValues,
-        updated_at: new Date(),
-      },
-      {
-        onConflict: "user_id,mode",
+        // Save to profiles table with new unified fields
+        updates.looking_for = parsed.lookingForEnums || [];
+        updates.values = parsed.valuesEnums || [];
+
+        await AsyncStorage.removeItem(tempLookingForKey);
       }
-    );
-
-  if (modesError) throw modesError;
-  await AsyncStorage.removeItem(tempLookingForKey);
-}
-
 
       // Interests & Hobbies
       const tempInterestsKey = `temp_interests_hobbies_${userId}`;
@@ -799,9 +861,9 @@ if (tempLookingForData) {
     }
   };
 
+  // ========== PHOTO HANDLING ==========
   const chooseFromLibrary = async (): Promise<string | null> => {
     try {
-      console.log("Opening library picker...");
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"] as any,
         allowsEditing: true,
@@ -809,16 +871,11 @@ if (tempLookingForData) {
         quality: 0.8,
       });
 
-      console.log("Library result:", result);
       if (!result.canceled && result.assets?.[0]) {
-        console.log("Image selected:", result.assets[0].uri);
         return result.assets[0].uri;
-      } else {
-        console.log("Library selection cancelled");
-        return null;
       }
+      return null;
     } catch (error) {
-      console.error("Library error:", error);
       const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
       Alert.alert("Error", "Library failed: " + errorMessage);
       return null;
@@ -827,8 +884,6 @@ if (tempLookingForData) {
 
   const takePhotoWithCamera = async (): Promise<string | null> => {
     try {
-      console.log("Take photo clicked");
-
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== "granted") {
         Alert.alert("Permission Required", "Camera access is required to take photos.");
@@ -842,16 +897,11 @@ if (tempLookingForData) {
         quality: 0.8,
       });
 
-      console.log("Camera result:", result);
       if (!result.canceled && result.assets?.[0]) {
-        console.log("Photo taken:", result.assets[0].uri);
         return result.assets[0].uri;
-      } else {
-        console.log("Camera cancelled");
-        return null;
       }
+      return null;
     } catch (error) {
-      console.error("Camera error:", error);
       const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
       Alert.alert("Error", "Camera failed: " + errorMessage);
       return null;
@@ -950,57 +1000,6 @@ if (tempLookingForData) {
   };
 
   const onChangeFromSheet = () => openSourceSheet(sheetKind, sheetIndex);
-  const onRemoveFromSheet = () => (sheetKind === "main" ? removeSlot("main") : removeSlot("extra", sheetIndex));
-  const onSetMainFromSheet = () => sheetKind === "extra" && setAsMainFromExtra(sheetIndex);
-
-  const onPickLibrary = async () => {
-    console.log("Choose library tapped");
-    try {
-      const uri = await chooseFromLibrary();
-      if (uri) {
-        console.log("Got URI from library, uploading...");
-        await uploadUriToSlot(sourceKind, sourceIndex, uri);
-      } else {
-        console.log("Library selection cancelled");
-      }
-    } catch (error) {
-      console.error("Error in onPickLibrary:", error);
-    } finally {
-      setSourceVisible(false);
-    }
-  };
-
-  const onPickCamera = async () => {
-    console.log("Take photo tapped");
-    try {
-      const uri = await takePhotoWithCamera();
-      if (uri) {
-        console.log("Got URI from camera, uploading...");
-        await uploadUriToSlot(sourceKind, sourceIndex, uri);
-      } else {
-        console.log("Camera cancelled");
-      }
-    } catch (error) {
-      console.error("Error in onPickCamera:", error);
-    } finally {
-      setSourceVisible(false);
-    }
-  };
-
-  const setAsMainFromExtra = async (index: number) => {
-    const candidate = slots.extra[index];
-    if (!candidate.id) return;
-    try {
-      const { data: auth } = await supabase.auth.getUser();
-      const userId = auth?.user?.id;
-      if (!userId) return;
-      await supabase.from("user_photos").update({ is_main: false }).eq("user_id", userId);
-      await supabase.from("user_photos").update({ is_main: true }).eq("id", candidate.id);
-      await reloadPhotos(userId);
-    } catch (e) {
-      console.log("setAsMainFromExtra error:", e);
-    }
-  };
 
   const removeSlot = async (kind: "main" | "extra", index?: number) => {
     try {
@@ -1022,6 +1021,57 @@ if (tempLookingForData) {
       await reloadPhotos(userId);
     } catch (e) {
       console.log("removeSlot error:", e);
+    }
+  };
+
+  const setAsMainFromExtra = async (index: number) => {
+    const candidate = slots.extra[index];
+    if (!candidate.id) return;
+    try {
+      const { data: auth } = await supabase.auth.getUser();
+      const userId = auth?.user?.id;
+      if (!userId) return;
+      await supabase.from("user_photos").update({ is_main: false }).eq("user_id", userId);
+      await supabase.from("user_photos").update({ is_main: true }).eq("id", candidate.id);
+      await reloadPhotos(userId);
+    } catch (e) {
+      console.log("setAsMainFromExtra error:", e);
+    }
+  };
+
+  const onRemoveFromSheet = () => {
+    setSheetVisible(false);
+    sheetKind === "main" ? removeSlot("main") : removeSlot("extra", sheetIndex);
+  };
+
+  const onSetMainFromSheet = () => {
+    setSheetVisible(false);
+    sheetKind === "extra" && setAsMainFromExtra(sheetIndex);
+  };
+
+  const onPickLibrary = async () => {
+    try {
+      const uri = await chooseFromLibrary();
+      if (uri) {
+        await uploadUriToSlot(sourceKind, sourceIndex, uri);
+      }
+    } catch (error) {
+      console.error("Error in onPickLibrary:", error);
+    } finally {
+      setSourceVisible(false);
+    }
+  };
+
+  const onPickCamera = async () => {
+    try {
+      const uri = await takePhotoWithCamera();
+      if (uri) {
+        await uploadUriToSlot(sourceKind, sourceIndex, uri);
+      }
+    } catch (error) {
+      console.error("Error in onPickCamera:", error);
+    } finally {
+      setSourceVisible(false);
     }
   };
 
@@ -1077,14 +1127,10 @@ if (tempLookingForData) {
         showsVerticalScrollIndicator={false}
         bounces
       >
+        {/* Photos Section */}
         <View style={styles.photosSection}>
           <View style={styles.mainTitleRow}>
-            <Ionicons
-              name="images-outline"
-              size={22}
-              color={Colors.BLUE}
-              style={styles.mainTitleIcon}
-            />
+            <Ionicons name="images-outline" size={22} color={Colors.BLUE} style={styles.mainTitleIcon} />
             <Text style={styles.mainSectionTitle}>Photos</Text>
           </View>
           <Text style={styles.sectionHint}>Tap to add/change, drag to reorder</Text>
@@ -1160,6 +1206,7 @@ if (tempLookingForData) {
           </View>
         </View>
 
+        {/* Prompts Section */}
         <SectionCard
           title="My Prompts"
           icon={<Ionicons name="chatbubbles-outline" size={20} color={Colors.BLUE} />}
@@ -1182,6 +1229,7 @@ if (tempLookingForData) {
           )}
         </SectionCard>
 
+        {/* Identity Section */}
         <SectionCard
           title="Identity"
           icon={<MaterialCommunityIcons name="drama-masks" size={20} color={Colors.BLUE} />}
@@ -1213,15 +1261,14 @@ if (tempLookingForData) {
           />
         </SectionCard>
 
+        {/* My Essentials Section */}
         <SectionCard
           title="My Essentials"
           icon={<Ionicons name="sparkles-outline" size={20} color={Colors.BLUE} />}
         >
           <InfoRow
             label="Communication Style"
-            value={
-              lifestyle.communication ? textOnly(lifestyle.communication) : "Add style"
-            }
+            value={lifestyle.communication ? textOnly(lifestyle.communication) : "Add style"}
             onPress={() => router.push("/(edit_profile)/my_essentials/communication_edit")}
             showArrow
           />
@@ -1245,28 +1292,21 @@ if (tempLookingForData) {
           />
         </SectionCard>
 
+        {/* What I'm Looking For Section */}
         <SectionCard
           title="What I'm Looking For"
           icon={<MaterialCommunityIcons name="heart-outline" size={20} color={Colors.BLUE} />}
           action={() => router.push("/(edit_profile)/what_im_looking_for_edit")}
         >
+          <Text style={styles.subSectionTitle}>What I'm Seeking</Text>
           <View style={styles.tagsList}>
             {lookingFor.length ? (
-              lookingFor.length === 2 ? (
-                <TagChip
-                  key="looking-for-combined"
-                  label={getLookingForDisplayText(lookingFor)}
-                />
-              ) : lookingFor.length === 1 ? (
-                <TagChip key={lookingFor[0]} label={lookingFor[0]} />
-              ) : (
-                lookingFor.map((v, i) => <TagChip key={`${v}-${i}`} label={v} />)
-              )
+              lookingFor.map((v, i) => <TagChip key={`${v}-${i}`} label={v} />)
             ) : (
               <Text style={styles.emptyText}>Not specified</Text>
             )}
           </View>
-          <Text style={styles.subSectionTitle}>Values in a Partner</Text>
+          <Text style={styles.subSectionTitle}>What I Value in Others</Text>
           <View style={styles.tagsList}>
             {partnerValues.length ? (
               partnerValues.map((v, i) => <TagChip key={`${v}-${i}`} label={v} />)
@@ -1276,6 +1316,7 @@ if (tempLookingForData) {
           </View>
         </SectionCard>
 
+        {/* Lifestyle Section */}
         <SectionCard
           title="Lifestyle"
           icon={<Ionicons name="star-outline" size={20} color={Colors.BLUE} />}
@@ -1285,29 +1326,19 @@ if (tempLookingForData) {
             <View style={styles.lifestyleRow}>
               {lifestyle.drinking && (
                 <LifestyleItem
-                  icon={
-                    <MaterialCommunityIcons
-                      name="glass-wine"
-                      size={30}
-                      color={Colors.BLUE}
-                    />
-                  }
+                  icon={<MaterialCommunityIcons name="glass-wine" size={30} color={Colors.BLUE} />}
                   value={textOnly(lifestyle.drinking)}
                 />
               )}
               {lifestyle.smoking && (
                 <LifestyleItem
-                  icon={
-                    <MaterialCommunityIcons name="smoking" size={30} color={Colors.BLUE} />
-                  }
+                  icon={<MaterialCommunityIcons name="smoking" size={30} color={Colors.BLUE} />}
                   value={textOnly(lifestyle.smoking)}
                 />
               )}
               {lifestyle.workout && (
                 <LifestyleItem
-                  icon={
-                    <MaterialCommunityIcons name="dumbbell" size={30} color={Colors.BLUE} />
-                  }
+                  icon={<MaterialCommunityIcons name="dumbbell" size={30} color={Colors.BLUE} />}
                   value={textOnly(lifestyle.workout)}
                 />
               )}
@@ -1315,33 +1346,19 @@ if (tempLookingForData) {
             <View style={styles.lifestyleRow}>
               {lifestyle.religion && (
                 <LifestyleItem
-                  icon={
-                    <FontAwesome5
-                      name="praying-hands"
-                      size={28}
-                      color={Colors.BLUE}
-                    />
-                  }
+                  icon={<FontAwesome5 name="praying-hands" size={28} color={Colors.BLUE} />}
                   value={textOnly(lifestyle.religion)}
                 />
               )}
               {lifestyle.politics && (
                 <LifestyleItem
-                  icon={
-                    <MaterialCommunityIcons name="bank" size={30} color={Colors.BLUE} />
-                  }
+                  icon={<MaterialCommunityIcons name="bank" size={30} color={Colors.BLUE} />}
                   value={textOnly(lifestyle.politics)}
                 />
               )}
               {lifestyle.kids && (
                 <LifestyleItem
-                  icon={
-                    <MaterialCommunityIcons
-                      name="baby-face-outline"
-                      size={30}
-                      color={Colors.BLUE}
-                    />
-                  }
+                  icon={<MaterialCommunityIcons name="baby-face-outline" size={30} color={Colors.BLUE} />}
                   value={textOnly(lifestyle.kids)}
                 />
               )}
@@ -1349,6 +1366,7 @@ if (tempLookingForData) {
           </View>
         </SectionCard>
 
+        {/* Interests & Hobbies Section */}
         <SectionCard
           title="Interests & Hobbies"
           icon={<MaterialCommunityIcons name="palette-outline" size={20} color={Colors.BLUE} />}
@@ -1373,18 +1391,48 @@ if (tempLookingForData) {
           )}
         </SectionCard>
 
+        {/* Background Section */}
         <SectionCard
           title="Background"
           icon={<MaterialCommunityIcons name="school-outline" size={20} color={Colors.BLUE} />}
           action={() => router.push("/(edit_profile)/background_edit")}
         >
+          <InfoRow label="Education" value={education ? humanize(education) : "Add education"} />
+          <InfoRow label="Institution" value={institution ? humanize(institution) : "Add institution"} />
+        </SectionCard>
+
+        {/* About Me Section - NEW */}
+        <SectionCard
+          title="About Me"
+          icon={<Ionicons name="person-outline" size={20} color={Colors.BLUE} />}
+        >
           <InfoRow
-            label="Education"
-            value={education ? humanize(education) : "Add education"}
+            label="Hometown"
+            value={hometown || "Add hometown"}
+            onPress={() => router.push("/(edit_profile)/hometown_edit")}
+            showArrow
           />
           <InfoRow
-            label="Institution"
-            value={institution ? humanize(institution) : "Add institution"}
+            label="Relationship Status"
+            value={maritalStatus ? MARITAL_STATUS_DISPLAY[maritalStatus] || humanize(maritalStatus) : "Add status"}
+            onPress={() => router.push("/(edit_profile)/maritial_status_edit")}
+            showArrow
+          />
+          <InfoRow
+            label="Languages"
+            value={languages.length ? languages.join(", ") : "Add languages"}
+            onPress={() => router.push("/(edit_profile)/languages_edit")}
+            showArrow
+          />
+          <InfoRow
+            label="Vehicles"
+            value={
+              vehicles.length
+                ? vehicles.map((v) => VEHICLES_DISPLAY[v] || humanize(v)).join(", ")
+                : "Add vehicles"
+            }
+            onPress={() => router.push("/(edit_profile)/vehicles_edit")}
+            showArrow
           />
         </SectionCard>
       </ScrollView>
@@ -1456,9 +1504,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: verticalScale(10),
     marginBottom: verticalScale(20),
-  },
-  extraPhotosGrid: {
-    paddingHorizontal: 0,
   },
   promptsList: {
     gap: verticalScale(12),

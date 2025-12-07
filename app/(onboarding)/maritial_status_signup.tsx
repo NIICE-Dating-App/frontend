@@ -1,3 +1,4 @@
+// app/(onboarding)/(common)/marital_status_signup.tsx
 import { Fonts } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
 import { moderateScale, scale, verticalScale } from "@/utils/responsive";
@@ -6,49 +7,34 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useCallback, useRef, useState } from "react";
 import {
-  Alert,
-  Animated,
-  LayoutAnimation,
-  Platform,
-  Pressable,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TextInput,
-  UIManager,
-  View,
+    Alert,
+    Animated,
+    Platform,
+    Pressable,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-
-if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 const BG = "#EAF1F8";
 const INK = "#000910";
 const BLUE = "#1B44CD";
-const INK_SOFT = "#1B2B44";
 
 // ==========================================
-// COMMUNITY OPTIONS
+// MARITAL STATUS OPTIONS (matches marital_status_enum)
 // ==========================================
 const OPTIONS = [
-  "🌿 Environmentalism",
-  "✊ Social justice",
-  "🏳️‍🌈 LGBTQIA+",
-  "♀️ Feminism",
-  "🧠 Mental health awareness",
-  "✊🏾 Black community",
-  "🧧 Asian community",
-  "🪅 Latino/Hispanic community",
-  "✡️ Jewish community",
-  "☪️ Muslim community",
-  "♿ Disability awareness",
-  "💖 Body positivity",
-  "🐾 Animal rights",
-  "🌍 Climate action",
-  "✨ Other",
+  { value: "single", label: "💫 Single" },
+  { value: "in_relationship", label: "💑 In a Relationship" },
+  { value: "engaged", label: "💍 Engaged" },
+  { value: "married", label: "💒 Married" },
+  { value: "divorced", label: "📝 Divorced" },
+  { value: "widowed", label: "🕊️ Widowed" },
+  { value: "separated", label: "↔️ Separated" },
+  { value: "its_complicated", label: "🤷 It's Complicated" },
 ];
 
 // ==========================================
@@ -99,26 +85,11 @@ const OptionChip = React.memo(
 // ==========================================
 // MAIN COMPONENT
 // ==========================================
-export default function CommunitiesSignup() {
-  const [selected, setSelected] = useState<string[]>([]);
-  const [otherText, setOtherText] = useState("");
+export default function MaritalStatusSignup() {
+  const [selected, setSelected] = useState<string | null>(null);
 
-  const toggleOption = useCallback((option: string) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setSelected((prev) => {
-      const has = prev.includes(option);
-
-      // Deselect
-      if (has) return prev.filter((x) => x !== option);
-
-      // Prevent selecting more than 4
-      if (prev.length >= 4) {
-        Alert.alert("Limit reached", "You can select up to 4 communities.");
-        return prev;
-      }
-
-      return [...prev, option];
-    });
+  const toggleOption = useCallback((value: string) => {
+    setSelected((prev) => (prev === value ? null : value));
   }, []);
 
   const handleNext = async () => {
@@ -126,22 +97,17 @@ export default function CommunitiesSignup() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) throw new Error("No active session");
 
-      const finalSelections = selected.includes("✨ Other")
-        ? [...selected.filter((x) => x !== "✨ Other"), otherText.trim() || "Other"]
-        : selected;
+      // Only update if user selected something
+      if (selected) {
+        const { error } = await supabase
+          .from("profiles")
+          .update({ marital_status: selected })
+          .eq("id", session.user.id);
 
-      const payload = {
-        user_id: session.user.id,
-        communities: finalSelections.length > 0 ? finalSelections : null,
-      };
+        if (error) throw error;
+      }
 
-      const { error } = await supabase
-      .from("lifestyle")
-      .upsert(payload, { onConflict: "user_id" });
-    if (error) throw error;
-
-
-      router.push("/(onboarding)/maritial_status_signup");
+      router.push("/(onboarding)/hometown_signup");
     } catch (e: any) {
       Alert.alert("Error", e.message);
     }
@@ -180,29 +146,19 @@ export default function CommunitiesSignup() {
           paddingTop: verticalScale(35),
         }}
       >
-        <Text style={styles.title}>Pick the communities you support.</Text>
+        <Text style={styles.title}>What's your relationship status?</Text>
         <Text style={styles.subtitle}>
-          Select all that apply – this helps you connect with like-minded people.
+          This helps us personalize your experience. You can skip if you prefer.
         </Text>
 
         <View style={styles.optionGroup}>
           {OPTIONS.map((opt) => (
-            <React.Fragment key={opt}>
-              <OptionChip
-                label={opt}
-                selected={selected.includes(opt)}
-                onPress={() => toggleOption(opt)}
-              />
-              {opt === "✨ Other" && selected.includes("✨ Other") && (
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="Type your community..."
-                  placeholderTextColor="#7A838E"
-                  value={otherText}
-                  onChangeText={setOtherText}
-                />
-              )}
-            </React.Fragment>
+            <OptionChip
+              key={opt.value}
+              label={opt.label}
+              selected={selected === opt.value}
+              onPress={() => toggleOption(opt.value)}
+            />
           ))}
         </View>
       </ScrollView>
@@ -221,7 +177,6 @@ export default function CommunitiesSignup() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BG },
 
-  // Match distancepref_signup positions
   backButton: {
     position: "absolute",
     top: verticalScale(58),
@@ -258,7 +213,7 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: verticalScale(6),
-    width: "76.44%",
+    width: "78%", // After communities4 (76.44%), incrementing
     backgroundColor: BLUE,
     borderRadius: scale(3),
   },
@@ -291,10 +246,10 @@ const styles = StyleSheet.create({
     borderRadius: scale(30),
   },
   optionChip: {
-    paddingVertical: verticalScale(10),
-    paddingHorizontal: scale(20),
+    paddingVertical: verticalScale(12),
+    paddingHorizontal: scale(22),
     borderRadius: scale(30),
-    minWidth: scale(120),
+    minWidth: scale(140),
     alignItems: "center",
     justifyContent: "center",
   },
@@ -305,19 +260,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   optionTextSelected: { color: "#FFFFFF" },
-  textInput: {
-    width: "100%",
-    borderColor: "#C8CDD2",
-    borderWidth: 1,
-    borderRadius: scale(12),
-    paddingVertical: verticalScale(10),
-    paddingHorizontal: scale(14),
-    fontFamily: Fonts.bold,
-    fontSize: moderateScale(15),
-    color: INK_SOFT,
-    marginTop: verticalScale(10),
-    backgroundColor: "#FFFFFF",
-  },
+
   nextButton: {
     position: "absolute",
     bottom: verticalScale(40),

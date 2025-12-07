@@ -32,10 +32,7 @@ const INK = Colors.INK;
 const BLUE = Colors.BLUE;
 
 // ================== TYPES ==================
-type MatchMode = "dating" | "friend";
 type MatchStatus = "pending" | "accepted" | "denied" | "rejected";
-type ConnectionVisibility = "full_profile" | "blind";
-type PlaceRole = "none" | "requester" | "target";
 
 interface MatchRequest {
   id: string;
@@ -43,16 +40,21 @@ interface MatchRequest {
   full_name: string | null;
   age: number | null;
   main_photo_url: string | null;
-  match_mode: MatchMode;
-  connection_visibility: ConnectionVisibility;
   status: MatchStatus;
   is_incoming: boolean;
   sender_message: string | null;
-  place_role: PlaceRole | null;
   created_at: string;
 }
 
 // ================== UTILITY FUNCTIONS ==================
+const capitalizeName = (name: string | null): string => {
+  if (!name) return "";
+  return name
+    .split(" ")
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+};
+
 const formatRelativeTime = (dateStr: string | null): string => {
   if (!dateStr) return "";
   const now = new Date();
@@ -93,8 +95,6 @@ const RequestRow: React.FC<{
     }).start();
   };
 
-  const isBlind = request.connection_visibility === "blind";
-
   return (
     <TouchableOpacity 
       style={styles.requestRowWrapper} 
@@ -109,12 +109,8 @@ const RequestRow: React.FC<{
           { transform: [{ scale: scaleAnim }] }
         ]}
       >
-        <View style={[styles.requestAvatar, isBlind && styles.requestAvatarBlind]}>
-          {isBlind ? (
-            <View style={styles.requestAvatarBlindInner}>
-              <Ionicons name="eye-off" size={20} color="#FFFFFF" />
-            </View>
-          ) : request.main_photo_url ? (
+        <View style={styles.requestAvatar}>
+          {request.main_photo_url ? (
             <Image source={{ uri: request.main_photo_url }} style={styles.requestPhoto} />
           ) : (
             <View style={styles.requestPhotoPlaceholder}>
@@ -124,11 +120,11 @@ const RequestRow: React.FC<{
         </View>
         <View style={styles.requestInfo}>
           <Text style={styles.requestName} numberOfLines={1}>
-            {isBlind ? "Mystery Person" : (request.full_name || "Someone")}
-            {request.age && !isBlind ? `, ${request.age}` : ""}
+            {capitalizeName(request.full_name) || "Someone"}
+            {request.age ? `, ${request.age}` : ""}
           </Text>
           <Text style={styles.requestSubtext}>
-            {isBlind ? "Blind meeting" : request.match_mode === "dating" ? "Date request" : "Friend request"}
+            Connection request
           </Text>
           {request.sender_message && request.is_incoming && (
             <Text style={styles.requestMessage} numberOfLines={1}>"{request.sender_message}"</Text>
@@ -211,7 +207,7 @@ function RequestsScreen() {
     try {
       setLoadingRequests(true);
       const { data, error } = await supabase.from("match_requests")
-        .select("id, requester_id, target_id, match_mode, connection_visibility, status, sender_message, place_role, created_at")
+        .select("id, requester_id, target_id, status, sender_message, created_at")
         .or(`requester_id.eq.${uid},target_id.eq.${uid}`)
         .eq("status", "pending")
         .order("created_at", { ascending: false });
@@ -235,12 +231,9 @@ function RequestsScreen() {
           full_name: preview.full_name, 
           age: preview.age, 
           main_photo_url: preview.main_photo_url, 
-          match_mode: row.match_mode, 
-          connection_visibility: row.connection_visibility, 
           status: row.status, 
           is_incoming: isIncoming, 
           sender_message: row.sender_message, 
-          place_role: row.place_role, 
           created_at: row.created_at 
         };
         if (isIncoming) incoming.push(req); 
@@ -616,15 +609,6 @@ const styles = StyleSheet.create({
     overflow: "hidden", 
     backgroundColor: "#E8F4FF", 
     marginRight: scale(14) 
-  },
-  requestAvatarBlind: { 
-    backgroundColor: "transparent" 
-  },
-  requestAvatarBlindInner: {
-    flex: 1,
-    backgroundColor: BLUE,
-    alignItems: "center",
-    justifyContent: "center",
   },
   requestPhoto: { 
     width: "100%", 

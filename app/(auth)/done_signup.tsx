@@ -1,6 +1,5 @@
 // app/(auth)/done_signup.tsx
 import { router } from "expo-router";
-import React from "react";
 import {
   Alert,
   Dimensions,
@@ -14,7 +13,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { BackButton } from "../../components/BackButton";
 import { Fonts } from "../../constants/theme";
-import { supabase } from "../../lib/supabase"; // 👈 make sure path is correct
+import { supabase } from "../../lib/supabase";
 
 const BG = "#EEF7FF";
 const INK = "#000910";
@@ -29,29 +28,34 @@ export default function DoneSignup() {
       // get current Supabase session
       const { data: { session }, error } = await supabase.auth.getSession();
       if (error || !session?.user) {
+        console.error("Session error:", error);
         Alert.alert("Error", "Session not found. Please log in again.");
         return;
       }
 
-      // ✅ create an empty profile row for onboarding with defaults
-      const { error: upsertError } = await supabase.from("profiles").upsert({
+      console.log("Creating profile for user:", session.user.id);
+
+      // Create an empty profile row for onboarding with defaults
+      // NOTE: brings_you column was REMOVED in the unified mode migration
+      // NOTE: sexual_orientation is now NULLABLE (set during onboarding)
+      const { data, error: upsertError } = await supabase.from("profiles").upsert({
         id: session.user.id,
         onboarding_step: 0,
         onboarding_completed: false,
 
-        // set defaults for non-nullable fields
+        // Set defaults for non-nullable fields only
         gender: "man",
-        sexual_orientation: "straight",
-        brings_you: "date",
         interested_in: ["woman"],
-        //looking_for: ["short_term"],
         prompt: "To be filled soon",
-      });
+      }).select();
 
       if (upsertError) {
+        console.error("Profile upsert error:", upsertError);
         Alert.alert("Error", upsertError.message);
         return;
       }
+
+      console.log("Profile created successfully:", data);
 
       // move to the first onboarding screen
       router.push("/(onboarding)/name_age_signup");
@@ -72,7 +76,7 @@ export default function DoneSignup() {
 
         {/* Ascent buffer to prevent top clipping on big headline */}
         <View style={styles.accentWrap}>
-          <Text style={styles.accent}>That’s Niice</Text>
+          <Text style={styles.accent}>That's Niice</Text>
         </View>
       </View>
 

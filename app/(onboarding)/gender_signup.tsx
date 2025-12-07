@@ -4,7 +4,7 @@ import { moderateScale, scale, verticalScale } from "@/utils/responsive";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Alert,
   Animated,
@@ -102,7 +102,8 @@ export default function GenderSignup() {
         return;
       }
 
-      router.push("/(onboarding)/orientation_signup");
+      // ✅ NEW FLOW: Route to unified hope_to_find_signup instead of orientation_signup
+      router.push("/(onboarding)/hope_to_find_signup");
     } catch (err) {
       console.error("Gender update error:", err);
       Alert.alert("Unexpected error", "Please try again.");

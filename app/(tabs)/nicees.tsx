@@ -1,8 +1,9 @@
 // app/(tabs)/(up_tab)/nicees.tsx
 // MERGED: Polished UI (no gradients) + Complete Supabase fetching
+// REFACTORED: Removed blind date/meeting functionality
+// UPDATED: Integrated niices search directly, removed See All navigation to niices_view
 
 import { Ionicons } from "@expo/vector-icons";
-import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import Slider from "@react-native-community/slider";
 import { useFocusEffect } from "@react-navigation/native";
 import { BlurView } from "expo-blur";
@@ -15,7 +16,6 @@ import {
   Image,
   Keyboard,
   Modal,
-  Platform,
   Pressable,
   RefreshControl,
   Animated as RNAnimated,
@@ -26,7 +26,6 @@ import {
   TouchableOpacity,
   View
 } from "react-native";
-import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Colors } from "@/components/theme";
@@ -46,11 +45,7 @@ const BORDER = "rgba(27, 68, 205, 0.08)";
 
 // ================== TYPES ==================
 type MainTab = "nearby" | "niices_meet";
-type MatchMode = "dating" | "friend";
 type MatchStatus = "pending" | "accepted" | "denied" | "rejected";
-type ConnectionVisibility = "full_profile" | "blind";
-type PlaceRole = "none" | "requester" | "target";
-type BlindDateStep = "place_role" | "details" | "message_only" | "accept_location" | "accept_simple" | null;
 
 interface FilterState {
   ageMin: number;
@@ -74,41 +69,20 @@ interface NearbyUser {
   main_photo_url: string | null;
   frame_id: string | null;
   has_active_frame: boolean;
-  mode: string;
   approx_lat: number;
   approx_lng: number;
   last_seen: string | null;
   gender: string | null;
-  looking_for_friend?: string[] | null;
-  value_friend?: string[] | null;
+  looking_for?: string[] | null;
+  values?: string[] | null;
   sexual_orientation?: string | null;
 }
 
 interface MatchStatusInfo {
   status: "pending" | "accepted" | "denied" | "rejected" | null;
-  connection_visibility: "full_profile" | "blind" | null;
-  chat_allowed: boolean;
   is_requester: boolean;
   match_id: string | null;
-  place_role?: "none" | "requester" | "target" | null;
-  blind_meet_time?: string | null;
-  blind_location_name?: string | null;
   sender_message?: string | null;
-}
-
-interface BlindMeeting {
-  id: string;
-  other_user_id: string;
-  full_name: string | null;
-  age: number | null;
-  main_photo_url: string | null;
-  match_mode: MatchMode;
-  blind_meet_time: string | null;
-  blind_location_name: string | null;
-  requester_reveal_approved: boolean;
-  target_reveal_approved: boolean;
-  is_requester: boolean;
-  created_at: string;
 }
 
 interface NiiceMatch {
@@ -117,11 +91,8 @@ interface NiiceMatch {
   full_name: string;
   age: number | null;
   main_photo_url: string | null;
-  match_mode: MatchMode;
   last_message_preview: string | null;
   last_message_at: string | null;
-  from_blind_meet: boolean;
-  connection_visibility: ConnectionVisibility;
   created_at: string;
 }
 
@@ -131,34 +102,19 @@ interface MatchRequest {
   full_name: string | null;
   age: number | null;
   main_photo_url: string | null;
-  match_mode: MatchMode;
-  connection_visibility: ConnectionVisibility;
   status: MatchStatus;
   is_incoming: boolean;
   sender_message: string | null;
-  place_role: PlaceRole | null;
   created_at: string;
 }
 
-interface BlindDateForm {
-  placeRole: 'requester' | 'target' | null;
-  locationName: string;
-  locationCoords: { lat: number; lng: number } | null;
-  meetTime: Date | null;
-  message: string;
-}
-
 // ================== UTILITY FUNCTIONS ==================
-const formatTimeUntil = (dateStr: string): string => {
-  const now = new Date();
-  const target = new Date(dateStr);
-  const diff = target.getTime() - now.getTime();
-  if (diff <= 0) return "Now";
-  const hours = Math.floor(diff / (1000 * 60 * 60));
-  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-  if (hours > 24) return `${Math.floor(hours / 24)}d ${hours % 24}h`;
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
+const capitalizeName = (name: string | null): string => {
+  if (!name) return "Unknown";
+  return name
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
 };
 
 const formatRelativeTime = (dateStr: string | null): string => {
@@ -176,28 +132,7 @@ const formatRelativeTime = (dateStr: string | null): string => {
   return date.toLocaleDateString();
 };
 
-const formatMeetingDate = (dateStr: string | null): string => {
-  if (!dateStr) return "";
-  const date = new Date(dateStr);
-  const now = new Date();
-  const tomorrow = new Date(now);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const isToday = date.toDateString() === now.toDateString();
-  const isTomorrow = date.toDateString() === tomorrow.toDateString();
-  const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  if (isToday) return `Today - ${time}`;
-  if (isTomorrow) return `Tomorrow - ${time}`;
-  return `${date.toLocaleDateString([], { month: "short", day: "numeric" })} - ${time}`;
-};
-
-const formatDateTime = (date: Date | null) => {
-  if (!date) return 'Select date & time';
-  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${days[date.getDay()]}, ${date.getDate()} ${months[date.getMonth()]} at ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
-};
-
-const formatLookingForFriend = (values: string[] | null): string | null => {
+const formatLookingFor = (values: string[] | null | undefined): string | null => {
   if (!values || values.length === 0) return null;
   const displayMap: Record<string, string> = {
     'new_friends_nearby': 'New friends nearby',
@@ -211,7 +146,7 @@ const formatLookingForFriend = (values: string[] | null): string | null => {
   return values.slice(0, 2).map(v => displayMap[v] || v.replace(/_/g, ' ')).join(' - ');
 };
 
-const formatValueFriend = (values: string[] | null): string | null => {
+const formatValues = (values: string[] | null | undefined): string | null => {
   if (!values || values.length === 0) return null;
   const displayMap: Record<string, string> = {
     'loyalty': 'Loyalty',
@@ -233,7 +168,7 @@ const formatValueFriend = (values: string[] | null): string | null => {
   return values.slice(0, 3).map(v => displayMap[v] || v.replace(/_/g, ' ')).join(', ');
 };
 
-const formatOrientation = (value: string | null): string | null => {
+const formatOrientation = (value: string | null | undefined): string | null => {
   if (!value) return null;
   const displayMap: Record<string, string> = {
     'straight': 'Straight', 'gay': 'Gay', 'lesbian': 'Lesbian', 'bisexual': 'Bisexual',
@@ -434,7 +369,7 @@ const TabToggle: React.FC<TabToggleProps> = ({ activeTab, onTabChange, nearbyCou
       onPress={() => onTabChange("niices_meet")} activeOpacity={0.8}>
       <View style={styles.tabToggleBtnInner}>
         <Ionicons name={activeTab === "niices_meet" ? "heart" : "heart-outline"} size={18} color={activeTab === "niices_meet" ? "#FFFFFF" : "rgba(10,14,26,0.6)"} />
-        <Text style={activeTab === "niices_meet" ? styles.tabToggleTextActive : styles.tabToggleText}>Niices & Meet</Text>
+        <Text style={activeTab === "niices_meet" ? styles.tabToggleTextActive : styles.tabToggleText}>Niices</Text>
         {niiceCount > 0 && (
           <View style={[
             styles.tabBadge, 
@@ -464,141 +399,115 @@ const FilterBar: React.FC<FilterBarProps> = ({ filters, hasActiveFilters, onOpen
       <View style={styles.countRow}>
         <Ionicons name="checkmark-circle" size={14} color="rgba(10,14,26,0.5)" />
         <Text style={styles.countText}>
-          {resultCount} {resultCount === 1 ? 'person' : 'people'} nearby
+          {resultCount === 0 ? 'No one' : resultCount === 1 ? '1 person' : `${resultCount} people`} nearby
         </Text>
       </View>
-
-      <TouchableOpacity style={styles.iconButton} onPress={onOpenFilter}>
-        <Ionicons name="options-outline" size={20} color={BLUE} />
+      <TouchableOpacity onPress={onOpenFilter} style={styles.iconButton} activeOpacity={0.7}>
+        <Ionicons name="options-outline" size={20} color="rgba(10,14,26,0.6)" />
         {hasActiveFilters && <View style={styles.filterDotSmall} />}
       </TouchableOpacity>
     </View>
   </View>
 );
 
+// ================== NIICES SEARCH BAR ==================
+interface NiicesSearchBarProps {
+  searchQuery: string;
+  onSearchChange: (text: string) => void;
+  resultCount: number;
+}
 
-// ================== NEARBY USER CARD (MINIMAL COMPACT) ==================
-interface NearbyUserCardProps {
+const NiicesSearchBar: React.FC<NiicesSearchBarProps> = ({ searchQuery, onSearchChange, resultCount }) => (
+  <View style={styles.niicesSearchContainer}>
+    <View style={styles.niicesSearchBar}>
+      <Ionicons name="search" size={18} color="rgba(10,14,26,0.4)" />
+      <TextInput
+        style={styles.niicesSearchInput}
+        placeholder="Search niices..."
+        placeholderTextColor="rgba(10,14,26,0.4)"
+        value={searchQuery}
+        onChangeText={onSearchChange}
+        autoCapitalize="none"
+        autoCorrect={false}
+      />
+      {searchQuery.length > 0 && (
+        <TouchableOpacity onPress={() => onSearchChange("")} activeOpacity={0.7}>
+          <Ionicons name="close-circle" size={18} color="rgba(10,14,26,0.3)" />
+        </TouchableOpacity>
+      )}
+    </View>
+    {searchQuery.length > 0 && (
+      <Text style={styles.niicesSearchCount}>
+        {resultCount === 0 ? 'No results' : resultCount === 1 ? '1 niice found' : `${resultCount} niices found`}
+      </Text>
+    )}
+  </View>
+);
+
+// ================== NEARBY USER CARD (MINIMAL) ==================
+const NearbyUserCard: React.FC<{
   user: NearbyUser;
   currentUserId: string | null;
   userPosition: { lat: number; lng: number } | null;
-  onSendRequest: (user: NearbyUser, isBlind: boolean, placeRole?: 'requester' | 'target', form?: BlindDateForm) => Promise<void>;
+  onSendRequest: (user: NearbyUser, message?: string) => void;
   onViewProfile: (userId: string) => void;
   onOpenFrames: (userId: string) => void;
-}
-
-const NearbyUserCard: React.FC<NearbyUserCardProps> = ({
-  user, currentUserId, userPosition, onSendRequest, onViewProfile, onOpenFrames,
-}) => {
+}> = ({ user, currentUserId, userPosition, onSendRequest, onViewProfile, onOpenFrames }) => {
+  const [matchStatus, setMatchStatus] = useState<MatchStatusInfo>({ status: null, is_requester: false, match_id: null });
+  const [showMessageInput, setShowMessageInput] = useState(false);
+  const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
-  const [matchStatus, setMatchStatus] = useState<MatchStatusInfo | null>(null);
-  const [blindDateStep, setBlindDateStep] = useState<BlindDateStep>(null);
-  const [blindDateForm, setBlindDateForm] = useState<BlindDateForm>({ placeRole: null, locationName: '', locationCoords: null, meetTime: null, message: '' });
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showLocationPicker, setShowLocationPicker] = useState(false);
-  const [tempPickedLocation, setTempPickedLocation] = useState<{ lat: number; lng: number } | null>(null);
 
-  const distance = useMemo(() => {
-    if (!userPosition) return null;
-    const R = 6371;
-    const dLat = ((user.approx_lat - userPosition.lat) * Math.PI) / 180;
-    const dLon = ((user.approx_lng - userPosition.lng) * Math.PI) / 180;
-    const a = Math.sin(dLat / 2) ** 2 + Math.cos((userPosition.lat * Math.PI) / 180) * Math.cos((user.approx_lat * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
-    const d = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return d < 1 ? `${Math.round(d * 1000)}m` : `${d.toFixed(1)}km`;
-  }, [user, userPosition]);
-
-  const fetchMatchStatus = useCallback(async () => {
-    if (!currentUserId) return;
-    const { data } = await supabase.from('match_requests').select('*')
-      .or(`and(requester_id.eq.${currentUserId},target_id.eq.${user.user_id}),and(requester_id.eq.${user.user_id},target_id.eq.${currentUserId})`)
-      .neq('status', 'denied').order('created_at', { ascending: false }).limit(1).maybeSingle();
-    if (data) {
-      setMatchStatus({
-        status: data.status, connection_visibility: data.connection_visibility, chat_allowed: data.chat_allowed ?? false,
-        is_requester: data.requester_id === currentUserId, match_id: data.id, place_role: data.place_role,
-        blind_meet_time: data.blind_meet_time, blind_location_name: data.blind_location_name, sender_message: data.sender_message,
-      });
-    } else setMatchStatus(null);
+  useEffect(() => {
+    const checkMatchStatus = async () => {
+      if (!currentUserId) return;
+      const { data } = await supabase
+        .from('match_requests')
+        .select('id, status, requester_id, sender_message')
+        .or(`and(requester_id.eq.${currentUserId},target_id.eq.${user.user_id}),and(requester_id.eq.${user.user_id},target_id.eq.${currentUserId})`)
+        .maybeSingle();
+      if (data) {
+        setMatchStatus({
+          status: data.status as any,
+          is_requester: data.requester_id === currentUserId,
+          match_id: data.id,
+          sender_message: data.sender_message,
+        });
+      }
+    };
+    checkMatchStatus();
   }, [currentUserId, user.user_id]);
 
-  useEffect(() => { fetchMatchStatus(); }, [fetchMatchStatus]);
-
-  const handleBlindMeetingStart = () => setBlindDateStep('place_role');
-  const handlePlaceRoleSelect = (role: 'requester' | 'target') => {
-    setBlindDateForm(prev => ({ ...prev, placeRole: role }));
-    setBlindDateStep(role === 'requester' ? 'details' : 'message_only');
-  };
-
-  const handleSendBlindRequest = async () => {
-    if (!blindDateForm.placeRole) return;
+  const handleSendRequest = async () => {
     setLoading(true);
-    try {
-      await onSendRequest(user, true, blindDateForm.placeRole, blindDateForm);
-      setBlindDateStep(null);
-      setBlindDateForm({ placeRole: null, locationName: '', locationCoords: null, meetTime: null, message: '' });
-      await fetchMatchStatus();
-    } finally { setLoading(false); }
+    await onSendRequest(user, message.trim() || undefined);
+    setShowMessageInput(false);
+    setMessage('');
+    setLoading(false);
+    setMatchStatus({ status: 'pending', is_requester: true, match_id: null });
   };
 
-  const handleSendFriendRequest = async () => {
-    setLoading(true);
-    try { await onSendRequest(user, false); await fetchMatchStatus(); }
-    finally { setLoading(false); }
-  };
+  const isPending = matchStatus.status === 'pending';
+  const isMatched = matchStatus.status === 'accepted';
 
-  const handleAcceptRequest = async () => {
-    if (!matchStatus?.match_id) return;
-    setLoading(true);
-    try {
-      const { error } = await supabase
-        .from('match_requests')
-        .update({ status: 'accepted' })
-        .eq('id', matchStatus.match_id);
-      if (error) throw error;
-      Alert.alert("Success", "Request accepted!");
-      await fetchMatchStatus();
-    } catch (error) {
-      Alert.alert("Error", "Failed to accept request");
-    } finally { setLoading(false); }
-  };
-
-  const handleDenyRequest = async () => {
-    if (!matchStatus?.match_id) return;
-    setLoading(true);
-    try {
-      const { error } = await supabase
-        .from('match_requests')
-        .update({ status: 'denied' })
-        .eq('id', matchStatus.match_id);
-      if (error) throw error;
-      await fetchMatchStatus();
-    } catch (error) {
-      Alert.alert("Error", "Failed to deny request");
-    } finally { setLoading(false); }
-  };
-
-  const handleDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
-    if (Platform.OS === 'android') setShowDatePicker(false);
-    if (selectedDate) setBlindDateForm(prev => ({ ...prev, meetTime: selectedDate }));
-  };
-
-  const isMatched = matchStatus?.status === 'accepted';
-  const isPending = matchStatus?.status === 'pending';
-  const isRequester = matchStatus?.is_requester;
-  const hasActiveFrame = user.has_active_frame;
+  const lookingForText = formatLookingFor(user.looking_for);
+  const valuesText = formatValues(user.values);
+  const orientationText = formatOrientation(user.sexual_orientation);
 
   return (
     <View style={styles.rowWrapper}>
-      <TouchableOpacity 
+      <TouchableOpacity
         style={styles.rowContent}
         onPress={() => onViewProfile(user.user_id)}
         activeOpacity={0.7}
-        disabled={!!blindDateStep}
       >
         {/* Avatar */}
-        <TouchableOpacity style={styles.avatarContainer} onPress={(e) => { if (hasActiveFrame) { e.stopPropagation(); onOpenFrames(user.user_id); } }} activeOpacity={hasActiveFrame ? 0.7 : 1} disabled={!hasActiveFrame}>
-          {hasActiveFrame && <View style={styles.avatarRing} />}
+        <TouchableOpacity
+          style={styles.avatarContainer}
+          onPress={(e) => { e.stopPropagation(); user.has_active_frame ? onOpenFrames(user.user_id) : onViewProfile(user.user_id); }}
+          activeOpacity={0.8}
+        >
+          {user.has_active_frame && <View style={styles.avatarRing} />}
           {user.main_photo_url ? (
             <Image source={{ uri: user.main_photo_url }} style={styles.avatar} />
           ) : (
@@ -608,49 +517,26 @@ const NearbyUserCard: React.FC<NearbyUserCardProps> = ({
           )}
         </TouchableOpacity>
 
-        {/* Name, Age, Distance */}
-        <View style={styles.userInfo}>
-          <Text style={styles.userName} numberOfLines={1}>
-            {user.full_name}{user.age ? `, ${user.age}` : ''}
-          </Text>
-          {distance && (
-            <View style={styles.distanceRow}>
-              <Ionicons name="location" size={12} color={BLUE} />
-              <Text style={styles.distanceText}>{distance}</Text>
-            </View>
+        {/* Info */}
+        <View style={styles.infoSection}>
+          <View style={styles.nameRow}>
+            <Text style={styles.userName} numberOfLines={1}>
+              {capitalizeName(user.full_name)}{user.age ? `, ${user.age}` : ""}
+            </Text>
+          </View>
+          {lookingForText && (
+            <Text style={styles.userBio} numberOfLines={1}>{lookingForText}</Text>
           )}
         </View>
 
-        {/* Status Badges */}
-        {isPending && isRequester && (
-          <View style={styles.statusBadge}>
-            <Text style={styles.statusBadgeText}>Sent</Text>
+        {/* Status / Actions */}
+        {isPending && (
+          <View style={[styles.statusBadge, styles.pendingBadge]}>
+            <Ionicons name={matchStatus.is_requester ? "paper-plane" : "mail"} size={12} color="rgba(10,14,26,0.5)" />
+            <Text style={styles.pendingBadgeText}>{matchStatus.is_requester ? 'Sent' : 'Incoming'}</Text>
           </View>
         )}
 
-        {/* Accept/Deny buttons for incoming requests */}
-        {isPending && !isRequester && (
-          <View style={styles.actionButtons}>
-            <TouchableOpacity 
-              style={[styles.actionBtn, styles.acceptBtn]} 
-              onPress={(e) => { e.stopPropagation(); handleAcceptRequest(); }} 
-              disabled={loading}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="checkmark-circle" size={14} color="#FFFFFF" />
-              <Text style={styles.acceptBtnText}>Accept</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.actionBtn, styles.denyBtn]} 
-              onPress={(e) => { e.stopPropagation(); handleDenyRequest(); }} 
-              disabled={loading}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="close-circle" size={14} color="#FFFFFF" />
-              <Text style={styles.denyBtnText}>Deny</Text>
-            </TouchableOpacity>
-          </View>
-        )}
         {isMatched && (
           <View style={[styles.statusBadge, styles.matchedBadge]}>
             <Text style={styles.matchedBadgeText}>Niice</Text>
@@ -658,235 +544,66 @@ const NearbyUserCard: React.FC<NearbyUserCardProps> = ({
         )}
 
         {/* Action Buttons */}
-        {!blindDateStep && !isMatched && !isPending && (
+        {!showMessageInput && !isMatched && !isPending && (
           <View style={styles.actionButtons}>
             <TouchableOpacity 
               style={styles.actionBtn} 
-              onPress={(e) => { e.stopPropagation(); handleSendFriendRequest(); }} 
+              onPress={(e) => { e.stopPropagation(); setShowMessageInput(true); }} 
               disabled={loading}
               activeOpacity={0.7}
             >
               <Ionicons name="person-add-outline" size={14} color={BLUE} />
               <Text style={styles.actionBtnText}>Add</Text>
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.actionBtn} 
-              onPress={(e) => { e.stopPropagation(); handleBlindMeetingStart(); }} 
-              disabled={loading}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="cafe-outline" size={14} color={BLUE} />
-              <Text style={styles.actionBtnText}>Blind</Text>
-            </TouchableOpacity>
           </View>
         )}
 
         {isMatched && (
           <View style={styles.actionButtons}>
-            {matchStatus?.chat_allowed && (
-              <TouchableOpacity 
-                style={styles.actionBtn} 
-                onPress={(e) => { 
-                  e.stopPropagation(); 
-                  router.push({ pathname: "/(tabs_support)/chat_talk", params: { matchId: matchStatus.match_id } }); 
-                }}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="chatbubbles-outline" size={14} color={BLUE} />
-                <Text style={styles.actionBtnText}>Chat</Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity 
+              style={styles.actionBtn} 
+              onPress={(e) => { 
+                e.stopPropagation(); 
+                router.push({ pathname: "/(tabs_support)/chat_talk", params: { matchId: matchStatus.match_id } }); 
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="chatbubbles-outline" size={14} color={BLUE} />
+              <Text style={styles.actionBtnText}>Chat</Text>
+            </TouchableOpacity>
           </View>
         )}
       </TouchableOpacity>
 
-      {/* Blind Date Flow */}
-      {blindDateStep === 'place_role' && (
-        <View style={styles.blindFlowCard}>
-          <Text style={styles.blindFlowTitle}>Who picks the place?</Text>
-          <View style={styles.blindFlowOptions}>
-            <TouchableOpacity style={styles.blindFlowOption} onPress={() => handlePlaceRoleSelect('requester')} activeOpacity={0.7}>
-              <Ionicons name="location" size={20} color={BLUE} />
-              <Text style={styles.blindFlowOptionText}>I'll pick</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.blindFlowOption} onPress={() => handlePlaceRoleSelect('target')} activeOpacity={0.7}>
-              <Ionicons name="person" size={20} color={BLUE} />
-              <Text style={styles.blindFlowOptionText}>They pick</Text>
-            </TouchableOpacity>
+      {/* Message Input for sending request */}
+      {showMessageInput && (
+        <View style={styles.messageInputCard}>
+          <Text style={styles.messageInputTitle}>Send a request</Text>
+          <View style={styles.messageInputWrap}>
+            <Ionicons name="chatbubble-outline" size={16} color={BLUE} style={{ marginRight: 8 }} />
+            <TextInput 
+              style={[styles.messageInput, { flex: 1 }]} 
+              placeholder="Message (optional)" 
+              placeholderTextColor="rgba(10,14,26,0.4)"
+              value={message} 
+              onChangeText={setMessage} 
+              maxLength={200} 
+            />
           </View>
-          <TouchableOpacity style={styles.blindFlowCancel} onPress={() => setBlindDateStep(null)}>
-            <Text style={styles.blindFlowCancelText}>Cancel</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {blindDateStep === 'details' && (
-        <View style={styles.blindFlowCard}>
-          <Text style={styles.blindFlowTitle}>Suggest a spot</Text>
-          <View style={styles.blindFlowInputs}>
-            <View style={styles.blindFlowInputWrap}>
-              <Ionicons name="business-outline" size={16} color={BLUE} style={{ marginRight: 8 }} />
-              <TextInput 
-                style={styles.blindFlowInput} 
-                placeholder="Place name" 
-                placeholderTextColor="rgba(10,14,26,0.4)"
-                value={blindDateForm.locationName} 
-                onChangeText={(text) => setBlindDateForm(prev => ({ ...prev, locationName: text }))} 
-              />
-            </View>
-            <TouchableOpacity 
-              style={styles.blindFlowInputWrap} 
-              onPress={() => { 
-                setTempPickedLocation(blindDateForm.locationCoords || userPosition); 
-                setShowLocationPicker(true); 
-              }}
-            >
-              <Ionicons name="location-outline" size={16} color={BLUE} style={{ marginRight: 8 }} />
-              <Text style={[styles.blindFlowInputText, !blindDateForm.locationCoords && { color: "rgba(10,14,26,0.4)" }]}>
-                {blindDateForm.locationCoords ? 'Location set' : 'Pick location'}
-              </Text>
-              <Ionicons name="chevron-forward" size={14} color="rgba(10,14,26,0.3)" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.blindFlowInputWrap} onPress={() => setShowDatePicker(true)}>
-              <Ionicons name="calendar-outline" size={16} color={BLUE} style={{ marginRight: 8 }} />
-              <Text style={[styles.blindFlowInputText, !blindDateForm.meetTime && { color: "rgba(10,14,26,0.4)" }]}>
-                {formatDateTime(blindDateForm.meetTime)}
-              </Text>
-              <Ionicons name="chevron-forward" size={14} color="rgba(10,14,26,0.3)" />
-            </TouchableOpacity>
-            <View style={styles.blindFlowInputWrap}>
-              <Ionicons name="chatbubble-outline" size={16} color={BLUE} style={{ marginRight: 8 }} />
-              <TextInput 
-                style={[styles.blindFlowInput, { flex: 1 }]} 
-                placeholder="Message (optional)" 
-                placeholderTextColor="rgba(10,14,26,0.4)"
-                value={blindDateForm.message} 
-                onChangeText={(text) => setBlindDateForm(prev => ({ ...prev, message: text }))} 
-                maxLength={200} 
-              />
-            </View>
-          </View>
-          <View style={styles.blindFlowActions}>
-            <TouchableOpacity style={styles.blindFlowBackBtn} onPress={() => setBlindDateStep('place_role')}>
-              <Text style={styles.blindFlowBackText}>Back</Text>
+          <View style={styles.messageInputActions}>
+            <TouchableOpacity style={styles.messageInputBackBtn} onPress={() => { setShowMessageInput(false); setMessage(''); }}>
+              <Text style={styles.messageInputBackText}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity 
-              style={[styles.blindFlowSendBtn, (!blindDateForm.locationName || !blindDateForm.locationCoords || !blindDateForm.meetTime) && { opacity: 0.5 }]}
-              onPress={handleSendBlindRequest} 
-              disabled={loading || !blindDateForm.locationName || !blindDateForm.locationCoords || !blindDateForm.meetTime}
+              style={styles.messageInputSendBtn}
+              onPress={handleSendRequest} 
+              disabled={loading}
             >
-              <Text style={styles.blindFlowSendText}>{loading ? 'Sending...' : 'Send'}</Text>
+              <Text style={styles.messageInputSendText}>{loading ? 'Sending...' : 'Send Request'}</Text>
             </TouchableOpacity>
           </View>
-          <TouchableOpacity style={styles.blindFlowCancel} onPress={() => setBlindDateStep(null)}>
-            <Text style={styles.blindFlowCancelText}>Cancel</Text>
-          </TouchableOpacity>
         </View>
       )}
-
-      {blindDateStep === 'message_only' && (
-        <View style={styles.blindFlowCard}>
-          <Text style={styles.blindFlowTitle}>Add a message</Text>
-          <View style={styles.blindFlowInputs}>
-            <View style={styles.blindFlowInputWrap}>
-              <Ionicons name="chatbubble-outline" size={16} color={BLUE} style={{ marginRight: 8 }} />
-              <TextInput 
-                style={[styles.blindFlowInput, { flex: 1 }]} 
-                placeholder="Message (optional)" 
-                placeholderTextColor="rgba(10,14,26,0.4)"
-                value={blindDateForm.message} 
-                onChangeText={(text) => setBlindDateForm(prev => ({ ...prev, message: text }))} 
-                maxLength={200} 
-              />
-            </View>
-          </View>
-          <View style={styles.blindFlowActions}>
-            <TouchableOpacity style={styles.blindFlowBackBtn} onPress={() => setBlindDateStep('place_role')}>
-              <Text style={styles.blindFlowBackText}>Back</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.blindFlowSendBtn} onPress={handleSendBlindRequest} disabled={loading}>
-              <Text style={styles.blindFlowSendText}>{loading ? 'Sending...' : 'Send'}</Text>
-            </TouchableOpacity>
-          </View>
-          <TouchableOpacity style={styles.blindFlowCancel} onPress={() => setBlindDateStep(null)}>
-            <Text style={styles.blindFlowCancelText}>Cancel</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Date Picker Modal */}
-      {showDatePicker && (
-        <Modal transparent animationType="slide" visible={showDatePicker}>
-          <View style={styles.datePickerModal}>
-            <TouchableOpacity style={styles.datePickerBackdrop} onPress={() => setShowDatePicker(false)} />
-            <View style={styles.datePickerContainer}>
-              <BlurView intensity={100} tint="light" style={StyleSheet.absoluteFillObject} />
-              <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(255,255,255,0.98)' }]} />
-              <View style={styles.datePickerHeader}>
-                <TouchableOpacity onPress={() => setShowDatePicker(false)}>
-                  <Text style={styles.datePickerCancel}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setShowDatePicker(false)}>
-                  <Text style={styles.datePickerDone}>Done</Text>
-                </TouchableOpacity>
-              </View>
-              <DateTimePicker 
-                value={blindDateForm.meetTime || new Date()} 
-                mode="datetime" 
-                display="spinner" 
-                onChange={handleDateChange} 
-                minimumDate={new Date()} 
-              />
-            </View>
-          </View>
-        </Modal>
-      )}
-
-      {/* Location Picker Modal */}
-      <Modal visible={showLocationPicker} animationType="slide">
-        <SafeAreaView style={{ flex: 1, backgroundColor: BG }}>
-          <View style={styles.locationPickerHeader}>
-            <TouchableOpacity onPress={() => setShowLocationPicker(false)}>
-              <Ionicons name="close" size={24} color={INK} />
-            </TouchableOpacity>
-            <Text style={styles.locationPickerTitle}>Pick Location</Text>
-            <TouchableOpacity 
-              onPress={() => { 
-                if (tempPickedLocation) 
-                  setBlindDateForm(prev => ({ ...prev, locationCoords: tempPickedLocation })); 
-                setShowLocationPicker(false); 
-              }}
-            >
-              <Text style={styles.locationPickerDone}>Done</Text>
-            </TouchableOpacity>
-          </View>
-          <MapView 
-            style={{ flex: 1 }} 
-            provider={PROVIDER_GOOGLE}
-            initialRegion={{ 
-              latitude: tempPickedLocation?.lat || userPosition?.lat || 41.9028, 
-              longitude: tempPickedLocation?.lng || userPosition?.lng || 12.4964, 
-              latitudeDelta: 0.01, 
-              longitudeDelta: 0.01 
-            }}
-            onPress={(e) => setTempPickedLocation({ 
-              lat: e.nativeEvent.coordinate.latitude, 
-              lng: e.nativeEvent.coordinate.longitude 
-            })}
-          >
-            {tempPickedLocation && (
-              <Marker 
-                coordinate={{ 
-                  latitude: tempPickedLocation.lat, 
-                  longitude: tempPickedLocation.lng 
-                }} 
-                pinColor={BLUE} 
-              />
-            )}
-          </MapView>
-          <Text style={styles.locationPickerHint}>Tap on the map to select a location</Text>
-        </SafeAreaView>
-      </Modal>
 
       <View style={styles.separator} />
     </View>
@@ -908,79 +625,8 @@ const EmptyState: React.FC<{ icon: string; title: string; subtitle: string; ctaL
   </View>
 );
 
-// ================== SECTION HEADER ==================
-const SectionHeader: React.FC<{ title: string; onSeeAll?: () => void; showArrow?: boolean }> = ({ title, onSeeAll, showArrow }) => (
-  <View style={styles.sectionHeader}>
-    <Text style={styles.sectionTitle}>{title}</Text>
-    {onSeeAll && (
-      <TouchableOpacity style={styles.seeAllBtn} onPress={onSeeAll} activeOpacity={0.7}>
-        <Text style={styles.seeAllText}>See all</Text>
-        {showArrow && <Ionicons name="chevron-forward" size={16} color={BLUE} />}
-      </TouchableOpacity>
-    )}
-  </View>
-);
 
-// ================== BLIND MEETING CARD (NO GRADIENTS) ==================
-const BlindMeetingCard: React.FC<{ meeting: BlindMeeting; onPress: () => void }> = ({ meeting, onPress }) => {
-  const isHappening = meeting.blind_meet_time && new Date(meeting.blind_meet_time) <= new Date();
-  const isPast = meeting.blind_meet_time && new Date(meeting.blind_meet_time).getTime() + 3600000 < Date.now();
-
-  return (
-    <TouchableOpacity activeOpacity={0.85} onPress={onPress} style={styles.blindCard}>
-      {/* Profile Circle */}
-      <View style={styles.blindCircle}>
-        <View style={styles.blindCircleInner}>
-          {meeting.main_photo_url ? (
-            <Image source={{ uri: meeting.main_photo_url }} style={styles.blindProfileImage} />
-          ) : (
-            <Ionicons name="person" size={48} color="#FFFFFF" />
-          )}
-        </View>
-      </View>
-
-      {/* Name */}
-      <Text style={styles.blindName} numberOfLines={1}>
-        {meeting.full_name || 'Mystery Person'}{meeting.age ? `, ${meeting.age}` : ''}
-      </Text>
-
-      {/* Location */}
-      <Text 
-        style={styles.blindLocation} 
-        numberOfLines={2}
-      >
-        {meeting.blind_location_name || 'Location TBD'}
-      </Text>
-
-      {/* Time Info */}
-      <View style={styles.blindTimeContainer}>
-        {isPast ? (
-          <View style={[styles.blindTimeBadge, { backgroundColor: '#22C55E' }]}>
-            <Text style={styles.blindTimeBadgeText}>Tap to Review</Text>
-          </View>
-        ) : isHappening ? (
-          <View style={[styles.blindTimeBadge, { backgroundColor: '#F59E0B' }]}>
-            <Ionicons name="radio-button-on" size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
-            <Text style={styles.blindTimeBadgeText}>Happening Now</Text>
-          </View>
-        ) : (
-          <>
-            <Text style={styles.blindTimeMain}>
-              {meeting.blind_meet_time ? formatTimeUntil(meeting.blind_meet_time) : 'Soon'}
-            </Text>
-            <Text style={styles.blindTimeDetail}>
-              {formatMeetingDate(meeting.blind_meet_time)}
-            </Text>
-          </>
-        )}
-      </View>
-    </TouchableOpacity>
-  );
-};
-
-
-
-// ================== NIICE MATCH CARD (NO GRADIENTS) ==================
+// ================== NIICE MATCH CARD (UPDATED: Message button on right, row click goes to profile) ==================
 const NiiceMatchCard: React.FC<{ 
   match: NiiceMatch; 
   onViewProfile: () => void;
@@ -989,28 +635,22 @@ const NiiceMatchCard: React.FC<{
 }> = ({ match, onViewProfile, onOpenChat, onOpenFrames }) => {
   return (
     <TouchableOpacity 
-      onPress={onOpenChat}
+      onPress={onViewProfile}
       activeOpacity={0.7}
       style={styles.niiceRowWrapper}
     >
       <View style={styles.niiceRowContent}>
-        {/* Avatar - Goes to Profile */}
+        {/* Avatar - Goes to Frames/Profile */}
         <TouchableOpacity 
           style={styles.niiceAvatarContainer}
           onPress={(e) => { e.stopPropagation(); onOpenFrames(match.other_user_id); }}
           activeOpacity={0.8}
         >
-          {match.from_blind_meet && <View style={styles.niiceAvatarRing} />}
           {match.main_photo_url ? (
             <Image source={{ uri: match.main_photo_url }} style={styles.niiceAvatar} />
           ) : (
             <View style={[styles.niiceAvatar, styles.niiceAvatarPlaceholder]}>
               <Ionicons name="person" size={24} color="rgba(27,68,205,0.3)" />
-            </View>
-          )}
-          {match.from_blind_meet && (
-            <View style={styles.niiceBlindBadge}>
-              <Ionicons name="eye-off" size={10} color="#FFFFFF" />
             </View>
           )}
         </TouchableOpacity>
@@ -1019,7 +659,7 @@ const NiiceMatchCard: React.FC<{
         <View style={styles.niiceInfoSection}>
           <View style={styles.niiceNameRow}>
             <Text style={styles.niiceName} numberOfLines={1}>
-              {match.full_name}{match.age ? `, ${match.age}` : ""}
+              {capitalizeName(match.full_name)}{match.age ? `, ${match.age}` : ""}
             </Text>
             {!match.last_message_at && (
               <View style={styles.niiceMatchedBadge}>
@@ -1032,18 +672,21 @@ const NiiceMatchCard: React.FC<{
           ) : (
             <View style={styles.niiceLastMessageRow}>
               <Text style={styles.niiceLastMessageMuted}>Say hi and break the ice</Text>
-              <Ionicons name="chatbubble-ellipses-outline" size={14} color="rgba(10,14,26,0.4)" />
             </View>
           )}
-        </View>
-
-        {/* Time & Arrow */}
-        <View style={styles.niiceRightSection}>
           <Text style={styles.niiceTime}>
             {match.last_message_at ? formatRelativeTime(match.last_message_at) : formatRelativeTime(match.created_at)}
           </Text>
-          <Ionicons name="chevron-forward" size={18} color="rgba(10,14,26,0.3)" />
         </View>
+
+        {/* Message Button on Right */}
+        <TouchableOpacity 
+          style={styles.niiceMessageBtn}
+          onPress={(e) => { e.stopPropagation(); onOpenChat(); }}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="chatbubble-outline" size={20} color={BLUE} />
+        </TouchableOpacity>
       </View>
       <View style={styles.niiceSeparator} />
     </TouchableOpacity>
@@ -1068,15 +711,16 @@ function NiicesScreen() {
   const [framesData, setFramesData] = useState<any[]>([]);
 
   const [nearbyUsers, setNearbyUsers] = useState<NearbyUser[]>([]);
-  const [blindMeetings, setBlindMeetings] = useState<BlindMeeting[]>([]);
   const [niiceMatches, setNiiceMatches] = useState<NiiceMatch[]>([]);
   const [incomingRequests, setIncomingRequests] = useState<MatchRequest[]>([]);
 
   const [loadingNearby, setLoadingNearby] = useState(false);
-  const [loadingBlind, setLoadingBlind] = useState(false);
   const [loadingNiices, setLoadingNiices] = useState(false);
   const [loadingRequests, setLoadingRequests] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Niices search state
+  const [niicesSearchQuery, setNiicesSearchQuery] = useState("");
 
   const filteredNearbyUsers = useMemo(() => {
     return nearbyUsers.filter(user => {
@@ -1085,6 +729,15 @@ function NiicesScreen() {
       return true;
     });
   }, [nearbyUsers, filters]);
+
+  // Filter niices based on search query
+  const filteredNiiceMatches = useMemo(() => {
+    if (!niicesSearchQuery.trim()) return niiceMatches;
+    const query = niicesSearchQuery.toLowerCase().trim();
+    return niiceMatches.filter(match => 
+      match.full_name.toLowerCase().includes(query)
+    );
+  }, [niiceMatches, niicesSearchQuery]);
 
   const hasActiveFilters = useMemo(() => {
     return filters.ageMin !== userPrefs.ageMin || filters.ageMax !== userPrefs.ageMax ||
@@ -1115,66 +768,57 @@ function NiicesScreen() {
   }, []);
 
   const loadNearbyUsers = useCallback(async (uid: string) => {
-  try {
-    setLoadingNearby(true);
-    const { data, error } = await supabase.rpc('get_map_cards', { p_mode: 'friend' });
-    
-    
-    if (error || !data) { 
-      setNearbyUsers([]); 
-      return; 
-    }
+    try {
+      setLoadingNearby(true);
+      const { data, error } = await supabase.rpc('get_map_cards', {});
+      
+      if (error || !data) { 
+        setNearbyUsers([]); 
+        return; 
+      }
 
-    const userIds = data.map((u: any) => u.user_id);
-    
-    const { data: profileData, error: profileError } = await supabase
-      .from('profiles')
-      .select('id, gender, sexual_orientation')
-      .in('id', userIds);
-    
-    
-    const profileMap: Record<string, any> = {};
-    profileData?.forEach((p: any) => { profileMap[p.id] = p; });
-    
+      const userIds = data.map((u: any) => u.user_id);
+      
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, gender, sexual_orientation, looking_for, values')
+        .in('id', userIds);
+      
+      const profileMap: Record<string, any> = {};
+      profileData?.forEach((p: any) => { profileMap[p.id] = p; });
 
-    const friendModePromises = data.map(async (u: any) => {
-      try {
-        const { data: fmData } = await supabase.rpc('get_user_friend_mode', { target_user_id: u.user_id });
-        return { userId: u.user_id, data: fmData?.[0] || null };
-      } catch { return { userId: u.user_id, data: null }; }
-    });
-    const friendModeResults = await Promise.all(friendModePromises);
-    const friendModeMap: Record<string, any> = {};
-    friendModeResults.forEach(r => { friendModeMap[r.userId] = r.data; });
-
-    // Ã¢Å“â€¦ REMOVE THE FILTER TEMPORARILY
-    const users: NearbyUser[] = await Promise.all(
-      data.map(async (row: any) => {  // Ã¢â€ Â NO FILTER YET
-        let photoUrl = row.main_photo_url;
-        if (photoUrl && !photoUrl.startsWith('http')) {
-          const { data: signedData } = await supabase.storage.from("user_photos").createSignedUrl(photoUrl, 3600);
-          photoUrl = signedData?.signedUrl || null;
-        }
-        const profile = profileMap[row.user_id] || {};
-        const friendMode = friendModeMap[row.user_id] || {};
-        
-        
-        return {
-          user_id: row.user_id, full_name: row.full_name ?? "Unknown", age: row.age ?? null, bio: row.bio ?? null,
-          main_photo_url: photoUrl, frame_id: row.frame_id ?? null, 
-          has_active_frame: !!row.frame_id,
-          mode: row.mode ?? 'friend',
-          approx_lat: row.approx_lat ?? 0, approx_lng: row.approx_lng ?? 0, last_seen: null,
-          gender: profile.gender?.toLowerCase() || null, sexual_orientation: profile.sexual_orientation || null,
-          looking_for_friend: friendMode.looking_for_friend || null, value_friend: friendMode.value_friend || null,
-        };
-      })
-    );
-    
-    setNearbyUsers(users);
-  } catch (err) { setNearbyUsers([]); }
-  finally { setLoadingNearby(false); }
-}, []);
+      const users: NearbyUser[] = await Promise.all(
+        data.map(async (row: any) => {
+          let photoUrl = row.main_photo_url;
+          if (photoUrl && !photoUrl.startsWith('http')) {
+            const { data: signedData } = await supabase.storage.from("user_photos").createSignedUrl(photoUrl, 3600);
+            photoUrl = signedData?.signedUrl || null;
+          }
+          const profile = profileMap[row.user_id] || {};
+          
+          return {
+            user_id: row.user_id,
+            full_name: row.full_name ?? "Unknown",
+            age: row.age ?? null,
+            bio: row.bio ?? null,
+            main_photo_url: photoUrl,
+            frame_id: row.frame_id ?? null, 
+            has_active_frame: !!row.frame_id,
+            approx_lat: row.approx_lat ?? 0,
+            approx_lng: row.approx_lng ?? 0,
+            last_seen: null,
+            gender: profile.gender?.toLowerCase() || null,
+            sexual_orientation: profile.sexual_orientation || null,
+            looking_for: profile.looking_for || null,
+            values: profile.values || null,
+          };
+        })
+      );
+      
+      setNearbyUsers(users);
+    } catch (err) { setNearbyUsers([]); }
+    finally { setLoadingNearby(false); }
+  }, []);
 
   const getUserPreview = useCallback(async (targetUserId: string) => {
     try {
@@ -1189,48 +833,12 @@ function NiicesScreen() {
     } catch { return { full_name: null, age: null, main_photo_url: null }; }
   }, []);
 
-  const loadBlindMeetings = useCallback(async (uid: string) => {
-    try {
-      setLoadingBlind(true);
-      const { data, error } = await supabase.from("match_requests")
-        .select("id, requester_id, target_id, match_mode, blind_meet_time, blind_location_name, requester_reveal_approved, target_reveal_approved, created_at")
-        .or(`requester_id.eq.${uid},target_id.eq.${uid}`).eq("connection_visibility", "blind").eq("status", "accepted").order("blind_meet_time", { ascending: true });
-      if (error) { setBlindMeetings([]); return; }
-      
-      // Fetch user data for each blind meeting
-      const meetings = await Promise.all((data || []).map(async (row: any) => {
-        const otherId = row.requester_id === uid ? row.target_id : row.requester_id;
-        const preview = await getUserPreview(otherId);
-        return {
-          id: row.id, 
-          other_user_id: otherId,
-          full_name: preview.full_name, 
-          age: preview.age, 
-          main_photo_url: preview.main_photo_url, 
-          match_mode: row.match_mode,
-          blind_meet_time: row.blind_meet_time, 
-          blind_location_name: row.blind_location_name,
-          requester_reveal_approved: row.requester_reveal_approved ?? false, 
-          target_reveal_approved: row.target_reveal_approved ?? false,
-          is_requester: row.requester_id === uid, 
-          created_at: row.created_at,
-        };
-      }));
-      
-      // Filter out meetings where both parties have revealed
-      const filteredMeetings = meetings.filter((m: any) => !(m.requester_reveal_approved && m.target_reveal_approved));
-      setBlindMeetings(filteredMeetings);
-    } catch (err) { setBlindMeetings([]); }
-    finally { setLoadingBlind(false); }
-  }, [getUserPreview]);
-
-
   const loadNiiceMatches = useCallback(async (uid: string) => {
     try {
       setLoadingNiices(true);
       const { data, error } = await supabase.from("match_requests")
-        .select("id, requester_id, target_id, match_mode, connection_visibility, created_at")
-        .or(`requester_id.eq.${uid},target_id.eq.${uid}`).eq("status", "accepted").eq("connection_visibility", "full_profile").order("created_at", { ascending: false });
+        .select("id, requester_id, target_id, created_at")
+        .or(`requester_id.eq.${uid},target_id.eq.${uid}`).eq("status", "accepted").order("created_at", { ascending: false });
       if (error) { setNiiceMatches([]); return; }
       const matches = await Promise.all((data || []).map(async (row: any) => {
         const otherId = row.requester_id === uid ? row.target_id : row.requester_id;
@@ -1238,7 +846,16 @@ function NiicesScreen() {
         const { data: conv } = await supabase.from("conversations").select("id").eq("match_request_id", row.id).maybeSingle();
         let lastMsg: any = null;
         if (conv) { const { data: msg } = await supabase.from("messages").select("content, created_at").eq("conversation_id", conv.id).order("created_at", { ascending: false }).limit(1).maybeSingle(); lastMsg = msg; }
-        return { id: row.id, other_user_id: otherId, full_name: preview.full_name ?? "Unknown", age: preview.age, main_photo_url: preview.main_photo_url, match_mode: row.match_mode, last_message_preview: lastMsg?.content ?? null, last_message_at: lastMsg?.created_at ?? null, from_blind_meet: false, connection_visibility: row.connection_visibility, created_at: row.created_at };
+        return {
+          id: row.id,
+          other_user_id: otherId,
+          full_name: preview.full_name ?? "Unknown",
+          age: preview.age,
+          main_photo_url: preview.main_photo_url,
+          last_message_preview: lastMsg?.content ?? null,
+          last_message_at: lastMsg?.created_at ?? null,
+          created_at: row.created_at
+        };
       }));
       setNiiceMatches(matches);
     } catch (err) { setNiiceMatches([]); }
@@ -1253,38 +870,36 @@ function NiicesScreen() {
         .eq("target_id", uid)
         .eq("status", "pending");
       if (error) { setIncomingRequests([]); return; }
-      const incoming: MatchRequest[] = (data || []).map((row: any) => ({
-        id: row.id, other_user_id: "", full_name: null, age: null, main_photo_url: null,
-        match_mode: "friend", connection_visibility: "full_profile", status: row.status,
-        is_incoming: true, sender_message: null, place_role: null, created_at: ""
-      }));
-      setIncomingRequests(incoming);
+      setIncomingRequests(data as any || []);
     } catch (err) { setIncomingRequests([]); }
     finally { setLoadingRequests(false); }
   }, []);
 
-  const loadAllData = useCallback(async () => {
-    const uid = await loadUserId();
-    if (!uid) return;
-    await loadUserPrefsAndPosition(uid);
-    await Promise.all([loadNearbyUsers(uid), loadBlindMeetings(uid), loadNiiceMatches(uid), loadRequests(uid)]);
-  }, [loadUserId, loadUserPrefsAndPosition, loadNearbyUsers, loadBlindMeetings, loadNiiceMatches, loadRequests]);
+  // Initial Load
+  useFocusEffect(
+    useCallback(() => {
+      const init = async () => {
+        const uid = await loadUserId();
+        if (uid) {
+          await loadUserPrefsAndPosition(uid);
+          await Promise.all([loadNearbyUsers(uid), loadNiiceMatches(uid), loadRequests(uid)]);
+        }
+      };
+      init();
+    }, [loadUserId, loadUserPrefsAndPosition, loadNearbyUsers, loadNiiceMatches, loadRequests])
+  );
 
-  useFocusEffect(useCallback(() => { loadAllData(); }, [loadAllData]));
-
-  const handleRefresh = async () => { setRefreshing(true); await loadAllData(); setRefreshing(false); };
-
-  // ================== FILTER APPLY ==================
-  const handleApplyFilters = useCallback(async (newFilters: FilterState) => {
-    setFilters(newFilters);
+  // Refresh
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
     if (userId) {
-      await supabase.from('profiles').update({
-        age_pref_min: newFilters.ageMin, age_pref_max: newFilters.ageMax,
-        distance_km: newFilters.distanceKm, interested_in: newFilters.genders,
-      }).eq('id', userId);
-      loadNearbyUsers(userId);
+      await Promise.all([loadNearbyUsers(userId), loadNiiceMatches(userId), loadRequests(userId)]);
     }
-  }, [userId, loadNearbyUsers]);
+    setRefreshing(false);
+  }, [userId, loadNearbyUsers, loadNiiceMatches, loadRequests]);
+
+  // Apply Filters
+  const handleApplyFilters = useCallback((newFilters: FilterState) => setFilters(newFilters), []);
 
   // ================== FRAMES ==================
   const handleOpenFrames = useCallback(async (targetUserId: string) => {
@@ -1305,34 +920,29 @@ function NiicesScreen() {
   }, []);
 
   // ================== ACTIONS ==================
-  const handleSendRequest = async (user: NearbyUser, isBlind: boolean, placeRole?: 'requester' | 'target', form?: BlindDateForm) => {
+  const handleSendRequest = async (user: NearbyUser, message?: string) => {
     if (!userId) return;
     try {
-      if (isBlind && placeRole) {
-        const { error: rpcError } = await supabase.rpc('send_blind_date_request', {
-          p_target_id: user.user_id, p_match_mode: user.mode === 'friend' ? 'friend' : 'dating', p_place_role: placeRole,
-          p_location_name: form?.locationName || null, p_latitude: form?.locationCoords?.lat || null,
-          p_longitude: form?.locationCoords?.lng || null, p_meet_time: form?.meetTime?.toISOString() || null, p_sender_message: form?.message || null,
-        });
-        if (rpcError) {
-          const insertData: any = { requester_id: userId, target_id: user.user_id, match_mode: user.mode === 'friend' ? 'friend' : 'dating', connection_visibility: 'blind', status: 'pending', place_role: placeRole, chat_allowed: false, sender_message: form?.message || null };
-          if (placeRole === 'requester' && form) { if (form.locationName) insertData.blind_location_name = form.locationName; if (form.meetTime) insertData.blind_meet_time = form.meetTime.toISOString(); }
-          const { error } = await supabase.from('match_requests').insert(insertData);
-          if (error) throw error;
-        }
-        Alert.alert("Success", "Blind meeting request sent!");
+      const { error } = await supabase.from('match_requests').insert({
+        requester_id: userId,
+        target_id: user.user_id,
+        status: 'pending',
+        sender_message: message || null
+      });
+      if (error) {
+        if (error.code === '23505') Alert.alert("Already sent", "You've already sent a request to this person");
+        else throw error;
       } else {
-        const { error } = await supabase.from('match_requests').insert({ requester_id: userId, target_id: user.user_id, match_mode: user.mode === 'friend' ? 'friend' : 'dating', connection_visibility: 'full_profile', status: 'pending' });
-        if (error) { if (error.code === '23505') Alert.alert("Already sent", "You've already sent a request to this person"); else throw error; }
-        else Alert.alert("Success", "Friend request sent!");
+        Alert.alert("Success", "Request sent!");
       }
       if (userId) await loadRequests(userId);
-    } catch (error) { Alert.alert("Error", "Failed to send request"); }
+    } catch (error) {
+      Alert.alert("Error", "Failed to send request");
+    }
   };
 
   const handleViewProfile = (targetUserId: string, matchId?: string) => router.push({ pathname: "/(tabs_support)/other_profile", params: { userId: targetUserId, matchId: matchId || "" } });
   const handleMatchPress = (match: NiiceMatch) => router.push({ pathname: "/(tabs_support)/other_profile", params: { userId: match.other_user_id, matchId: match.id } });
-  const handleBlindMeetPress = (meeting: BlindMeeting) => router.push({ pathname: "/(tabs_support)/other_profile", params: { userId: meeting.other_user_id, matchId: meeting.id } });
 
   // ================== RENDER ==================
   return (
@@ -1365,25 +975,43 @@ function NiicesScreen() {
         <ScrollView ref={scrollViewRef} style={styles.scrollView} contentContainerStyle={styles.niicesMeetScrollContent}
           showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={BLUE} />}>
           
-          <View style={styles.section}>
-            <SectionHeader 
-              title="Your Niices" 
-              onSeeAll={() => router.push("/(tabs_support)/niices_view")} 
-              showArrow={true} 
-            />
-            {loadingNiices ? <View style={styles.loadingContainerSmall}><ActivityIndicator size="small" color={BLUE} /></View> :
-              niiceMatches.length === 0 ? <View style={styles.emptyInlineState}><Text style={styles.emptyInlineText}>No Niices yet</Text></View> :
-                <View style={styles.niicesList}>{niiceMatches.slice(0, 3).map((m) => <NiiceMatchCard key={m.id} match={m} onViewProfile={() => handleMatchPress(m)} onOpenChat={() => router.push({ pathname: "/(tabs_support)/chat_talk", params: { matchId: m.id } })} onOpenFrames={handleOpenFrames} />)}</View>}
-          </View>
+          {/* Search Bar for Niices */}
+          <NiicesSearchBar 
+            searchQuery={niicesSearchQuery} 
+            onSearchChange={setNiicesSearchQuery} 
+            resultCount={filteredNiiceMatches.length}
+          />
 
-          <View style={styles.section}>
-            <SectionHeader title="Upcoming Blind Meets" />
-            {loadingBlind ? <View style={styles.loadingContainerSmall}><ActivityIndicator size="small" color={BLUE} /></View> :
-              blindMeetings.length === 0 ? <View style={styles.emptyInlineState}><Text style={styles.emptyInlineText}>No blind meets yet</Text></View> :
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.blindMeetsScroll}>
-                  {blindMeetings.map((m) => <BlindMeetingCard key={m.id} meeting={m} onPress={() => handleBlindMeetPress(m)} />)}
-                </ScrollView>}
-          </View>
+          {/* Niices List (no header, no "See All") */}
+          {loadingNiices ? (
+            <View style={styles.loadingContainerSmall}>
+              <ActivityIndicator size="small" color={BLUE} />
+            </View>
+          ) : filteredNiiceMatches.length === 0 ? (
+            <View style={styles.emptyInlineState}>
+              <View style={styles.emptyInlineIconContainer}>
+                <Ionicons name="heart-outline" size={28} color={BLUE} />
+              </View>
+              <Text style={styles.emptyInlineText}>
+                {niicesSearchQuery.trim() ? "No niices match your search" : "No niices yet"}
+              </Text>
+              {!niicesSearchQuery.trim() && (
+                <Text style={styles.emptyInlineSubtext}>Connect with people nearby to add them as niices</Text>
+              )}
+            </View>
+          ) : (
+            <View style={styles.niicesList}>
+              {filteredNiiceMatches.map((m) => (
+                <NiiceMatchCard 
+                  key={m.id} 
+                  match={m} 
+                  onViewProfile={() => handleMatchPress(m)} 
+                  onOpenChat={() => router.push({ pathname: "/(tabs_support)/chat_talk", params: { matchId: m.id } })} 
+                  onOpenFrames={handleOpenFrames} 
+                />
+              ))}
+            </View>
+          )}
         </ScrollView>
       )}
 
@@ -1433,7 +1061,7 @@ const styles = StyleSheet.create({
     color: "#FFFFFF" 
   },
 
-    // ===== MINIMAL COMPACT NEARBY SECTION =====
+  // ===== MINIMAL COMPACT NEARBY SECTION =====
 
   // Filter Bar
   filterBar: { 
@@ -1476,6 +1104,41 @@ const styles = StyleSheet.create({
     backgroundColor: "#1E293B",
   },
 
+  // Niices Search Bar
+  niicesSearchContainer: {
+    paddingHorizontal: scale(20),
+    paddingVertical: verticalScale(12),
+    backgroundColor: BG,
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER,
+  },
+  niicesSearchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(27,68,205,0.06)",
+    borderRadius: scale(20),
+    paddingHorizontal: scale(14),
+    paddingVertical: verticalScale(10),
+    gap: scale(10),
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  niicesSearchInput: {
+    flex: 1,
+    fontFamily: Fonts.primary,
+    fontSize: scale(14),
+    color: INK,
+    padding: 0,
+    fontWeight: "500",
+  },
+  niicesSearchCount: {
+    fontFamily: Fonts.primary,
+    fontSize: scale(12),
+    color: "rgba(10,14,26,0.5)",
+    marginTop: verticalScale(8),
+    textAlign: "center",
+  },
+
   // Compact User Row (full width, minimal height)
   rowWrapper: {
     backgroundColor: CARD_BG,
@@ -1509,154 +1172,127 @@ const styles = StyleSheet.create({
     width: scale(44),
     height: scale(44),
     borderRadius: scale(22),
-    backgroundColor: "#E8F4FF",
   },
   avatarPlaceholder: {
+    backgroundColor: "#E8F4FF",
     alignItems: "center",
     justifyContent: "center",
   },
 
-  // User Info
-  userInfo: {
+  // Info Section
+  infoSection: {
     flex: 1,
-    marginRight: scale(12),
+    marginRight: scale(8),
   },
-  userName: {
-    fontSize: scale(16),
-    fontWeight: "600",
-    color: INK,
-    fontFamily: Fonts.bold,
-    marginBottom: verticalScale(2),
-  },
-  distanceRow: {
+  nameRow: {
     flexDirection: "row",
     alignItems: "center",
+    gap: scale(6),
+    marginBottom: verticalScale(2),
   },
-  distanceText: {
-    fontSize: scale(13),
-    color: BLUE,
-    marginLeft: scale(4),
+  userName: {
+    fontFamily: Fonts.bold,
+    fontSize: scale(16),
+    color: INK,
+    letterSpacing: 0.2,
+    flexShrink: 1,
+  },
+  userBio: {
     fontFamily: Fonts.primary,
+    fontSize: scale(13),
+    color: "rgba(10,14,26,0.6)",
   },
 
   // Status Badges
   statusBadge: {
-    paddingHorizontal: scale(8),
-    paddingVertical: verticalScale(4),
+    flexDirection: "row",
+    alignItems: "center",
     borderRadius: scale(12),
-    backgroundColor: "rgba(139,92,246,0.1)",
-    marginRight: scale(8),
+    paddingHorizontal: scale(10),
+    paddingVertical: verticalScale(4),
+    gap: scale(4),
   },
-  statusBadgeText: {
-    fontSize: scale(11),
-    fontWeight: "600",
-    color: "#8B5CF6",
+  pendingBadge: {
+    backgroundColor: "rgba(10,14,26,0.06)",
+  },
+  pendingBadgeText: {
     fontFamily: Fonts.bold,
+    fontSize: scale(11),
+    color: "rgba(10,14,26,0.5)",
+    letterSpacing: 0.2,
   },
   matchedBadge: {
     backgroundColor: BLUE,
-    shadowColor: BLUE,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 6,
   },
   matchedBadgeText: {
-    fontSize: scale(11),
-    fontWeight: "600",
-    color: "#ffffff",
     fontFamily: Fonts.bold,
+    fontSize: scale(11),
+    color: "#FFFFFF",
+    letterSpacing: 0.2,
   },
 
-  // Action Buttons (with text)
+  // Action Buttons
   actionButtons: {
     flexDirection: "row",
     alignItems: "center",
-    gap: scale(6),
+    gap: scale(8),
   },
   actionBtn: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: scale(10),
-    paddingVertical: verticalScale(6),
-    borderRadius: scale(16),
     backgroundColor: "rgba(27,68,205,0.08)",
+    borderRadius: scale(16),
+    paddingHorizontal: scale(12),
+    paddingVertical: verticalScale(6),
     gap: scale(4),
   },
   actionBtnText: {
-    fontSize: scale(12),
-    fontWeight: "600",
-    color: BLUE,
     fontFamily: Fonts.bold,
+    fontSize: scale(12),
+    color: BLUE,
+    letterSpacing: 0.2,
   },
-
   acceptBtn: {
-    backgroundColor: "#22C55E",
+    backgroundColor: BLUE,
   },
   acceptBtnText: {
-    fontSize: scale(12),
-    fontWeight: "600",
-    color: "#FFFFFF",
     fontFamily: Fonts.bold,
+    fontSize: scale(12),
+    color: "#FFFFFF",
+    letterSpacing: 0.2,
   },
   denyBtn: {
     backgroundColor: "#EF4444",
   },
   denyBtnText: {
-    fontSize: scale(12),
-    fontWeight: "600",
-    color: "#FFFFFF",
     fontFamily: Fonts.bold,
+    fontSize: scale(12),
+    color: "#FFFFFF",
+    letterSpacing: 0.2,
   },
 
-  // Separator
   separator: {
     height: StyleSheet.hairlineWidth,
     backgroundColor: BORDER,
     marginLeft: scale(76),
   },
 
-  // Blind Flow (compact version)
-  blindFlowCard: {
-    paddingHorizontal: scale(20),
-    paddingVertical: verticalScale(16),
+  // Message Input Card (for sending request with optional message)
+  messageInputCard: {
     backgroundColor: "rgba(27,68,205,0.04)",
-    borderTopWidth: 1,
-    borderTopColor: BORDER,
+    borderRadius: scale(16),
+    padding: scale(16),
+    marginHorizontal: scale(20),
+    marginBottom: verticalScale(12),
   },
-  blindFlowTitle: {
-    fontSize: scale(15),
-    fontWeight: "600",
+  messageInputTitle: {
+    fontFamily: Fonts.bold,
+    fontSize: scale(14),
     color: INK,
     marginBottom: verticalScale(12),
-    fontFamily: Fonts.bold,
+    letterSpacing: 0.2,
   },
-  blindFlowOptions: {
-    flexDirection: "row",
-    gap: scale(10),
-    marginBottom: verticalScale(12),
-  },
-  blindFlowOption: {
-    flex: 1,
-    alignItems: "center",
-    paddingVertical: verticalScale(12),
-    backgroundColor: CARD_BG,
-    borderRadius: scale(12),
-    borderWidth: 1,
-    borderColor: BORDER,
-  },
-  blindFlowOptionText: {
-    fontSize: scale(13),
-    fontWeight: "600",
-    color: BLUE,
-    marginTop: verticalScale(4),
-    fontFamily: Fonts.bold,
-  },
-  blindFlowInputs: {
-    gap: verticalScale(8),
-    marginBottom: verticalScale(12),
-  },
-  blindFlowInputWrap: {
+  messageInputWrap: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: CARD_BG,
@@ -1665,108 +1301,72 @@ const styles = StyleSheet.create({
     paddingVertical: verticalScale(10),
     borderWidth: 1,
     borderColor: BORDER,
+    marginBottom: verticalScale(12),
   },
-  blindFlowInput: {
+  messageInput: {
     flex: 1,
+    fontFamily: Fonts.primary,
     fontSize: scale(14),
     color: INK,
-    padding: 0,
-    fontFamily: Fonts.primary,
   },
-  blindFlowInputText: {
-    flex: 1,
-    fontSize: scale(14),
-    color: INK,
-    fontFamily: Fonts.primary,
-  },
-  blindFlowActions: {
+  messageInputActions: {
     flexDirection: "row",
-    gap: scale(10),
-    marginBottom: verticalScale(8),
+    justifyContent: "flex-end",
+    gap: scale(12),
   },
-  blindFlowBackBtn: {
+  messageInputBackBtn: {
+    paddingHorizontal: scale(16),
     paddingVertical: verticalScale(10),
-    paddingHorizontal: scale(20),
-    borderRadius: scale(20),
-    backgroundColor: "rgba(27,68,205,0.08)",
   },
-  blindFlowBackText: {
-    fontSize: scale(14),
-    fontWeight: "600",
-    color: BLUE,
+  messageInputBackText: {
     fontFamily: Fonts.bold,
+    fontSize: scale(14),
+    color: "rgba(10,14,26,0.5)",
   },
-  blindFlowSendBtn: {
-    flex: 1,
-    borderRadius: scale(20),
+  messageInputSendBtn: {
     backgroundColor: BLUE,
+    borderRadius: scale(20),
+    paddingHorizontal: scale(20),
     paddingVertical: verticalScale(10),
-    alignItems: "center",
-    justifyContent: "center",
   },
-  blindFlowSendText: {
-    fontSize: scale(14),
-    fontWeight: "600",
-    color: "#FFFFFF",
+  messageInputSendText: {
     fontFamily: Fonts.bold,
-  },
-  blindFlowCancel: {
-    alignItems: "center",
-    paddingVertical: verticalScale(6),
-  },
-  blindFlowCancelText: {
-    fontSize: scale(12),
-    color: "rgba(10,14,26,0.4)",
-    fontFamily: Fonts.primary,
+    fontSize: scale(14),
+    color: "#FFFFFF",
+    letterSpacing: 0.2,
   },
 
   // Filter Modal
   filterBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", alignItems: "center", justifyContent: "center" },
-  filterContainer: { width: SCREEN_WIDTH - scale(48), maxWidth: scale(380), borderRadius: scale(20), overflow: "hidden", shadowColor: "#000", shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 16, elevation: 8 },
-  filterHeader: { flexDirection: "row", alignItems: "center", paddingHorizontal: scale(20), paddingTop: verticalScale(20), paddingBottom: verticalScale(16), borderBottomWidth: 1, borderBottomColor: BORDER },
+  filterContainer: { width: SCREEN_WIDTH - scale(48), borderRadius: scale(24), overflow: "hidden", padding: scale(20) },
+  filterHeader: { flexDirection: "row", alignItems: "center", marginBottom: verticalScale(20) },
   filterHeaderIcon: { width: scale(36), height: scale(36), borderRadius: scale(18), backgroundColor: "rgba(27,68,205,0.08)", alignItems: "center", justifyContent: "center", marginRight: scale(12) },
-  filterTitle: { flex: 1, fontSize: scale(20), fontFamily: Fonts.bold, color: INK, letterSpacing: 0.2 },
-  filterCloseBtn: { width: scale(36), height: scale(36), borderRadius: scale(18), alignItems: "center", justifyContent: "center", backgroundColor: "rgba(10,14,26,0.05)" },
-  filterSection: { paddingHorizontal: scale(20), paddingTop: verticalScale(20) },
-  filterSectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: verticalScale(12) },
-  filterSectionLabel: { fontSize: scale(15), fontFamily: Fonts.bold, color: INK, marginBottom: verticalScale(12) },
-  filterSectionValue: { fontSize: scale(14), fontFamily: Fonts.bold, color: BLUE, marginTop: verticalScale(-11), marginLeft: scale(8) },
-  filterGenderRow: { flexDirection: "row", gap: scale(10) },
-  filterGenderChip: { flex: 1, paddingVertical: verticalScale(10), borderRadius: scale(28), alignItems: "center", justifyContent: "center", backgroundColor: CARD_BG, borderWidth: 1.5, borderColor: BORDER },
-  filterGenderChipActive: { borderColor: "transparent", backgroundColor: BLUE },
-  filterGenderText: { fontSize: scale(14), fontFamily: Fonts.bold, color: INK, letterSpacing: 0.2 },
+  filterTitle: { flex: 1, fontFamily: Fonts.bold, fontSize: scale(18), color: INK, letterSpacing: 0.2 },
+  filterCloseBtn: { padding: scale(4) },
+  filterSection: { marginBottom: verticalScale(20) },
+  filterSectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: verticalScale(12) },
+  filterSectionLabel: { fontFamily: Fonts.bold, fontSize: scale(14), color: INK, letterSpacing: 0.2, marginBottom: verticalScale(8) },
+  filterSectionValue: { fontFamily: Fonts.bold, fontSize: scale(14), color: BLUE },
+  filterGenderRow: { flexDirection: "row", gap: scale(8) },
+  filterGenderChip: { flex: 1, borderRadius: scale(20), backgroundColor: "rgba(27,68,205,0.08)", paddingVertical: verticalScale(10), alignItems: "center" },
+  filterGenderChipActive: { backgroundColor: BLUE },
+  filterGenderText: { fontFamily: Fonts.bold, fontSize: scale(13), color: "rgba(10,14,26,0.6)" },
   filterGenderTextActive: { color: "#FFFFFF" },
-  filterAgeSliderContainer: { paddingTop: verticalScale(8) },
-  filterAgeSliderRow: { flexDirection: "row", alignItems: "center", marginBottom: verticalScale(12) },
-  filterAgeSliderLabel: { fontSize: scale(14), fontFamily: Fonts.primary, color: "rgba(10,14,26,0.6)", width: scale(70) },
-  filterAgeSlider: { flex: 1, height: verticalScale(30) },
-  filterAgeSliderValue: { fontSize: scale(14), fontFamily: Fonts.bold, color: INK, width: scale(35), textAlign: "right" },
-  filterDistanceSliderContainer: { paddingTop: verticalScale(8), paddingBottom: verticalScale(8) },
-  filterDistanceSlider: { flex: 1, height: verticalScale(30), marginBottom: verticalScale(8) },
-  filterDistanceLabels: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: scale(4) },
-  filterDistanceMinLabel: { fontSize: scale(12), fontFamily: Fonts.primary, color: "rgba(10,14,26,0.5)" },
-  filterDistanceMaxLabel: { fontSize: scale(12), fontFamily: Fonts.primary, color: "rgba(10,14,26,0.5)" },
-  filterActions: { flexDirection: "row", paddingHorizontal: scale(20), paddingTop: verticalScale(24), paddingBottom: verticalScale(20), gap: scale(12) },
-  filterResetBtn: { flex: 1, paddingVertical: verticalScale(14), borderRadius: scale(28), alignItems: "center", justifyContent: "center", backgroundColor: "rgba(27,68,205,0.08)" },
-  filterResetText: { fontSize: scale(15), fontFamily: Fonts.bold, color: BLUE, letterSpacing: 0.2 },
-  filterApplyBtn: { flex: 1, borderRadius: scale(28), backgroundColor: BLUE, paddingVertical: verticalScale(14), alignItems: "center", justifyContent: "center" },
-  filterApplyText: { fontSize: scale(15), fontFamily: Fonts.bold, color: "#FFFFFF", letterSpacing: 0.2 },
-
-
-
-// Date Picker - NO GRADIENTS
-  datePickerModal: { flex: 1, justifyContent: "flex-end" },
-  datePickerBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.5)" },
-  datePickerContainer: { borderTopLeftRadius: scale(28), borderTopRightRadius: scale(28), overflow: "hidden", shadowColor: "#000", shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.15, shadowRadius: 16, elevation: 8 },
-  datePickerHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: scale(20), paddingVertical: verticalScale(16), borderBottomWidth: 1, borderBottomColor: BORDER },
-  datePickerCancel: { fontFamily: Fonts.primary, fontSize: scale(16), color: "rgba(10,14,26,0.5)" },
-  datePickerDone: { fontFamily: Fonts.bold, fontSize: scale(16), color: BLUE },
-
-  // Location Picker
-  locationPickerHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: scale(20), paddingVertical: verticalScale(14), borderBottomWidth: 1, borderBottomColor: BORDER, backgroundColor: CARD_BG },
-  locationPickerTitle: { fontFamily: Fonts.bold, fontSize: scale(18), color: INK, letterSpacing: 0.2 },
-  locationPickerDone: { fontFamily: Fonts.bold, fontSize: scale(16), color: BLUE },
-  locationPickerHint: { fontFamily: Fonts.primary, fontSize: scale(13), color: "rgba(10,14,26,0.5)", textAlign: "center", paddingVertical: verticalScale(12), backgroundColor: CARD_BG },
+  filterAgeSliderContainer: { gap: verticalScale(12) },
+  filterAgeSliderRow: { flexDirection: "row", alignItems: "center" },
+  filterAgeSliderLabel: { fontFamily: Fonts.primary, fontSize: scale(12), color: "rgba(10,14,26,0.5)", width: scale(60) },
+  filterAgeSlider: { flex: 1, height: verticalScale(40) },
+  filterAgeSliderValue: { fontFamily: Fonts.bold, fontSize: scale(14), color: BLUE, width: scale(30), textAlign: "right" },
+  filterDistanceSliderContainer: {},
+  filterDistanceSlider: { width: "100%", height: verticalScale(40) },
+  filterDistanceLabels: { flexDirection: "row", justifyContent: "space-between" },
+  filterDistanceMinLabel: { fontFamily: Fonts.primary, fontSize: scale(11), color: "rgba(10,14,26,0.4)" },
+  filterDistanceMaxLabel: { fontFamily: Fonts.primary, fontSize: scale(11), color: "rgba(10,14,26,0.4)" },
+  filterActions: { flexDirection: "row", gap: scale(12), marginTop: verticalScale(8) },
+  filterResetBtn: { flex: 1, borderRadius: scale(20), backgroundColor: "rgba(10,14,26,0.06)", paddingVertical: verticalScale(12), alignItems: "center" },
+  filterResetText: { fontFamily: Fonts.bold, fontSize: scale(14), color: "rgba(10,14,26,0.6)" },
+  filterApplyBtn: { flex: 1, borderRadius: scale(20), backgroundColor: BLUE, paddingVertical: verticalScale(12), alignItems: "center" },
+  filterApplyText: { fontFamily: Fonts.bold, fontSize: scale(14), color: "#FFFFFF" },
 
   // Loading
   loadingContainer: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: verticalScale(100) },
@@ -1780,103 +1380,18 @@ const styles = StyleSheet.create({
   emptySubtitle: { fontFamily: Fonts.primary, fontSize: scale(14), color: "rgba(10,14,26,0.6)", textAlign: "center", marginBottom: verticalScale(20) },
   emptyCta: { borderRadius: scale(28), backgroundColor: BLUE, paddingHorizontal: scale(24), paddingVertical: verticalScale(12) },
   emptyCtaText: { fontFamily: Fonts.bold, fontSize: scale(14), color: "#FFFFFF", letterSpacing: 0.2 },
-  emptyInlineState: { alignItems: "center", paddingVertical: verticalScale(24), paddingHorizontal: scale(20) },
-  emptyInlineText: { fontFamily: Fonts.primary, fontSize: scale(14), color: "rgba(10,14,26,0.5)" },
-
-  // Section
-  section: { paddingTop: verticalScale(20) },
-  sectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: scale(20), marginBottom: verticalScale(14) },
-  sectionTitle: { fontFamily: Fonts.bold, fontSize: scale(18), color: INK, letterSpacing: 0.2 },
-  seeAllBtn: { flexDirection: "row", alignItems: "center", gap: scale(4) },
-  seeAllText: { fontFamily: Fonts.bold, fontSize: scale(14), color: BLUE, letterSpacing: 0.2 },
-
-  // Blind Meets - Clean Horizontal Scroll (Compact)
-  blindMeetsScroll: { paddingHorizontal: scale(20), gap: scale(10) },
-  blindCard: {
-    width: scale(160),
-    backgroundColor: CARD_BG,
-    borderRadius: scale(20),
-    padding: scale(14),
-    borderWidth: 1,
-    borderColor: BORDER,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
-    alignItems: "center",
-  },
-  blindCircle: {
-    width: scale(72),
-    height: scale(72),
-    borderRadius: scale(36),
-    backgroundColor: "rgba(27,68,205,0.06)",
-    alignItems: "center",
+  emptyInlineState: { alignItems: "center", paddingVertical: verticalScale(60), paddingHorizontal: scale(20) },
+  emptyInlineIconContainer: { 
+    width: scale(56), 
+    height: scale(56), 
+    borderRadius: scale(28), 
+    backgroundColor: "rgba(27,68,205,0.08)", 
+    alignItems: "center", 
     justifyContent: "center",
     marginBottom: verticalScale(12),
-    borderWidth: 2,
-    borderColor: "rgba(27,68,205,0.12)",
-    borderStyle: "dashed",
   },
-  blindCircleInner: {
-    width: scale(60),
-    height: scale(60),
-    borderRadius: scale(30),
-    backgroundColor: BLUE,
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-  },
-  blindProfileImage: {
-    width: "100%",
-    height: "100%",
-  },
-  blindName: {
-    fontFamily: Fonts.bold,
-    fontSize: scale(14),
-    color: INK,
-    textAlign: "center",
-    marginBottom: verticalScale(6),
-    letterSpacing: 0.2,
-  },
-  blindLocation: {
-    fontFamily: Fonts.bold,
-    fontSize: scale(14),
-    color: INK,
-    textAlign: "center",
-    marginBottom: verticalScale(10),
-    lineHeight: scale(20),
-    width: "100%",
-    paddingVertical: verticalScale(2),
-  },
-  blindTimeContainer: {
-    alignItems: "center",
-    width: "100%",
-  },
-  blindTimeBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderRadius: scale(16),
-    paddingHorizontal: scale(10),
-    paddingVertical: verticalScale(6),
-  },
-  blindTimeBadgeText: {
-    fontFamily: Fonts.bold,
-    fontSize: scale(11),
-    color: "#FFFFFF",
-    letterSpacing: 0.3,
-  },
-  blindTimeMain: {
-    fontFamily: Fonts.bold,
-    fontSize: scale(20),
-    color: BLUE,
-    marginBottom: verticalScale(4),
-  },
-  blindTimeDetail: {
-    fontFamily: Fonts.primary,
-    fontSize: scale(13),
-    color: "rgba(10,14,26,0.5)",
-  },
+  emptyInlineText: { fontFamily: Fonts.bold, fontSize: scale(16), color: "rgba(10,14,26,0.6)", letterSpacing: 0.2, textAlign: "center" },
+  emptyInlineSubtext: { fontFamily: Fonts.primary, fontSize: scale(14), color: "rgba(10,14,26,0.4)", textAlign: "center", marginTop: verticalScale(8) },
 
   // Niices List - Minimal Compact Rows
   niicesList: { paddingHorizontal: 0 },
@@ -1894,16 +1409,6 @@ const styles = StyleSheet.create({
     position: "relative",
     marginRight: scale(12),
   },
-  niiceAvatarRing: {
-    position: "absolute",
-    top: -2,
-    left: -2,
-    right: -2,
-    bottom: -2,
-    borderRadius: scale(24),
-    borderWidth: 2,
-    borderColor: BLUE,
-  },
   niiceAvatar: {
     width: scale(44),
     height: scale(44),
@@ -1913,20 +1418,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#E8F4FF",
     alignItems: "center",
     justifyContent: "center",
-  },
-  niiceBlindBadge: {
-    position: "absolute",
-    bottom: -2,
-    right: -2,
-    minWidth: scale(20),
-    height: scale(20),
-    paddingHorizontal: scale(6),
-    borderRadius: scale(10),
-    backgroundColor: BLUE,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
   },
   niiceInfoSection: {
     flex: 1,
@@ -1977,14 +1468,19 @@ const styles = StyleSheet.create({
     color: "rgba(10,14,26,0.4)",
     fontStyle: "italic",
   },
-  niiceRightSection: {
-    alignItems: "flex-end",
-    gap: verticalScale(4),
-  },
   niiceTime: {
     fontFamily: Fonts.primary,
     fontSize: scale(12),
     color: "rgba(10,14,26,0.4)",
+    marginTop: verticalScale(2),
+  },
+  niiceMessageBtn: {
+    width: scale(40),
+    height: scale(40),
+    borderRadius: scale(20),
+    backgroundColor: "rgba(27,68,205,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   niiceSeparator: {
     height: StyleSheet.hairlineWidth,

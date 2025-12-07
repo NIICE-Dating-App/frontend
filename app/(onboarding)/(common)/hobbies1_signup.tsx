@@ -290,22 +290,7 @@ export default function Hobbies1Signup() {
       const { error: insErr } = await supabase.from("user_hobbies").insert(rows);
       if (insErr) throw insErr;
 
-      // Route by mode
-      const { data: modes, error: modeError } = await supabase
-        .from("user_modes")
-        .select("mode, updated_at")
-        .eq("user_id", session.user.id)
-        .order("updated_at", { ascending: false });
-      if (modeError) throw modeError;
-
-      const mode = modes?.[0]?.mode ?? "dating";
-      if (mode === "dating" || mode === "date") {
-        router.push("/(onboarding)/(date)/value_signup");
-      } else if (mode === "friend") {
-        router.push("/(onboarding)/(friend)/value_friend_signup");
-      } else {
-        router.push("/in_progress");
-      }
+      router.push("/(onboarding)/(common)/lifestyle2_signup");
     } catch (e: any) {
       Alert.alert("Error", e.message ?? "Something went wrong");
     } finally {

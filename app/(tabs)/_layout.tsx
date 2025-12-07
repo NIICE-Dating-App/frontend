@@ -4,7 +4,7 @@ import { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { BlurView } from "expo-blur";
 import { Tabs } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Animated, Image, Pressable, StyleSheet, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 // THEME (match profile.tsx values)
@@ -234,9 +234,6 @@ function ProfileLikeHeader() {
               resizeMode="contain"
               style={styles.logo}
             />
-            <View style={styles.modePill}>
-              <Text style={styles.modePillText}>Friend</Text>
-            </View>
           </Animated.View>
         </Pressable>
 

@@ -24,64 +24,179 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Colors, FloatingHeader } from "@/components";
 import { supabase } from "@/lib/supabase";
 
-// 🟢 FRIEND MODE: options must match friend onboarding
+// ========== UNIFIED LOOKING_FOR OPTIONS (from looking_for_enum) ==========
+// Organized by category for better UX
 
-// What I'm hoping to find in friends
-const LOOKING_FOR_OPTIONS = [
-  "New friends nearby",
+const LOOKING_FOR_DATING = [
+  "Long-term relationship",
+  "Life partner",
+  "Casual dates",
+  "Intimacy",
+  "Marriage",
+  "Short-term relationship",
+];
+
+const LOOKING_FOR_FRIENDS = [
+  "New friends",
+  "Close friendships",
+  "Casual hangouts",
+  "Professional networking",
   "Workout/fitness buddy",
   "Travel companions",
   "Activity/hobby partners",
-  "Casual hangouts",
-  "Professional networking",
-  "Close friendships",
 ];
 
-// What I value in friendship
+const LOOKING_FOR_ACTIVITIES = [
+  "Event buddies",
+  "Group activities",
+  "Local exploration",
+  "Adventure partners",
+  "Cultural events",
+  "Sports events",
+  "Food & drinks",
+  "Nightlife partners",
+  "Outdoor activities",
+  "Learning together",
+];
+
+const LOOKING_FOR_NEUTRAL = [
+  "Figuring it out",
+];
+
+// All options combined for iteration
+const ALL_LOOKING_FOR_OPTIONS = [
+  ...LOOKING_FOR_DATING,
+  ...LOOKING_FOR_FRIENDS,
+  ...LOOKING_FOR_ACTIVITIES,
+  ...LOOKING_FOR_NEUTRAL,
+];
+
+// ========== UNIFIED VALUE OPTIONS (from value_enum) ==========
 const VALUE_OPTIONS = [
+  "Honesty",
+  "Kindness",
+  "Sense of humor",
+  "Good communication",
+  "Ambition",
   "Loyalty",
+  "Emotional intelligence",
+  "Adventurous spirit",
+  "Intelligence",
+  "Affectionate",
+  "Family oriented",
+  "Open-mindedness",
+  "Active lifestyle",
+  "Romantic",
+  "Confidence",
+  "Financial stability",
   "Trustworthy",
   "Good listener",
-  "Sense of humor",
   "Supportive",
   "Non-judgmental",
-  "Honest",
   "Reliable",
   "Fun to be around",
-  "Authentic",
-  "Understanding",
+  "Authenticity",
+  "Similar values",
   "Shared interests",
+  "Understanding",
   "Deep conversations",
-  "Adventurous",
   "Positive energy",
-  "Low-maintenance",
+  "Low maintenance",
   "Makes time for me",
   "Encouraging",
   "Respectful of boundaries",
-  "Growth-minded",
+  "Growth minded",
 ];
 
-// UI → enum for looking_for_friend
-const ENUM_MAP: Record<string, string> = {
-  "New friends nearby": "new_friends_nearby",
+// UI label → enum value for looking_for
+const LOOKING_FOR_ENUM_MAP: Record<string, string> = {
+  "Long-term relationship": "long_term_relationship",
+  "Life partner": "life_partner",
+  "Casual dates": "casual_dates",
+  "Intimacy": "intimacy",
+  "Marriage": "marriage",
+  "Short-term relationship": "short_term_relationship",
+  "New friends": "new_friends",
+  "Close friendships": "close_friendships",
+  "Casual hangouts": "casual_hangouts",
+  "Professional networking": "professional_networking",
   "Workout/fitness buddy": "workout_fitness_buddy",
   "Travel companions": "travel_companions",
   "Activity/hobby partners": "activity_hobby_partners",
-  "Casual hangouts": "casual_hangouts",
-  "Professional networking": "professional_networking",
-  "Close friendships": "close_friendships",
+  "Event buddies": "event_buddies",
+  "Group activities": "group_activities",
+  "Local exploration": "local_exploration",
+  "Adventure partners": "adventure_partners",
+  "Cultural events": "cultural_events",
+  "Sports events": "sports_events",
+  "Food & drinks": "food_and_drinks",
+  "Nightlife partners": "nightlife_partners",
+  "Outdoor activities": "outdoor_activities",
+  "Learning together": "learning_together",
+  "Figuring it out": "figuring_it_out",
 };
 
-// enum → UI for looking_for_friend
-const REVERSE_ENUM_MAP: Record<string, string> = Object.fromEntries(
-  Object.entries(ENUM_MAP).map(([label, enumValue]) => [enumValue, label])
+// enum value → UI label for looking_for
+const LOOKING_FOR_REVERSE_MAP: Record<string, string> = Object.fromEntries(
+  Object.entries(LOOKING_FOR_ENUM_MAP).map(([label, enumValue]) => [enumValue, label])
+);
+
+// UI label → enum value for values
+const VALUE_ENUM_MAP: Record<string, string> = {
+  "Honesty": "honesty",
+  "Kindness": "kindness",
+  "Sense of humor": "sense_of_humor",
+  "Good communication": "good_communication",
+  "Ambition": "ambition",
+  "Loyalty": "loyalty",
+  "Emotional intelligence": "emotional_intelligence",
+  "Adventurous spirit": "adventurous_spirit",
+  "Intelligence": "intelligence",
+  "Affectionate": "affectionate",
+  "Family oriented": "family_oriented",
+  "Open-mindedness": "open_mindedness",
+  "Active lifestyle": "active_lifestyle",
+  "Romantic": "romantic",
+  "Confidence": "confidence",
+  "Financial stability": "financial_stability",
+  "Trustworthy": "trustworthy",
+  "Good listener": "good_listener",
+  "Supportive": "supportive",
+  "Non-judgmental": "non_judgmental",
+  "Reliable": "reliable",
+  "Fun to be around": "fun_to_be_around",
+  "Authenticity": "authenticity",
+  "Similar values": "similar_values",
+  "Shared interests": "shared_interests",
+  "Understanding": "understanding",
+  "Deep conversations": "deep_conversations",
+  "Positive energy": "positive_energy",
+  "Low maintenance": "low_maintenance",
+  "Makes time for me": "makes_time_for_me",
+  "Encouraging": "encouraging",
+  "Respectful of boundaries": "respectful_of_boundaries",
+  "Growth minded": "growth_minded",
+};
+
+// enum value → UI label for values
+const VALUE_REVERSE_MAP: Record<string, string> = Object.fromEntries(
+  Object.entries(VALUE_ENUM_MAP).map(([label, enumValue]) => [enumValue, label])
 );
 
 // Helper: normalize a string and match to VALUE_OPTIONS exactly
-const normalizeToOption = (value: string): string | null => {
-  const normalized = value.toLowerCase().replace(/\s+/g, "").replace(/-/g, "");
+const normalizeToValueOption = (value: string): string | null => {
+  const normalized = value.toLowerCase().replace(/\s+/g, "").replace(/-/g, "").replace(/_/g, "");
   const match = VALUE_OPTIONS.find(
-    (opt) => opt.toLowerCase().replace(/\s+/g, "").replace(/-/g, "") === normalized
+    (opt) => opt.toLowerCase().replace(/\s+/g, "").replace(/-/g, "").replace(/_/g, "") === normalized
+  );
+  return match || null;
+};
+
+// Helper: normalize a string and match to looking_for options
+const normalizeToLookingForOption = (value: string): string | null => {
+  const normalized = value.toLowerCase().replace(/\s+/g, "").replace(/-/g, "").replace(/_/g, "");
+  const match = ALL_LOOKING_FOR_OPTIONS.find(
+    (opt) => opt.toLowerCase().replace(/\s+/g, "").replace(/-/g, "").replace(/_/g, "") === normalized
   );
   return match || null;
 };
@@ -91,6 +206,7 @@ export default function WhatImLookingForEdit() {
   const [partnerValues, setPartnerValues] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [fullName, setFullName] = useState("");
+  const [activeCategory, setActiveCategory] = useState<"dating" | "friends" | "activities" | null>(null);
   const animRefs = useRef<Record<string, Animated.Value>>({});
 
   const ensureAnim = (key: string) => {
@@ -124,83 +240,46 @@ export default function WhatImLookingForEdit() {
         const parsed = JSON.parse(tempData);
         setFullName(parsed.fullName || "");
         setLookingFor(parsed.lookingFor || []);
-
-        // Normalize partner values to match VALUE_OPTIONS exactly
-        const normalizedPartnerValues = (parsed.partnerValues || [])
-          .map(normalizeToOption)
-          .filter(Boolean) as string[];
-        setPartnerValues(normalizedPartnerValues);
-
-        console.log(
-          "Loaded from temp storage - normalized friend partnerValues:",
-          normalizedPartnerValues
-        );
+        setPartnerValues(parsed.partnerValues || []);
+        console.log("Loaded from temp storage:", parsed);
         return;
       }
 
       // Load name
       const { data: profileData, error: profileError } = await supabase
         .from("profiles")
-        .select("full_name")
+        .select("full_name, looking_for, values")
         .eq("id", user.id)
         .single();
 
       if (profileError) throw profileError;
       setFullName(profileData?.full_name || "");
 
-      // Load friend mode from user_modes
-      const { data: modesData, error: modesError } = await supabase
-        .from("user_modes")
-        .select("looking_for_friend, value_friend")
-        .eq("user_id", user.id)
-        .eq("mode", "friend")
-        .maybeSingle();
+      // Load looking_for from profiles (unified field)
+      const lookingForEnums: string[] = Array.isArray(profileData?.looking_for)
+        ? profileData.looking_for
+        : [];
+      
+      // Convert enums to display labels
+      const lookingForLabels = lookingForEnums
+        .map((e) => LOOKING_FOR_REVERSE_MAP[e])
+        .filter(Boolean);
+      setLookingFor(lookingForLabels);
 
-      if (modesError && modesError.code !== "PGRST116") throw modesError;
+      // Load values from profiles (unified field)
+      const valuesEnums: string[] = Array.isArray(profileData?.values)
+        ? profileData.values
+        : [];
 
-      if (modesData) {
-        console.log("Friend-mode data from Supabase:", modesData);
+      // Convert enums to display labels
+      const valuesLabels = valuesEnums
+        .map((e) => VALUE_REVERSE_MAP[e])
+        .filter(Boolean);
+      setPartnerValues(valuesLabels);
 
-        // looking_for_friend: enum[] → UI labels
-        const lookingForEnums: string[] = Array.isArray(modesData.looking_for_friend)
-          ? modesData.looking_for_friend
-          : [];
-        const lookingForLabels = lookingForEnums
-          .map((e) => REVERSE_ENUM_MAP[e])
-          .filter(Boolean);
-        setLookingFor(lookingForLabels);
-
-        // value_friend: enum[] → UI labels using VALUE_OPTIONS + normalizeToOption
-        const valueEnums: string[] = Array.isArray(modesData.value_friend)
-          ? modesData.value_friend
-          : [];
-
-        console.log("Friend value enums from DB:", valueEnums);
-
-        const valueLabels = valueEnums
-          .map((e) => {
-            // snake_case → "Title Case" string before matching
-            const words = String(e)
-              .split("_")
-              .map(
-                (word) =>
-                  word.charAt(0).toUpperCase() +
-                  word.slice(1).toLowerCase()
-              );
-            const converted = words.join(" ");
-            return normalizeToOption(converted);
-          })
-          .filter(Boolean) as string[];
-
-        console.log("Normalized friend value labels:", valueLabels);
-        console.log("Friend value labels count:", valueLabels.length);
-
-        setPartnerValues(valueLabels);
-      } else {
-        console.log("No friend-mode user_modes row found");
-      }
+      console.log("Loaded from Supabase - lookingFor:", lookingForLabels, "values:", valuesLabels);
     } catch (error) {
-      console.error("Error loading friend-mode data:", error);
+      console.error("Error loading data:", error);
       Alert.alert("Error", "Failed to load current data. Please try again.");
     }
   };
@@ -211,8 +290,8 @@ export default function WhatImLookingForEdit() {
       if (prev.includes(option)) {
         return prev.filter((x) => x !== option);
       } else {
-        if (prev.length >= 2) {
-          Alert.alert("Limit reached", "You can choose up to 2 options.");
+        if (prev.length >= 7) {
+          Alert.alert("Limit reached", "You can choose up to 7 options.");
           return prev;
         }
         return [...prev, option];
@@ -226,8 +305,8 @@ export default function WhatImLookingForEdit() {
       if (prev.includes(option)) {
         return prev.filter((x) => x !== option);
       } else {
-        if (prev.length >= 5) {
-          Alert.alert("Limit reached", "You can select up to 5 values.");
+        if (prev.length >= 7) {
+          Alert.alert("Limit reached", "You can select up to 7 values.");
           return prev;
         }
         return [...prev, option];
@@ -253,14 +332,30 @@ export default function WhatImLookingForEdit() {
         return;
       }
 
-      // friend enums for looking_for_friend
-      const normalizedLookingFor = lookingFor.map((x) => ENUM_MAP[x]);
+      // Convert UI labels to enum values
+      const lookingForEnums = lookingFor
+        .map((label) => LOOKING_FOR_ENUM_MAP[label])
+        .filter(Boolean);
 
-      // friend enums for value_friend – standard snake_case
-      const normalizedValues = partnerValues.map((s) =>
-        s.toLowerCase().replace(/\s+/g, "_").replace(/-/g, "_")
-      );
+      const valuesEnums = partnerValues
+        .map((label) => VALUE_ENUM_MAP[label])
+        .filter(Boolean);
 
+      // Save directly to profiles table (new unified system)
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .update({
+          looking_for: lookingForEnums,
+          values: valuesEnums,
+        })
+        .eq("id", user.id);
+
+      if (updateError) {
+        console.error("Database update error:", updateError);
+        throw updateError;
+      }
+
+      // Also save to temp storage for edit_main to pick up immediately
       const tempKey = `temp_looking_for_${user.id}`;
       await AsyncStorage.setItem(
         tempKey,
@@ -268,19 +363,106 @@ export default function WhatImLookingForEdit() {
           lookingFor,
           partnerValues,
           fullName,
-          normalizedLookingFor,
-          normalizedValues,
+          lookingForEnums,
+          valuesEnums,
         })
       );
 
+      console.log("Saved to database and temp storage:", { lookingForEnums, valuesEnums });
+
+      // Clear temp storage after successful save
+      await AsyncStorage.removeItem(tempKey);
+
       router.back();
     } catch (err) {
-      console.error("Friend-mode update error:", err);
-      Alert.alert("Error", "Failed to save changes.");
+      console.error("Save error:", err);
+      Alert.alert("Error", "Failed to save changes. Please try again.");
     } finally {
       setLoading(false);
     }
   };
+
+  const renderCategorySection = (
+    title: string,
+    subtitle: string,
+    options: string[],
+    categoryKey: "dating" | "friends" | "activities"
+  ) => {
+    const isExpanded = activeCategory === categoryKey;
+
+    return (
+      <View style={styles.categoryContainer}>
+        <Pressable
+          style={styles.categoryHeader}
+          onPress={() => setActiveCategory(isExpanded ? null : categoryKey)}
+        >
+          <View>
+            <Text style={styles.categoryTitle}>{title}</Text>
+            <Text style={styles.categorySubtitle}>{subtitle}</Text>
+          </View>
+          <Ionicons
+            name={isExpanded ? "chevron-up" : "chevron-down"}
+            size={20}
+            color={Colors.BLUE}
+          />
+        </Pressable>
+
+        {isExpanded && (
+          <View style={styles.optionsContainer}>
+            {options.map((option) => {
+              const anim = ensureAnim(`looking-${option}`);
+              const isSelected = lookingFor.includes(option);
+
+              return (
+                <Pressable
+                  key={option}
+                  onPress={() => toggleLookingFor(option)}
+                  delayLongPress={70}
+                >
+                  <Animated.View style={{ transform: [{ scale: anim }] }}>
+                    <LinearGradient
+                      colors={
+                        isSelected
+                          ? (["#1B44CD", "#3C6FFF"] as const)
+                          : (["#FFFFFF", "#F8FAFF"] as const)
+                      }
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={[
+                        styles.optionButton,
+                        isSelected && styles.optionButtonSelected,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.optionText,
+                          isSelected && styles.optionTextSelected,
+                        ]}
+                      >
+                        {option}
+                      </Text>
+                      <Ionicons
+                        name={
+                          isSelected ? "checkmark-circle" : "ellipse-outline"
+                        }
+                        size={22}
+                        color={isSelected ? "#FFFFFF" : Colors.BLUE}
+                      />
+                    </LinearGradient>
+                  </Animated.View>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  // Show selected items summary
+  const selectedLookingForSummary = lookingFor.length > 0 
+    ? `${lookingFor.length} selected`
+    : "None selected";
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
@@ -305,13 +487,38 @@ export default function WhatImLookingForEdit() {
             scrollEnabled
             nestedScrollEnabled
           >
+            {/* What I'm Looking For Section */}
             <View pointerEvents="none">
-              <Text style={styles.sectionTitle}>What are you hoping to find?</Text>
-              <Text style={styles.sectionSubtitle}>Choose up to 2 options</Text>
+              <Text style={styles.sectionTitle}>What are you looking for?</Text>
+              <Text style={styles.sectionSubtitle}>
+                Choose up to 7 options • {selectedLookingForSummary}
+              </Text>
             </View>
 
-            <View style={styles.optionsContainer}>
-              {LOOKING_FOR_OPTIONS.map((option) => {
+            {renderCategorySection(
+              "💕 Dating & Romance",
+              "Find love and connection",
+              LOOKING_FOR_DATING,
+              "dating"
+            )}
+
+            {renderCategorySection(
+              "👋 Friendship",
+              "Make meaningful friendships",
+              LOOKING_FOR_FRIENDS,
+              "friends"
+            )}
+
+            {renderCategorySection(
+              "🎉 Events & Activities",
+              "Find people to do things with",
+              LOOKING_FOR_ACTIVITIES,
+              "activities"
+            )}
+
+            {/* Figuring it out - always visible */}
+            <View style={styles.neutralSection}>
+              {LOOKING_FOR_NEUTRAL.map((option) => {
                 const anim = ensureAnim(`looking-${option}`);
                 const isSelected = lookingFor.includes(option);
 
@@ -341,7 +548,7 @@ export default function WhatImLookingForEdit() {
                             isSelected && styles.optionTextSelected,
                           ]}
                         >
-                          {option}
+                          🤔 {option}
                         </Text>
                         <Ionicons
                           name={
@@ -359,11 +566,14 @@ export default function WhatImLookingForEdit() {
 
             <View style={styles.divider} pointerEvents="none" />
 
+            {/* Values Section */}
             <View pointerEvents="none">
               <Text style={styles.sectionTitle}>
-                What do you value in a friend?
+                What do you value in others?
               </Text>
-              <Text style={styles.sectionSubtitle}>Choose up to 5 values</Text>
+              <Text style={styles.sectionSubtitle}>
+                Choose up to 7 values • {partnerValues.length} selected
+              </Text>
             </View>
 
             <View style={styles.chipsContainer}>
@@ -414,7 +624,7 @@ export default function WhatImLookingForEdit() {
                 style={{ marginRight: scale(8) }}
               />
               <Text style={styles.infoNoteText}>
-                These details help us show your friendship vibe more clearly.
+                These details help us find compatible connections for you, whether for dating, friendship, or activities.
               </Text>
             </View>
           </ScrollView>
@@ -449,14 +659,50 @@ const styles = StyleSheet.create({
     color: "rgba(10,14,26,0.6)",
     marginBottom: verticalScale(16),
   },
+  categoryContainer: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: scale(16),
+    marginBottom: verticalScale(12),
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  categoryHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: scale(16),
+  },
+  categoryTitle: {
+    fontSize: scale(16),
+    fontFamily: Fonts.bold,
+    color: Colors.INK,
+    marginBottom: verticalScale(2),
+  },
+  categorySubtitle: {
+    fontSize: scale(13),
+    fontFamily: Fonts.primary,
+    color: "rgba(10,14,26,0.5)",
+  },
   optionsContainer: {
-    gap: verticalScale(12),
-    marginBottom: verticalScale(32),
+    gap: verticalScale(10),
+    paddingHorizontal: scale(16),
+    paddingBottom: scale(16),
+    borderTopWidth: 1,
+    borderTopColor: "rgba(27,68,205,0.08)",
+    paddingTop: scale(12),
+  },
+  neutralSection: {
+    marginTop: verticalScale(4),
+    marginBottom: verticalScale(8),
   },
   optionButton: {
-    borderRadius: scale(16),
-    paddingVertical: verticalScale(16),
-    paddingHorizontal: scale(20),
+    borderRadius: scale(14),
+    paddingVertical: verticalScale(14),
+    paddingHorizontal: scale(18),
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
@@ -474,7 +720,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   optionText: {
-    fontSize: scale(16),
+    fontSize: scale(15),
     fontFamily: Fonts.bold,
     color: Colors.INK,
   },
@@ -494,8 +740,8 @@ const styles = StyleSheet.create({
   },
   chipButton: {
     paddingVertical: verticalScale(10),
-    paddingHorizontal: scale(20),
-    borderRadius: scale(30),
+    paddingHorizontal: scale(18),
+    borderRadius: scale(24),
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
@@ -510,7 +756,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   chipText: {
-    fontSize: scale(15),
+    fontSize: scale(14),
     fontFamily: Fonts.bold,
     color: Colors.INK,
     textAlign: "center",

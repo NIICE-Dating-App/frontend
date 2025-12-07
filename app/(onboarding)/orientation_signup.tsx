@@ -4,7 +4,7 @@ import { moderateScale, scale, verticalScale } from "@/utils/responsive";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   Alert,
   Animated,
@@ -57,14 +57,44 @@ export default function OrientationSignup() {
     setSelectedOrientation(option);
   };
 
+  // Skip handler - just advances without saving orientation
+  const handleSkip = async () => {
+    try {
+      setLoading(true);
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error || !session?.user) {
+        Alert.alert("Error", "Session not found. Please log in again.");
+        setLoading(false);
+        return;
+      }
+
+      // Update onboarding step without setting orientation
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .update({
+          onboarding_step: 4,
+        })
+        .eq("id", session.user.id);
+
+      if (updateError) throw updateError;
+
+      router.push("/distancepref_signup");
+    } catch (err) {
+      console.error("Skip error:", err);
+      Alert.alert("Unexpected error", "Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleNext = async () => {
     if (!selectedOrientation) {
-      Alert.alert("Missing info", "Please select your sexual orientation.");
+      Alert.alert("Missing info", "Please select your sexual orientation or skip this step.");
       return;
     }
 
     if (selectedOrientation === "Not listed" && customOrientation.trim().length === 0) {
-      Alert.alert("Please specify", "You can describe your orientation or skip this later.");
+      Alert.alert("Please specify", "You can describe your orientation or skip this step.");
       return;
     }
 
@@ -85,7 +115,7 @@ export default function OrientationSignup() {
           sexual_orientation: normalizedOrientation,
           orientation_custom: customOrientation || null,
           show_orientation_on_profile: showOnProfile,
-          onboarding_step: 3,
+          onboarding_step: 4,
         })
         .eq("id", session.user.id);
 
@@ -110,6 +140,11 @@ export default function OrientationSignup() {
           <Ionicons name="chevron-back" size={moderateScale(26)} color="#FFFFFF" />
         </TouchableOpacity>
 
+        {/* Skip Button */}
+        <Pressable style={styles.skipButton} onPress={handleSkip} disabled={loading}>
+          <Text style={styles.skipText}>Skip</Text>
+        </Pressable>
+
         {/* Progress Bar */}
         <View style={styles.progressWrapper}>
           <View style={styles.progressTrack}>
@@ -130,6 +165,9 @@ export default function OrientationSignup() {
             keyboardShouldPersistTaps="handled"
           >
             <Text style={styles.title}>What is your sexual orientation?</Text>
+            <Text style={styles.subtitle}>
+              This is optional — you can skip if you prefer not to share.
+            </Text>
 
             {orientations.map((option) => {
               const anim = animRefs.current[option] || new Animated.Value(1);
@@ -179,7 +217,7 @@ export default function OrientationSignup() {
 
             <View style={styles.profileNoteWrapper}>
               <Text style={styles.noteText}>
-                It’s up to you to show this information on your profile.
+                It's up to you to show this information on your profile.
               </Text>
               <View style={styles.switchRow}>
                 <Text style={styles.switchLabel}>Show on profile</Text>
@@ -197,9 +235,9 @@ export default function OrientationSignup() {
 
         {/* Next Button */}
         <TouchableOpacity
-          style={styles.nextButton}
+          style={[styles.nextButton, !selectedOrientation && { opacity: 0.5 }]}
           onPress={handleNext}
-          disabled={loading}
+          disabled={loading || !selectedOrientation}
         >
           <Ionicons name="chevron-forward" size={moderateScale(30)} color="#FFFFFF" />
         </TouchableOpacity>
@@ -227,6 +265,19 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     zIndex: 10,
   },
+  skipButton: {
+    position: "absolute",
+    top: verticalScale(64),
+    right: scale(24),
+    zIndex: 10,
+    backgroundColor: "transparent",
+    padding: scale(8),
+  },
+  skipText: {
+    fontFamily: Fonts.bold,
+    color: BLUE,
+    fontSize: moderateScale(16),
+  },
   progressWrapper: {
     marginTop: verticalScale(88),
     paddingHorizontal: scale(24),
@@ -238,7 +289,7 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: verticalScale(6),
-    width: "17.64%",
+    width: "23.52%", // Updated progress percentage
     backgroundColor: BLUE,
     borderRadius: scale(3),
   },
@@ -253,7 +304,14 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(26),
     lineHeight: verticalScale(40),
     color: INK,
-    marginBottom: verticalScale(24),
+    marginBottom: verticalScale(8),
+  },
+  subtitle: {
+    fontFamily: Fonts.bold,
+    fontSize: moderateScale(15),
+    color: "#6C757D",
+    marginBottom: verticalScale(20),
+    lineHeight: verticalScale(22),
   },
   shadowWrapper: {
     shadowColor: "#1B44CD",

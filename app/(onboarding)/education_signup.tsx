@@ -5,7 +5,7 @@ import { moderateScale, scale, verticalScale } from "@/utils/responsive";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   Alert,
   Animated,
@@ -84,7 +84,7 @@ export default function EducationSignup() {
     try {
       setLoading(true);
       await updateProfile(normalizedSelection(), institution.trim() || null);
-      router.push("/(onboarding)/purpose_signup");
+      router.push("/(onboarding)/value_signup");
     } catch (e) {
       console.error("Education update error:", e);
       Alert.alert("Unexpected error", "Please try again.");
@@ -97,7 +97,7 @@ export default function EducationSignup() {
     try {
       setLoading(true);
       await updateProfile(null, null); // nothing filled → just move on
-      router.push("/(onboarding)/purpose_signup");
+      router.push("/(onboarding)/value_signup");
     } catch (e) {
       console.error("Skip error:", e);
       Alert.alert("Unexpected error", "Please try again.");
