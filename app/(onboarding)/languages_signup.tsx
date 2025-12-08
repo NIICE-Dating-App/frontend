@@ -1,7 +1,6 @@
-// app/(onboarding)/(common)/languages_signup.tsx
 import { Fonts } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
-import { moderateScale, scale, verticalScale } from "@/utils/responsive";
+import { scale, verticalScale } from "@/utils/responsive";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -10,6 +9,7 @@ import {
     ActivityIndicator,
     Alert,
     Animated,
+    Keyboard,
     LayoutAnimation,
     Platform,
     Pressable,
@@ -18,6 +18,7 @@ import {
     StyleSheet,
     Text,
     TextInput,
+    TouchableOpacity,
     UIManager,
     View,
 } from "react-native";
@@ -27,9 +28,11 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const BG = "#EAF1F8";
-const INK = "#000910";
-const BLUE = "#1B44CD";
+const Colors = {
+  BG: "#F5F7FA",
+  BLUE: "#1B44CD",
+  INK: "#0A0E1A",
+};
 
 type Language = {
   id: number;
@@ -60,21 +63,25 @@ const LanguageChip = React.memo(
     }, [anim, onPress]);
 
     return (
-      <Pressable onPress={handlePress} hitSlop={6} style={({ pressed }) => [pressed && { opacity: 0.9 }]}>
-        <Animated.View
-          style={[
-            { transform: [{ scale: anim }] },
-            styles.shadowWrapper,
-            Platform.OS === "ios" && { shadowOpacity: selected ? 0.35 : 0.15 },
-          ]}
-        >
+      <Pressable
+        onPress={handlePress}
+        hitSlop={6}
+        style={({ pressed }) => [pressed && { opacity: 0.9 }]}
+      >
+        <Animated.View style={{ transform: [{ scale: anim }] }}>
           <LinearGradient
-            colors={selected ? ["#1B44CD", "#3C6FFF", "#7AA9FF"] : ["#F8FAFF", "#EBF1FF"]}
+            colors={
+              selected
+                ? (["#1B44CD", "#3C6FFF"] as const)
+                : (["#FFFFFF", "#F8FAFF"] as const)
+            }
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={[styles.optionChip, selected && { transform: [{ scale: 1.02 }] }]}
+            style={[styles.optionChip, selected && styles.optionChipSelected]}
           >
-            <Text style={[styles.optionText, selected && styles.optionTextSelected]}>{label}</Text>
+            <Text style={[styles.optionText, selected && styles.optionTextSelected]}>
+              {label}
+            </Text>
           </LinearGradient>
         </Animated.View>
       </Pressable>
@@ -89,6 +96,7 @@ export default function LanguagesSignup() {
   const [languages, setLanguages] = useState<Language[]>([]);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
   // Fetch languages from languages_master table
@@ -129,14 +137,14 @@ export default function LanguagesSignup() {
 
   const handleNext = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      setSaving(true);
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (!session?.user) throw new Error("No active session");
 
       // Delete existing user languages first
-      await supabase
-        .from("user_languages")
-        .delete()
-        .eq("user_id", session.user.id);
+      await supabase.from("user_languages").delete().eq("user_id", session.user.id);
 
       // Insert new selections if any
       if (selectedIds.length > 0) {
@@ -145,16 +153,16 @@ export default function LanguagesSignup() {
           language_id: langId,
         }));
 
-        const { error } = await supabase
-          .from("user_languages")
-          .insert(inserts);
+        const { error } = await supabase.from("user_languages").insert(inserts);
 
         if (error) throw error;
       }
 
       router.push("/(onboarding)/vehicles_signup");
     } catch (e: any) {
-      Alert.alert("Error", e.message);
+      Alert.alert("Error", e.message ?? "Something went wrong");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -167,18 +175,24 @@ export default function LanguagesSignup() {
   // RENDER
   // ==========================================
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["top"]}>
       <StatusBar barStyle="dark-content" />
 
       {/* Back Button */}
-      <Pressable style={styles.backButton} onPress={() => router.back()}>
-        <Ionicons name="chevron-back" size={moderateScale(26)} color="#FFFFFF" />
-      </Pressable>
+      <TouchableOpacity
+        style={styles.backButton}
+        onPress={() => router.back()}
+        activeOpacity={0.7}
+      >
+        <View style={styles.backButtonCircle}>
+          <Ionicons name="arrow-back" size={24} color={Colors.INK} />
+        </View>
+      </TouchableOpacity>
 
       {/* Skip Button */}
-      <Pressable style={styles.skipButton} onPress={handleNext}>
+      <TouchableOpacity style={styles.skipButton} onPress={handleNext} activeOpacity={0.7}>
         <Text style={styles.skipText}>Skip</Text>
-      </Pressable>
+      </TouchableOpacity>
 
       {/* Progress Bar */}
       <View style={styles.progressWrapper}>
@@ -190,11 +204,7 @@ export default function LanguagesSignup() {
       {/* Main Content */}
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{
-          paddingHorizontal: scale(24),
-          paddingBottom: verticalScale(110),
-          paddingTop: verticalScale(35),
-        }}
+        contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
         <Text style={styles.title}>What languages do you speak?</Text>
@@ -202,59 +212,83 @@ export default function LanguagesSignup() {
           Select all that apply — this helps you connect with people who speak your language.
         </Text>
 
-        {/* Selected Count */}
-        {selectedIds.length > 0 && (
-          <View style={styles.countBadge}>
-            <Ionicons name="language" size={moderateScale(16)} color={BLUE} />
-            <Text style={styles.countText}>{selectedIds.length} selected</Text>
-          </View>
-        )}
-
         {/* Search Input */}
         <View style={styles.searchContainer}>
-          <Ionicons name="search" size={moderateScale(20)} color="#7A838E" />
+          <Ionicons name="search" size={20} color="rgba(10,14,26,0.4)" />
           <TextInput
             style={styles.searchInput}
             placeholder="Search languages..."
-            placeholderTextColor="#7A838E"
+            placeholderTextColor="rgba(10,14,26,0.4)"
             value={searchQuery}
             onChangeText={setSearchQuery}
             autoCapitalize="none"
             autoCorrect={false}
+            returnKeyType="search"
+            onSubmitEditing={Keyboard.dismiss}
           />
           {searchQuery.length > 0 && (
-            <Pressable onPress={() => setSearchQuery("")}>
-              <Ionicons name="close-circle" size={moderateScale(20)} color="#7A838E" />
+            <Pressable onPress={() => setSearchQuery("")} hitSlop={8}>
+              <Ionicons name="close-circle" size={20} color="rgba(10,14,26,0.4)" />
             </Pressable>
           )}
         </View>
 
         {loading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={BLUE} />
+            <ActivityIndicator size="large" color={Colors.BLUE} />
             <Text style={styles.loadingText}>Loading languages...</Text>
           </View>
         ) : (
-          <View style={styles.optionGroup}>
-            {filteredLanguages.map((lang) => (
-              <LanguageChip
-                key={lang.id}
-                label={lang.label}
-                selected={selectedIds.includes(lang.id)}
-                onPress={() => toggleLanguage(lang.id)}
+          <>
+            <View style={styles.optionGroup}>
+              {filteredLanguages.map((lang) => (
+                <LanguageChip
+                  key={lang.id}
+                  label={lang.label}
+                  selected={selectedIds.includes(lang.id)}
+                  onPress={() => toggleLanguage(lang.id)}
+                />
+              ))}
+              {filteredLanguages.length === 0 && (
+                <View style={styles.noResultsContainer}>
+                  <Ionicons
+                    name="language-outline"
+                    size={48}
+                    color="rgba(10,14,26,0.2)"
+                  />
+                  <Text style={styles.noResultsText}>No languages found</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Info Note */}
+            <View style={styles.infoNote}>
+              <Ionicons
+                name="information-circle-outline"
+                size={18}
+                color="rgba(10,14,26,0.5)"
+                style={{ marginRight: scale(8) }}
               />
-            ))}
-            {filteredLanguages.length === 0 && (
-              <Text style={styles.noResultsText}>No languages found</Text>
-            )}
-          </View>
+              <Text style={styles.infoNoteText}>
+                Adding your languages helps you connect with people who speak the same
+                languages. You can select up to 10 languages.
+              </Text>
+            </View>
+          </>
         )}
+
+        <View style={{ height: verticalScale(40) }} />
       </ScrollView>
 
       {/* Next Button */}
-      <Pressable onPress={handleNext} style={styles.nextButton}>
-        <Ionicons name="chevron-forward" size={moderateScale(30)} color="#FFFFFF" />
-      </Pressable>
+      <TouchableOpacity
+        onPress={handleNext}
+        disabled={saving}
+        style={[styles.nextButton, saving && { opacity: 0.5 }]}
+        activeOpacity={0.8}
+      >
+        <Ionicons name="arrow-forward" size={28} color="#FFFFFF" />
+      </TouchableOpacity>
     </SafeAreaView>
   );
 }
@@ -263,108 +297,117 @@ export default function LanguagesSignup() {
 // STYLES
 // ==========================================
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: BG },
+  container: {
+    flex: 1,
+    backgroundColor: Colors.BG,
+  },
 
   backButton: {
     position: "absolute",
-    top: verticalScale(58),
-    left: scale(24),
-    width: scale(56),
-    height: verticalScale(56),
-    borderRadius: scale(28),
-    backgroundColor: INK,
+    top: verticalScale(16),
+    left: scale(20),
+    zIndex: 10,
+    paddingTop: verticalScale(60),
+  },
+  backButtonCircle: {
+    width: scale(40),
+    height: scale(40),
+    borderRadius: scale(20),
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
-    zIndex: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
 
   skipButton: {
     position: "absolute",
-    top: verticalScale(58),
-    right: scale(24),
+    top: verticalScale(16),
+    right: scale(20),
     zIndex: 10,
+    paddingTop: verticalScale(60),
+    padding: scale(8),
   },
   skipText: {
     fontFamily: Fonts.bold,
-    color: "#7A838E",
-    fontSize: moderateScale(15),
+    fontSize: scale(15),
+    color: Colors.BLUE,
   },
 
   progressWrapper: {
-    marginTop: verticalScale(88),
-    paddingHorizontal: scale(24),
+    marginTop: verticalScale(80),
+    paddingHorizontal: scale(20),
   },
   progressTrack: {
-    height: verticalScale(6),
-    backgroundColor: "#C8CDD2",
-    borderRadius: scale(3),
+    height: verticalScale(8),
+    backgroundColor: "rgba(27,68,205,0.15)",
+    borderRadius: scale(4),
+    overflow: "hidden",
   },
   progressFill: {
-    height: verticalScale(6),
-    width: "86%", // Incrementing from hometown
-    backgroundColor: BLUE,
-    borderRadius: scale(3),
+    height: verticalScale(8),
+    width: "86%", // EXACT SAME PERCENTAGE - DO NOT CHANGE
+    backgroundColor: Colors.BLUE,
+    borderRadius: scale(4),
+  },
+
+  scrollContent: {
+    paddingHorizontal: scale(20),
+    paddingTop: verticalScale(24),
+    paddingBottom: verticalScale(120),
   },
 
   title: {
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(28),
-    lineHeight: verticalScale(42),
-    color: INK,
+    fontSize: scale(24),
+    lineHeight: verticalScale(32),
+    color: Colors.INK,
     marginBottom: verticalScale(8),
+    paddingTop: verticalScale(6.5),
   },
   subtitle: {
-    fontFamily: Fonts.bold,
-    fontSize: moderateScale(17),
-    lineHeight: verticalScale(26),
-    color: BLUE,
-    marginBottom: verticalScale(16),
-  },
-
-  countBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    alignSelf: "flex-start",
-    gap: scale(6),
-    backgroundColor: "#E4ECFF",
-    paddingHorizontal: scale(12),
-    paddingVertical: verticalScale(6),
-    borderRadius: scale(20),
-    marginBottom: verticalScale(12),
-  },
-  countText: {
-    fontFamily: Fonts.bold,
-    fontSize: moderateScale(14),
-    color: BLUE,
+    fontFamily: Fonts.primary,
+    fontSize: scale(15),
+    color: "rgba(10,14,26,0.6)",
+    marginBottom: verticalScale(20),
+    lineHeight: verticalScale(22),
   },
 
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#FFFFFF",
-    borderRadius: scale(12),
+    borderRadius: scale(14),
     paddingHorizontal: scale(14),
-    paddingVertical: verticalScale(10),
-    marginBottom: verticalScale(16),
-    borderWidth: 1,
-    borderColor: "#D4DAE1",
+    paddingVertical: verticalScale(12),
+    marginBottom: verticalScale(20),
+    borderWidth: 1.5,
+    borderColor: "rgba(27,68,205,0.15)",
     gap: scale(10),
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2,
   },
   searchInput: {
     flex: 1,
-    fontFamily: Fonts.bold,
-    fontSize: moderateScale(15),
-    color: INK,
+    fontFamily: Fonts.primary,
+    fontSize: scale(15),
+    color: Colors.INK,
   },
 
   loadingContainer: {
     alignItems: "center",
-    paddingVertical: verticalScale(40),
+    paddingVertical: verticalScale(60),
   },
   loadingText: {
-    fontFamily: Fonts.bold,
-    fontSize: moderateScale(15),
-    color: "#7A838E",
+    fontFamily: Fonts.primary,
+    fontSize: scale(15),
+    color: "rgba(10,14,26,0.5)",
     marginTop: verticalScale(12),
   },
 
@@ -373,51 +416,80 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     justifyContent: "flex-start",
     gap: scale(10),
-  },
-  shadowWrapper: {
-    shadowColor: "#1B44CD",
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    borderRadius: scale(30),
+    marginBottom: verticalScale(20),
   },
   optionChip: {
     paddingVertical: verticalScale(10),
     paddingHorizontal: scale(18),
-    borderRadius: scale(30),
+    borderRadius: scale(24),
     minWidth: scale(100),
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  optionChipSelected: {
+    shadowColor: Colors.BLUE,
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
   },
   optionText: {
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(14),
-    color: "#1B2B44",
+    fontSize: scale(14),
+    color: Colors.INK,
     textAlign: "center",
   },
-  optionTextSelected: { color: "#FFFFFF" },
+  optionTextSelected: {
+    color: "#FFFFFF",
+  },
 
-  noResultsText: {
-    fontFamily: Fonts.bold,
-    fontSize: moderateScale(15),
-    color: "#7A838E",
-    textAlign: "center",
+  noResultsContainer: {
     width: "100%",
-    paddingVertical: verticalScale(20),
+    alignItems: "center",
+    paddingVertical: verticalScale(40),
+  },
+  noResultsText: {
+    fontFamily: Fonts.primary,
+    fontSize: scale(15),
+    color: "rgba(10,14,26,0.4)",
+    marginTop: verticalScale(12),
+  },
+
+  infoNote: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    padding: scale(16),
+    backgroundColor: "rgba(27,68,205,0.06)",
+    borderRadius: scale(12),
+  },
+  infoNoteText: {
+    flex: 1,
+    fontSize: scale(13),
+    fontFamily: Fonts.primary,
+    color: "rgba(10,14,26,0.6)",
+    lineHeight: verticalScale(18),
+    paddingTop: verticalScale(0.5),
   },
 
   nextButton: {
     position: "absolute",
     bottom: verticalScale(40),
-    right: scale(24),
-    width: scale(70),
-    height: verticalScale(70),
-    borderRadius: scale(35),
-    backgroundColor: INK,
+    right: scale(20),
+    width: scale(64),
+    height: scale(64),
+    borderRadius: scale(32),
+    backgroundColor: Colors.BLUE,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 6 },
+    shadowColor: Colors.BLUE,
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
   },
 });

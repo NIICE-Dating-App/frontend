@@ -1,9 +1,10 @@
 // app/(auth)/done_signup.tsx
+import { scale, verticalScale } from "@/utils/responsive";
+import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import {
   Alert,
   Dimensions,
-  Platform,
   StatusBar,
   StyleSheet,
   Text,
@@ -11,16 +12,16 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BackButton } from "../../components/BackButton";
 import { Fonts } from "../../constants/theme";
 import { supabase } from "../../lib/supabase";
 
-const BG = "#EEF7FF";
-const INK = "#000910";
-const BLUE = "#1A44CC";
+const Colors = {
+  BG: "#F5F7FA",
+  BLUE: "#1B44CD",
+  INK: "#0A0E1A",
+};
 
 const { width: W, height: H } = Dimensions.get("window");
-const isSmall = W < 380;
 
 export default function DoneSignup() {
   const onCreateProfile = async () => {
@@ -36,8 +37,6 @@ export default function DoneSignup() {
       console.log("Creating profile for user:", session.user.id);
 
       // Create an empty profile row for onboarding with defaults
-      // NOTE: brings_you column was REMOVED in the unified mode migration
-      // NOTE: sexual_orientation is now NULLABLE (set during onboarding)
       const { data, error: upsertError } = await supabase.from("profiles").upsert({
         id: session.user.id,
         onboarding_step: 0,
@@ -66,93 +65,130 @@ export default function DoneSignup() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["top"]}>
       <StatusBar barStyle="dark-content" />
-      <BackButton style={styles.backButton} />
-
-      {/* Copy */}
-      <View style={styles.copy}>
-        <Text style={styles.lead}>You are set!</Text>
-
-        {/* Ascent buffer to prevent top clipping on big headline */}
-        <View style={styles.accentWrap}>
-          <Text style={styles.accent}>That's Niice</Text>
+      
+      {/* Back Button */}
+      <TouchableOpacity
+        style={styles.backButton}
+        onPress={() => router.back()}
+        activeOpacity={0.7}
+      >
+        <View style={styles.backButtonCircle}>
+          <Ionicons name="arrow-back" size={24} color={Colors.INK} />
         </View>
+      </TouchableOpacity>
+
+      {/* Header */}
+      <View style={styles.headerContainer}>
+        <Text style={styles.pageTitle}>You are set!</Text>
+        <Text style={styles.accentTitle}>That's Niice</Text>
       </View>
 
-      {/* CTA */}
-      <View style={styles.ctaArea}>
+      {/* Button */}
+      <View style={styles.buttonContainer}>
         <TouchableOpacity
-          activeOpacity={0.9}
-          style={styles.primaryBtnDark}
+          activeOpacity={0.8}
+          style={styles.primaryButton}
           onPress={onCreateProfile}
         >
-          <Text style={styles.primaryTextLight}>Create Your Profile</Text>
+          <Text style={styles.primaryButtonText}>Create Your Profile</Text>
         </TouchableOpacity>
+
+        {/* Info Note */}
+        <View style={styles.infoNote}>
+          <Ionicons
+            name="information-circle-outline"
+            size={18}
+            color="rgba(10,14,26,0.5)"
+            style={{ marginRight: scale(8) }}
+          />
+          <Text style={styles.infoNoteText}>
+            Let's create your profile and start meeting Niice people
+          </Text>
+        </View>
       </View>
     </SafeAreaView>
   );
 }
 
-const TOP_OFFSET = H * 0.14;
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: BG,
-    paddingHorizontal: 24,
+    backgroundColor: Colors.BG,
   },
   backButton: {
-    marginTop: 16,
-    marginBottom: 16,
+    marginTop: verticalScale(16),
+    marginLeft: scale(20),
   },
-  copy: {
-    marginTop: isSmall ? TOP_OFFSET * 0.8 : TOP_OFFSET,
-    marginBottom: 32,
-    alignItems: "flex-start",
-  },
-  lead: {
-    color: INK,
-    fontSize: isSmall ? 34 : 38,
-    fontFamily: Fonts.bold,
-    fontWeight: "bold",
-    lineHeight: isSmall ? 55 : 60,
-  },
-  accentWrap: {
-    paddingTop: 10,
-    marginTop: -8,
-    overflow: "visible",
-  },
-  accent: {
-    color: BLUE,
-    fontSize: isSmall ? 48 : 56,
-    fontFamily: Fonts.bold,
-    fontWeight: "800",
-    lineHeight: isSmall ? 80 : 90,
-    ...(Platform.OS === "android" ? { includeFontPadding: false } : null),
-  },
-  ctaArea: {
-    marginTop: "auto",
-    paddingBottom: 36,
-  },
-  primaryBtnDark: {
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: INK,
+  backButtonCircle: {
+    width: scale(40),
+    height: scale(40),
+    borderRadius: scale(20),
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
-    width: "92%",
-    alignSelf: "center",
-    shadowColor: "#00000040",
-    shadowOpacity: 0.25,
-    shadowOffset: { width: 0, height: 6 },
-    shadowRadius: 8,
-    elevation: 6,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  primaryTextLight: {
-    color: "#FFFFFF",
-    fontSize: 18,
+  headerContainer: {
+    paddingHorizontal: scale(20),
+    marginTop: verticalScale(H * 0.12),
+  },
+  pageTitle: {
+    fontSize: scale(32),
     fontFamily: Fonts.bold,
-    fontWeight: "bold",
+    color: Colors.INK,
+    lineHeight: verticalScale(42),
+    marginBottom: verticalScale(8),
+    paddingTop: verticalScale(4),
+  },
+  accentTitle: {
+    fontSize: scale(48),
+    fontFamily: Fonts.bold,
+    color: Colors.BLUE,
+    lineHeight: verticalScale(58),
+    paddingTop: verticalScale(16),
+  },
+  buttonContainer: {
+    marginTop: "auto",
+    paddingHorizontal: scale(20),
+    paddingBottom: verticalScale(30),
+    gap: verticalScale(16),
+  },
+  primaryButton: {
+    backgroundColor: Colors.BLUE,
+    borderRadius: scale(50),
+    paddingVertical: verticalScale(16),
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: Colors.BLUE,
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  primaryButtonText: {
+    fontSize: scale(16),
+    fontFamily: Fonts.bold,
+    color: "#FFFFFF",
+  },
+  infoNote: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    padding: scale(16),
+    backgroundColor: "rgba(27,68,205,0.06)",
+    borderRadius: scale(12),
+  },
+  infoNoteText: {
+    flex: 1,
+    fontSize: scale(13),
+    fontFamily: Fonts.primary,
+    color: "rgba(10,14,26,0.6)",
+    lineHeight: verticalScale(18),
+    paddingTop: verticalScale(1.3),
   },
 });

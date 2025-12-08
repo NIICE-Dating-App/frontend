@@ -1,11 +1,11 @@
 // app/(onboarding)/distancepref_signup.tsx
 import { Fonts } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
-import { moderateScale, scale, verticalScale } from "@/utils/responsive";
+import { scale, verticalScale } from "@/utils/responsive";
 import { Ionicons } from "@expo/vector-icons";
 import Slider from "@react-native-community/slider";
 import { router } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Alert,
   Animated,
@@ -24,6 +24,12 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+
+const Colors = {
+  BG: "#F5F7FA",
+  BLUE: "#1B44CD",
+  INK: "#0A0E1A",
+};
 
 type Unit = "km" | "m";
 
@@ -152,12 +158,18 @@ export default function DistancePreferenceSignup() {
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.container} edges={["top"]}>
         <StatusBar barStyle="dark-content" />
 
         {/* Back Button */}
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={moderateScale(26)} color="#FFFFFF" />
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.back()}
+          activeOpacity={0.7}
+        >
+          <View style={styles.backButtonCircle}>
+            <Ionicons name="arrow-back" size={24} color={Colors.INK} />
+          </View>
         </TouchableOpacity>
 
         {/* Progress Bar */}
@@ -195,7 +207,7 @@ export default function DistancePreferenceSignup() {
                   );
                 })}
                 <View style={styles.pinCore}>
-                  <Ionicons name="location-sharp" size={moderateScale(40)} color={BLUE} />
+                  <Ionicons name="location-sharp" size={scale(40)} color={Colors.BLUE} />
                 </View>
               </View>
 
@@ -212,7 +224,7 @@ export default function DistancePreferenceSignup() {
                   );
                 })}
                 <View style={styles.pinCore}>
-                  <Ionicons name="location-sharp" size={moderateScale(40)} color={BLUE} />
+                  <Ionicons name="location-sharp" size={scale(40)} color={Colors.BLUE} />
                 </View>
               </View>
 
@@ -229,7 +241,7 @@ export default function DistancePreferenceSignup() {
                   );
                 })}
                 <View style={styles.pinCore}>
-                  <Ionicons name="location-sharp" size={moderateScale(40)} color={BLUE} />
+                  <Ionicons name="location-sharp" size={scale(40)} color={Colors.BLUE} />
                 </View>
               </View>
             </View>
@@ -279,9 +291,9 @@ export default function DistancePreferenceSignup() {
                   step={0.1}
                   value={distance}
                   onValueChange={setDistance}
-                  minimumTrackTintColor={BLUE}
+                  minimumTrackTintColor={Colors.BLUE}
                   maximumTrackTintColor="#C8CDD2"
-                  thumbTintColor={BLUE}
+                  thumbTintColor={Colors.BLUE}
                 />
               </Pressable>
             </Animated.View>
@@ -289,69 +301,84 @@ export default function DistancePreferenceSignup() {
         </KeyboardAvoidingView>
 
         {/* Next Button */}
-        <TouchableOpacity style={styles.nextButton} onPress={handleNext} disabled={loading}>
-          <Ionicons name="chevron-forward" size={moderateScale(30)} color="#FFFFFF" />
+        <TouchableOpacity
+          style={styles.nextButton}
+          onPress={handleNext}
+          disabled={loading}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="arrow-forward" size={28} color="#FFFFFF" />
         </TouchableOpacity>
       </SafeAreaView>
     </TouchableWithoutFeedback>
   );
 }
 
-/* 🎨 Theme */
-const BG = "#EAF1F8";
-const INK = "#000910";
-const BLUE = "#1B44CD";
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: BG },
+  container: {
+    flex: 1,
+    backgroundColor: Colors.BG,
+  },
 
   backButton: {
     position: "absolute",
-    top: verticalScale(58),
-    left: scale(24),
-    width: scale(56),
-    height: verticalScale(56),
-    borderRadius: scale(28),
-    backgroundColor: INK,
+    top: verticalScale(16),
+    left: scale(20),
+    zIndex: 10,
+    paddingTop: verticalScale(60),
+  },
+  backButtonCircle: {
+    width: scale(40),
+    height: scale(40),
+    borderRadius: scale(20),
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
-    zIndex: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
 
   progressWrapper: {
-    marginTop: verticalScale(88),
-    paddingHorizontal: scale(24),
+    marginTop: verticalScale(80),
+    paddingHorizontal: scale(20),
   },
   progressTrack: {
-    height: verticalScale(6),
-    backgroundColor: "#C8CDD2",
-    borderRadius: scale(3),
+    height: verticalScale(8),
+    backgroundColor: "rgba(27,68,205,0.15)",
+    borderRadius: scale(4),
+    overflow: "hidden",
   },
   progressFill: {
-    height: verticalScale(6),
-    width: "23.52%",
-    backgroundColor: BLUE,
-    borderRadius: scale(3),
+    height: verticalScale(8),
+    width: "23.52%", // EXACT SAME PERCENTAGE - DO NOT CHANGE
+    backgroundColor: Colors.BLUE,
+    borderRadius: scale(4),
   },
 
   scrollContent: {
-    paddingHorizontal: scale(24),
-    paddingTop: verticalScale(35),
-    paddingBottom: verticalScale(100),
+    paddingHorizontal: scale(20),
+    paddingTop: verticalScale(24),
+    paddingBottom: verticalScale(120),
+
   },
 
   title: {
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(28),
-    lineHeight: verticalScale(42),
-    color: INK,
+    fontSize: scale(24),
+    lineHeight: verticalScale(32),
+    color: Colors.INK,
     marginBottom: verticalScale(6),
+    marginTop: verticalScale(10),
+    paddingTop: verticalScale(6.5),
   },
   subtitle: {
-    fontFamily: Fonts.bold,
-    fontSize: moderateScale(20),
-    lineHeight: verticalScale(30),
-    color: BLUE,
+    fontFamily: Fonts.primary,
+    fontSize: scale(16),
+    lineHeight: verticalScale(24),
+    color: Colors.BLUE,
     marginBottom: verticalScale(20),
   },
 
@@ -359,7 +386,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginTop: verticalScale(20),
-    marginBottom: verticalScale(40),
+    marginBottom: verticalScale(60),
     height: verticalScale(160),
     position: "relative",
   },
@@ -385,7 +412,7 @@ const styles = StyleSheet.create({
     height: scale(80),
     borderRadius: 999,
     borderWidth: scale(2),
-    borderColor: BLUE,
+    borderColor: Colors.BLUE,
   },
   pinCore: {
     width: scale(60),
@@ -394,10 +421,11 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: BLUE,
+    shadowColor: Colors.BLUE,
     shadowOpacity: 0.3,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
   },
 
   sliderWrapper: {
@@ -406,7 +434,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     borderRadius: scale(16),
     padding: scale(20),
-    shadowColor: BLUE,
+    shadowColor: Colors.BLUE,
     shadowOpacity: 0.1,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
@@ -420,8 +448,8 @@ const styles = StyleSheet.create({
   },
   label: {
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(18),
-    color: INK,
+    fontSize: scale(16),
+    color: Colors.INK,
   },
 
   rightControls: {
@@ -430,13 +458,13 @@ const styles = StyleSheet.create({
   },
   valueText: {
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(18),
-    color: BLUE,
+    fontSize: scale(16),
+    color: Colors.BLUE,
     marginRight: scale(10),
   },
   unitSwitch: {
     flexDirection: "row",
-    backgroundColor: "#EBF1FF",
+    backgroundColor: "rgba(27,68,205,0.08)",
     borderRadius: scale(10),
     overflow: "hidden",
   },
@@ -445,12 +473,12 @@ const styles = StyleSheet.create({
     paddingVertical: verticalScale(6),
   },
   unitBtnActive: {
-    backgroundColor: BLUE,
+    backgroundColor: Colors.BLUE,
   },
   unitText: {
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(12.5),
-    color: "#1B2B44",
+    fontSize: scale(12),
+    color: "rgba(10,14,26,0.6)",
   },
   unitTextActive: {
     color: "#FFFFFF",
@@ -464,16 +492,17 @@ const styles = StyleSheet.create({
   nextButton: {
     position: "absolute",
     bottom: verticalScale(40),
-    right: scale(24),
-    width: scale(70),
-    height: verticalScale(70),
-    borderRadius: scale(35),
-    backgroundColor: INK,
+    right: scale(20),
+    width: scale(64),
+    height: scale(64),
+    borderRadius: scale(32),
+    backgroundColor: Colors.BLUE,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 6 },
+    shadowColor: Colors.BLUE,
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
   },
 });

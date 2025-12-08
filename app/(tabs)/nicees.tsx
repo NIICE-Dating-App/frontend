@@ -76,6 +76,7 @@ interface NearbyUser {
   looking_for?: string[] | null;
   values?: string[] | null;
   sexual_orientation?: string | null;
+  access_level: 'full' | 'limited';
 }
 
 interface MatchStatusInfo {
@@ -94,6 +95,7 @@ interface NiiceMatch {
   last_message_preview: string | null;
   last_message_at: string | null;
   created_at: string;
+  has_active_frame: boolean;
 }
 
 interface MatchRequest {
@@ -423,7 +425,7 @@ const NiicesSearchBar: React.FC<NiicesSearchBarProps> = ({ searchQuery, onSearch
       <Ionicons name="search" size={18} color="rgba(10,14,26,0.4)" />
       <TextInput
         style={styles.niicesSearchInput}
-        placeholder="Search niices..."
+        placeholder="Search Niices..."
         placeholderTextColor="rgba(10,14,26,0.4)"
         value={searchQuery}
         onChangeText={onSearchChange}
@@ -444,6 +446,55 @@ const NiicesSearchBar: React.FC<NiicesSearchBarProps> = ({ searchQuery, onSearch
   </View>
 );
 
+// ================== NIICES FRAMES ROW (HORIZONTAL SCROLLING STORIES) ==================
+interface NiicesFramesRowProps {
+  matches: NiiceMatch[];
+  onOpenFrames: (userId: string) => void;
+  onViewProfile: (userId: string) => void;
+}
+
+const NiicesFramesRow: React.FC<NiicesFramesRowProps> = ({ matches, onOpenFrames, onViewProfile }) => {
+  // Only show users with active frames
+  const matchesWithFrames = matches.filter(m => m.has_active_frame);
+  
+  if (matchesWithFrames.length === 0) return null;
+
+  return (
+    <View style={styles.framesRowContainer}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.framesRowContent}
+      >
+        {matchesWithFrames.map((match) => (
+          <TouchableOpacity
+            key={match.id}
+            style={styles.framesRowItem}
+            onPress={() => onOpenFrames(match.other_user_id)}
+            onLongPress={() => onViewProfile(match.other_user_id)}
+            activeOpacity={0.8}
+          >
+            <View style={styles.framesRowAvatarWrapper}>
+              <View style={styles.framesRowAvatarRing}>
+                {match.main_photo_url ? (
+                  <Image source={{ uri: match.main_photo_url }} style={styles.framesRowAvatar} />
+                ) : (
+                  <View style={[styles.framesRowAvatar, styles.framesRowAvatarPlaceholder]}>
+                    <Ionicons name="person" size={20} color="rgba(27,68,205,0.3)" />
+                  </View>
+                )}
+              </View>
+            </View>
+            <Text style={styles.framesRowName} numberOfLines={1}>
+              {capitalizeName(match.full_name)?.split(' ')[0] || 'Unknown'}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    </View>
+  );
+};
+
 // ================== NEARBY USER CARD (MINIMAL) ==================
 const NearbyUserCard: React.FC<{
   user: NearbyUser;
@@ -457,6 +508,9 @@ const NearbyUserCard: React.FC<{
   const [showMessageInput, setShowMessageInput] = useState(false);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const isLimited = user.access_level === 'limited';
+  const showFrameRing = !isLimited && user.has_active_frame;
 
   useEffect(() => {
     const checkMatchStatus = async () => {
@@ -491,8 +545,8 @@ const NearbyUserCard: React.FC<{
   const isMatched = matchStatus.status === 'accepted';
 
   const lookingForText = formatLookingFor(user.looking_for);
-  const valuesText = formatValues(user.values);
-  const orientationText = formatOrientation(user.sexual_orientation);
+  const valuesText = isLimited ? null : formatValues(user.values);
+  const orientationText = isLimited ? null : formatOrientation(user.sexual_orientation);
 
   return (
     <View style={styles.rowWrapper}>
@@ -504,10 +558,17 @@ const NearbyUserCard: React.FC<{
         {/* Avatar */}
         <TouchableOpacity
           style={styles.avatarContainer}
-          onPress={(e) => { e.stopPropagation(); user.has_active_frame ? onOpenFrames(user.user_id) : onViewProfile(user.user_id); }}
+          onPress={(e) => { 
+            e.stopPropagation(); 
+            if (!isLimited && user.has_active_frame) {
+              onOpenFrames(user.user_id);
+            } else {
+              onViewProfile(user.user_id);
+            }
+          }}
           activeOpacity={0.8}
         >
-          {user.has_active_frame && <View style={styles.avatarRing} />}
+          {showFrameRing && <View style={styles.avatarRing} />}
           {user.main_photo_url ? (
             <Image source={{ uri: user.main_photo_url }} style={styles.avatar} />
           ) : (
@@ -523,6 +584,11 @@ const NearbyUserCard: React.FC<{
             <Text style={styles.userName} numberOfLines={1}>
               {capitalizeName(user.full_name)}{user.age ? `, ${user.age}` : ""}
             </Text>
+            {isLimited && (
+              <View style={styles.privateBadge}>
+                <Ionicons name="lock-closed" size={10} color="rgba(10,14,26,0.5)" />
+              </View>
+            )}
           </View>
           {lookingForText && (
             <Text style={styles.userBio} numberOfLines={1}>{lookingForText}</Text>
@@ -811,6 +877,7 @@ function NiicesScreen() {
             sexual_orientation: profile.sexual_orientation || null,
             looking_for: profile.looking_for || null,
             values: profile.values || null,
+            access_level: row.access_level || 'full',
           };
         })
       );
@@ -846,6 +913,17 @@ function NiicesScreen() {
         const { data: conv } = await supabase.from("conversations").select("id").eq("match_request_id", row.id).maybeSingle();
         let lastMsg: any = null;
         if (conv) { const { data: msg } = await supabase.from("messages").select("content, created_at").eq("conversation_id", conv.id).order("created_at", { ascending: false }).limit(1).maybeSingle(); lastMsg = msg; }
+        
+        // Check if user has active frames
+        const { data: frameData } = await supabase
+          .from("frames")
+          .select("id")
+          .eq("user_id", otherId)
+          .gt("expires_at", new Date().toISOString())
+          .eq("is_expired", false)
+          .limit(1);
+        const hasActiveFrame = !!(frameData && frameData.length > 0);
+        
         return {
           id: row.id,
           other_user_id: otherId,
@@ -854,7 +932,8 @@ function NiicesScreen() {
           main_photo_url: preview.main_photo_url,
           last_message_preview: lastMsg?.content ?? null,
           last_message_at: lastMsg?.created_at ?? null,
-          created_at: row.created_at
+          created_at: row.created_at,
+          has_active_frame: hasActiveFrame
         };
       }));
       setNiiceMatches(matches);
@@ -915,8 +994,14 @@ function NiicesScreen() {
         }));
         setFramesData(processed);
         setShowFramesModal(true);
+      } else {
+        // No active frames, navigate to profile instead
+        router.push({ pathname: "/(tabs_support)/other_profile", params: { userId: targetUserId } });
       }
-    } catch (err) { }
+    } catch (err) { 
+      // On error, navigate to profile
+      router.push({ pathname: "/(tabs_support)/other_profile", params: { userId: targetUserId } });
+    }
   }, []);
 
   // ================== ACTIONS ==================
@@ -975,6 +1060,13 @@ function NiicesScreen() {
         <ScrollView ref={scrollViewRef} style={styles.scrollView} contentContainerStyle={styles.niicesMeetScrollContent}
           showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={BLUE} />}>
           
+          {/* Horizontal Frames Row */}
+          <NiicesFramesRow 
+            matches={niiceMatches} 
+            onOpenFrames={handleOpenFrames}
+            onViewProfile={(userId) => handleViewProfile(userId)}
+          />
+
           {/* Search Bar for Niices */}
           <NiicesSearchBar 
             searchQuery={niicesSearchQuery} 
@@ -993,10 +1085,10 @@ function NiicesScreen() {
                 <Ionicons name="heart-outline" size={28} color={BLUE} />
               </View>
               <Text style={styles.emptyInlineText}>
-                {niicesSearchQuery.trim() ? "No niices match your search" : "No niices yet"}
+                {niicesSearchQuery.trim() ? "No Niices match your search" : "No Niices yet"}
               </Text>
               {!niicesSearchQuery.trim() && (
-                <Text style={styles.emptyInlineSubtext}>Connect with people nearby to add them as niices</Text>
+                <Text style={styles.emptyInlineSubtext}>Connect with people nearby to add them as Niices</Text>
               )}
             </View>
           ) : (
@@ -1139,6 +1231,52 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 
+  // Niices Frames Row (Horizontal Stories)
+  framesRowContainer: {
+    paddingVertical: verticalScale(12),
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER,
+    backgroundColor: BG,
+  },
+  framesRowContent: {
+    paddingHorizontal: scale(16),
+    gap: scale(16),
+  },
+  framesRowItem: {
+    alignItems: "center",
+    width: scale(68),
+  },
+  framesRowAvatarWrapper: {
+    marginBottom: verticalScale(6),
+  },
+  framesRowAvatarRing: {
+    width: scale(60),
+    height: scale(60),
+    borderRadius: scale(30),
+    borderWidth: 2,
+    borderColor: BLUE,
+    padding: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  framesRowAvatar: {
+    width: scale(52),
+    height: scale(52),
+    borderRadius: scale(26),
+  },
+  framesRowAvatarPlaceholder: {
+    backgroundColor: "#E8F4FF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  framesRowName: {
+    fontFamily: Fonts.primary,
+    fontSize: scale(11),
+    color: INK,
+    textAlign: "center",
+    maxWidth: scale(64),
+  },
+
   // Compact User Row (full width, minimal height)
   rowWrapper: {
     backgroundColor: CARD_BG,
@@ -1177,6 +1315,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#E8F4FF",
     alignItems: "center",
     justifyContent: "center",
+  },
+  privateBadge: {
+    backgroundColor: "rgba(10,14,26,0.08)",
+    borderRadius: scale(8),
+    padding: scale(4),
+    marginLeft: scale(4),
   },
 
   // Info Section

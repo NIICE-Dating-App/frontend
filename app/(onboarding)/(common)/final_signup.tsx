@@ -1,5 +1,3 @@
-// app/(onboarding)/final_signup.tsx
-import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -19,21 +17,19 @@ import { Fonts } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
 import { moderateScale, scale, verticalScale } from "@/utils/responsive";
 
-// THEME
-const BG = "#EEF7FF";
-const INK = "#000910";
+const BG = "#F5F7FA";
+const INK = "#0A0E1A";
 const BLUE = "#1B44CD";
 
 const { height: H } = Dimensions.get("window");
 
-// ─────────────────────────── Pins & Circles (same visual style as login)
 const MapPin: React.FC<{ size?: number }> = ({ size = moderateScale(70) }) => (
   <Svg width={size} height={size * 1.4} viewBox="0 0 50 70" preserveAspectRatio="xMidYMid meet">
     <Path
       d="M25 5 C36 5 45 14 45 25 C45 32 40 42 25 62 C10 42 5 32 5 25 C5 14 14 5 25 5 Z"
-      fill="#1E40D8"
+      fill="#1B44CD"
     />
-    <SvgCircle cx="25" cy="25" r="8" fill="#000000" />
+    <SvgCircle cx="25" cy="25" r="8" fill="#FFFFFF" />
   </Svg>
 );
 
@@ -48,7 +44,6 @@ const CircleWithPin: React.FC<{
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    // Initial drop animation with bounce
     Animated.sequence([
       Animated.delay(delay),
       Animated.spring(dropAnim, {
@@ -58,7 +53,6 @@ const CircleWithPin: React.FC<{
         friction: 6,
       }),
     ]).start(() => {
-      // After drop completes, start subtle pulse
       if (hasPin) {
         Animated.loop(
           Animated.sequence([
@@ -121,7 +115,6 @@ const CircleWithPin: React.FC<{
   );
 };
 
-// Smooth typing text component with fade-in effect
 const TypingText: React.FC<{
   text: string;
   delay?: number;
@@ -181,7 +174,6 @@ const TypingText: React.FC<{
   );
 };
 
-// Background coordinate set
 const BG_COORDS = [
   { x: 47, y: -3, pin: true },
   { x: 317, y: 22, pin: true },
@@ -194,11 +186,11 @@ const BG_COORDS = [
   { x: 150, y: 72, pin: true },
   { x: 20, y: 590, pin: true },
   { x: 94, y: 530, pin: false },
-  { x: 165, y: 645, pin: true }, //bottom center
-  { x: 235, y: 555, pin: true }, //bottom up right
+  { x: 165, y: 645, pin: true },
+  { x: 235, y: 555, pin: true },
   { x: 288, y: 617, pin: false },
   { x: -25, y: 298, pin: false },
-  { x: 60, y: 720, pin: true }, //bottom left 
+  { x: 60, y: 720, pin: true },
   { x: 20, y: 800, pin: false },
   { x: -20, y: 830, pin: false },
   { x: 165, y: 794, pin: false },
@@ -211,7 +203,6 @@ const BG_COORDS = [
   { x: 357, y: 197, pin: false },
 ];
 
-// Safe vertical zone for content
 const SAFE_TOP = verticalScale(H * 0.24);
 const SAFE_BOT = verticalScale(H * 0.52);
 
@@ -220,7 +211,6 @@ export default function FinalSignup() {
   const press = useRef(new Animated.Value(1)).current;
   const buttonOpacity = useRef(new Animated.Value(0)).current;
 
-  // Button animation on press
   const animate = useCallback(
     (to: number) => {
       Animated.spring(press, {
@@ -233,7 +223,6 @@ export default function FinalSignup() {
     [press]
   );
 
-  // Gentle looping pulse animation
   useEffect(() => {
     const pulse = Animated.loop(
       Animated.sequence([
@@ -245,8 +234,6 @@ export default function FinalSignup() {
     return () => pulse.stop();
   }, [press]);
 
-  // Fade in button after both texts complete
-  // Calculate when second text finishes: first text length * speed + delay for second text + second text length * speed
   useEffect(() => {
     const firstTextDuration = "Welcome to Niice".length * 65;
     const secondTextDelay = 300;
@@ -301,7 +288,6 @@ export default function FinalSignup() {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
 
-      {/* Background pattern */}
       <View style={styles.backgroundPattern} pointerEvents="none">
         {BG_COORDS.map(({ x, y, pin }, i) => {
           if (y > SAFE_TOP && y < SAFE_BOT) return null;
@@ -309,7 +295,6 @@ export default function FinalSignup() {
         })}
       </View>
 
-      {/* Foreground content */}
       <View style={styles.content}>
         <View style={styles.copyBlock}>
           <TypingText
@@ -328,31 +313,20 @@ export default function FinalSignup() {
 
         <Animated.View style={{ transform: [{ scale: press }], opacity: buttonOpacity }}>
           <TouchableOpacity
-            activeOpacity={0.95}
+            activeOpacity={0.7}
             onPressIn={() => animate(0.96)}
             onPressOut={() => animate(1)}
             onPress={onMeetPeople}
             disabled={loading}
           >
-            <LinearGradient
-              colors={["#1B44CD", "#678CFF"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={[styles.ctaButton, loading && { opacity: 0.6 }]}
-            >
-              <Animated.View
-                style={{
-                  opacity: press.interpolate({
-                    inputRange: [0.95, 1],
-                    outputRange: [0.7, 1],
-                  }),
-                }}
-              >
-                <Text style={styles.ctaButtonText}>Meet your Niice people</Text>
-              </Animated.View>
-            </LinearGradient>
+            <View style={[styles.ctaButton, loading && { opacity: 0.6 }]}>
+              <Text style={styles.ctaButtonText}>Meet your Niice people</Text>
+             
+            </View>
           </TouchableOpacity>
         </Animated.View>
+
+        
       </View>
     </SafeAreaView>
   );
@@ -376,11 +350,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   backgroundCircle: {
-    backgroundColor: "#C8DBE8",
-    opacity: 0.75,
-    shadowColor: "#A7C3E8",
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
+    backgroundColor: "rgba(27,68,205,0.08)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
   },
   pinWrapper: {
     position: "absolute",
@@ -397,42 +372,50 @@ const styles = StyleSheet.create({
   },
   copyBlock: {
     alignItems: "center",
-    marginBottom: verticalScale(22),
+    marginBottom: verticalScale(48),
+  
   },
   lead: {
     color: INK,
-    fontSize: moderateScale(39),
+    fontSize: scale(38),
     fontFamily: Fonts.bold,
-    lineHeight: verticalScale(65),
+    lineHeight: verticalScale(44),
     textAlign: "center",
+    paddingTop: verticalScale(20),
   },
   subLead: {
     color: BLUE,
-    fontSize: moderateScale(25),
+    fontSize: scale(22),
     fontFamily: Fonts.bold,
-    lineHeight: verticalScale(38),
-    marginTop: verticalScale(6),
+    lineHeight: verticalScale(26),
+    marginTop: verticalScale(0),
+    marginBottom: verticalScale(-30),
     textAlign: "center",
+    paddingTop: verticalScale(10),
+  
   },
 
-  // New CTA design
   ctaButton: {
-    borderRadius: scale(40),
-    paddingVertical: verticalScale(17),
-    paddingHorizontal: scale(36),
-    alignSelf: "center",
-    shadowColor: "#1B44CD",
+    backgroundColor: BLUE,
+    borderRadius: scale(50),
+    paddingVertical: verticalScale(18),
+    paddingHorizontal: scale(32),
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: scale(10),
+    shadowColor: BLUE,
     shadowOpacity: 0.25,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 10,
-    transform: [{ translateY: verticalScale(-5) }],
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+    marginBottom: verticalScale(12),
   },
   ctaButtonText: {
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(20),
+    fontSize: scale(20),
     color: "#FFFFFF",
     textAlign: "center",
-    letterSpacing: 0.5,
   },
+ 
 });

@@ -412,57 +412,6 @@ export default function OtherProfileScreen() {
   const [promptWidth, setPromptWidth] = useState(SCREEN_WIDTH);
   const [promptIndex, setPromptIndex] = useState(0);
 
-  // Fetch active frames for user
-  const fetchActiveFrames = async (userId: string) => {
-    try {
-      const now = new Date().toISOString();
-      const { data, error } = await supabase
-        .from("frames")
-        .select("*")
-        .eq("user_id", userId)
-        .is("archived_at", null)
-        .gte("expires_at", now)
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        console.error("Error fetching frames:", error);
-        setActiveFrames([]);
-        return;
-      }
-
-      if (data && data.length > 0) {
-        const processedFrames = await Promise.all(
-          data.map(async (frame) => {
-            if (!frame.media_url) return frame;
-            if (frame.media_url.startsWith('http')) return frame;
-            
-            const { data: signedUrlData, error: signError } = await supabase.storage
-              .from("frames")
-              .createSignedUrl(frame.media_url, 3600);
-            
-            if (signError) {
-              console.error("Error creating signed URL for frame", frame.id, ":", signError);
-              return frame;
-            }
-            
-            return {
-              ...frame,
-              media_url: signedUrlData?.signedUrl || frame.media_url,
-            };
-          })
-        );
-        
-        setActiveFrames(processedFrames);
-      } else {
-        setActiveFrames([]);
-      }
-    } catch (error) {
-      console.error("Error fetching active frames:", error);
-      setActiveFrames([]);
-    }
-  };
-
-  // Check match status
   const checkMatchStatus = async (currentUid: string, targetUid: string) => {
     try {
       const { data } = await supabase
@@ -532,7 +481,7 @@ export default function OtherProfileScreen() {
       const currentUid = auth?.user?.id ?? null;
       setCurrentUserId(currentUid);
 
-      // Get current user's location
+      // Get current user's location for distance calculation
       let currentUserLat: number | null = null;
       let currentUserLng: number | null = null;
       if (currentUid) {
@@ -545,82 +494,58 @@ export default function OtherProfileScreen() {
           currentUserLat = currentUserProfile.lat;
           currentUserLng = currentUserProfile.lng;
         }
-      }
-
-      // Check match status
-      let isConnected = false;
-      if (currentUid) {
+        // Check match status
         await checkMatchStatus(currentUid, targetUserId);
-        const { data: matchCheck } = await supabase
-          .from('match_requests')
-          .select('status')
-          .or(`and(requester_id.eq.${currentUid},target_id.eq.${targetUserId}),and(requester_id.eq.${targetUserId},target_id.eq.${currentUid})`)
-          .eq('status', 'accepted')
-          .maybeSingle();
-        
-        isConnected = !!matchCheck;
       }
 
-      // Fetch active frames
-      await fetchActiveFrames(targetUserId);
+      // Use unified get_profile_for_viewer RPC - handles all visibility logic server-side
+      const { data: profileData, error: profileError } = await supabase.rpc('get_profile_for_viewer', { 
+        p_target_user_id: targetUserId 
+      });
 
-      // Fetch profile data with new unified fields
-      let targetProfileData: ProfileData | null = null;
+      if (profileError) {
+        console.error("Error fetching profile:", profileError);
+        setLoading(false);
+        return;
+      }
 
-      if (isConnected) {
-        // Full visibility - fetch everything directly when connected
-        const { data: fullProfile } = await supabase
-          .from("profiles")
-          .select("full_name, age, bio, gender_subtype, height_cm, education, sexual_orientation, institution, prompt_answers, lat, lng, looking_for, values, marital_status, vehicles, hometown")
-          .eq("id", targetUserId)
-          .single();
-        
-        targetProfileData = fullProfile;
+      // If no access (returns null), redirect back
+      if (!profileData) {
+        console.log("No access to this profile");
+        setLoading(false);
+        return;
+      }
+
+      const p = profileData;
+
+      // Process active frames from response (only in full access)
+      if (p.active_frames && Array.isArray(p.active_frames) && p.active_frames.length > 0) {
+        const processedFrames = await Promise.all(
+          p.active_frames.map(async (frame: any) => {
+            if (!frame.media_url) return frame;
+            if (frame.media_url.startsWith('http')) return frame;
+            
+            const { data: signedUrlData } = await supabase.storage
+              .from("frames")
+              .createSignedUrl(frame.media_url, 3600);
+            
+            return {
+              ...frame,
+              media_url: signedUrlData?.signedUrl || frame.media_url,
+            };
+          })
+        );
+        setActiveFrames(processedFrames);
       } else {
-        // Limited visibility - use RPC for non-connected users
-        const { data: rpcProfile } = await supabase.rpc('get_matched_user_profile', { 
-          target_user_id: targetUserId 
-        });
-        targetProfileData = (Array.isArray(rpcProfile) ? rpcProfile[0] : rpcProfile) as ProfileData;
+        setActiveFrames([]);
       }
 
-      const p: ProfileData = targetProfileData || {};
-
-      // Calculate distance if both coordinates exist
-      if (currentUserLat && currentUserLng && p.lat && p.lng) {
-        const dist = calculateDistance(currentUserLat, currentUserLng, p.lat, p.lng);
-        setDistance(dist);
-      }
-
-      // Fetch additional data with appropriate visibility
-      let lifeRes, mainRes, othersRes, hobbiesRes, languagesRes;
-
-      if (isConnected) {
-        // Full visibility
-        [lifeRes, mainRes, othersRes, hobbiesRes, languagesRes] = await Promise.all([
-          supabase.from("lifestyle").select("drinking, smoking, zodiac, religion, politics, workout, communication, love_language, pets, kids, communities").eq("user_id", targetUserId).maybeSingle(),
-          supabase.from("user_photos").select("photo_url").eq("user_id", targetUserId).eq("is_main", true).maybeSingle(),
-          supabase.from("user_photos").select("photo_url, created_at, is_main").eq("user_id", targetUserId).neq("is_main", true).order("created_at", { ascending: true }),
-          supabase.from("user_hobbies").select("hobbies_master(label)").eq("user_id", targetUserId),
-          supabase.from("user_languages").select("language_id, languages_master(id, code, label)").eq("user_id", targetUserId),
-        ]);
-      } else {
-        // Limited visibility
-        [lifeRes, mainRes, othersRes, hobbiesRes, languagesRes] = await Promise.all([
-          supabase.from("lifestyle").select("drinking, smoking, zodiac").eq("user_id", targetUserId).maybeSingle(),
-          supabase.from("user_photos").select("photo_url").eq("user_id", targetUserId).eq("is_main", true).maybeSingle(),
-          Promise.resolve({ data: [] }),
-          supabase.from("user_hobbies").select("hobbies_master(label)").eq("user_id", targetUserId).limit(3),
-          Promise.resolve({ data: [] }),
-        ]);
-      }
-
-      // Prompts
-      const promptsRaw = Array.isArray(p?.prompt_answers) ? p.prompt_answers : null;
+      // Prompts (only in full access)
+      const promptsRaw = Array.isArray(p.prompt_answers) ? p.prompt_answers : null;
       const prompts: PromptAnswer[] | null = promptsRaw
         ? [...promptsRaw]
             .filter((x: any) => x && typeof x === "object")
-            .sort((a, b) => (a.slot ?? 0) - (b.slot ?? 0))
+            .sort((a: any, b: any) => (a.slot ?? 0) - (b.slot ?? 0))
             .slice(0, 3)
         : null;
 
@@ -639,19 +564,26 @@ export default function OtherProfileScreen() {
         hometown: p.hometown ?? null,
       });
 
-      // Lifestyle
-      const l = (lifeRes as any).data || {};
+      // Lifestyle (only in full access)
+      const l = p.lifestyle || {};
       setLifestyle({
-        drinking: l.drinking ?? null, smoking: l.smoking ?? null, zodiac: l.zodiac ?? null, religion: l.religion ?? null,
-        politics: l.politics ?? null, workout: l.workout ?? null, communication: l.communication ?? null,
-        love_language: l.love_language ?? null, pets: l.pets ?? null, kids: l.kids ?? null
+        drinking: l.drinking ?? null, 
+        smoking: l.smoking ?? null, 
+        zodiac: l.zodiac ?? null, 
+        religion: l.religion ?? null,
+        politics: l.politics ?? null, 
+        workout: l.workout ?? null, 
+        communication: l.communication ?? null,
+        love_language: l.love_language ?? null, 
+        pets: l.pets ?? null, 
+        kids: l.kids ?? null
       });
 
-      // Communities
+      // Communities (only in full access)
       const COMMUNITY_OPTIONS = [
-        "ðŸŒ¿ Environmentalism", "âœŠ Social justice", "ðŸ³ï¸â€ðŸŒˆ LGBTQIA+", "â™€ï¸ Feminism", "ðŸ§  Mental health awareness",
-        "âœŠðŸ¾ Black community", "ðŸ§§ Asian community", "ðŸª… Latino/Hispanic community", "âœ¡ï¸ Jewish community",
-        "â˜ªï¸ Muslim community", "â™¿ Disability awareness", "ðŸ’– Body positivity", "ðŸ¾ Animal rights", "ðŸŒ Climate action",
+        "🌿 Environmentalism", "✊ Social justice", "🏳️‍🌈 LGBTQIA+", "♀️ Feminism", "🧠 Mental health awareness",
+        "✊🏾 Black community", "🧧 Asian community", "🪅 Latino/Hispanic community", "✡️ Jewish community",
+        "☪️ Muslim community", "♿ Disability awareness", "💖 Body positivity", "🐾 Animal rights", "🌍 Climate action",
       ];
       const stripEmoji = (s: string) => s.replace(/^[^\w\s]+\s*/, '').trim();
       const normalizeLabel = (s: string) => stripEmoji(s).toLowerCase().trim();
@@ -665,10 +597,14 @@ export default function OtherProfileScreen() {
       });
       setCommunities(matchedCommunities);
 
-      // Photos
-      const avatarUrl = (mainRes as any)?.data?.photo_url || null;
-      const others = (othersRes as any)?.data || [];
-      const [first, second, third] = others;
+      // Photos from unified response
+      const photosArray = p.photos || [];
+      const mainPhoto = photosArray.find((photo: any) => photo.is_main) || photosArray[0];
+      const otherPhotos = photosArray.filter((photo: any) => !photo.is_main);
+      
+      const avatarUrl = mainPhoto?.photo_url || p.main_photo_url || null;
+      const [first, second, third] = otherPhotos;
+      
       const [avatarSigned, firstSigned, secondSigned, thirdSigned] = await Promise.all([
         signPath(toStoragePath(avatarUrl)),
         signPath(toStoragePath(first?.photo_url ?? null)),
@@ -682,16 +618,16 @@ export default function OtherProfileScreen() {
         third: thirdSigned ?? third?.photo_url ?? null,
       });
 
-      // Process unified looking_for and values from profiles
+      // Process looking_for and values from unified response
       const lookingForEnums: string[] = Array.isArray(p.looking_for) ? p.looking_for : [];
       const valuesEnums: string[] = Array.isArray(p.values) ? p.values : [];
 
       const lookingForDisplay = lookingForEnums
-        .map((e) => LOOKING_FOR_DISPLAY[e] || humanize(e))
+        .map((e: string) => LOOKING_FOR_DISPLAY[e] || humanize(e))
         .filter(Boolean);
 
       const valuesDisplay = valuesEnums
-        .map((e) => VALUES_DISPLAY[e] || humanize(e))
+        .map((e: string) => VALUES_DISPLAY[e] || humanize(e))
         .filter(Boolean);
 
       setModes({
@@ -699,17 +635,16 @@ export default function OtherProfileScreen() {
         values: valuesDisplay,
       });
 
-      // Languages
-      const langData = (languagesRes as any)?.data || [];
+      // Languages from unified response (only in full access)
+      const langData = p.languages || [];
       const userLanguages = langData
-        .map((item: any) => item?.languages_master)
         .filter(Boolean)
         .map((lang: any) => ({ id: lang.id, code: lang.code, label: lang.label }));
       setLanguages(userLanguages);
 
-      // Hobbies
-      const hs = (hobbiesRes as any)?.data || [];
-      setHobbies(hs.map((x: any) => x?.hobbies_master?.label).filter(Boolean).map(humanize));
+      // Hobbies from unified response (only in full access)
+      const hobbiesData = p.hobbies || [];
+      setHobbies(hobbiesData.filter(Boolean).map(humanize));
 
     } catch (e) {
       console.log("Error loading profile:", e);
@@ -1398,7 +1333,7 @@ export default function OtherProfileScreen() {
             onPress={() => setModalVisible(false)} 
             activeOpacity={0.8}
           >
-            <Text style={styles.closeButtonText}>âœ•</Text>
+            <Text style={styles.closeButtonText}>✕</Text>
           </TouchableOpacity>
           {!!selectedModalUri && (
             <Image 

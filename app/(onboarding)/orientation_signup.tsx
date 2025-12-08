@@ -1,6 +1,6 @@
 import { Fonts } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
-import { moderateScale, scale, verticalScale } from "@/utils/responsive";
+import { scale, verticalScale } from "@/utils/responsive";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -23,6 +23,12 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+
+const Colors = {
+  BG: "#F5F7FA",
+  BLUE: "#1B44CD",
+  INK: "#0A0E1A",
+};
 
 export default function OrientationSignup() {
   const [selectedOrientation, setSelectedOrientation] = useState<string | null>(null);
@@ -51,8 +57,8 @@ export default function OrientationSignup() {
     if (!animRefs.current[option]) animRefs.current[option] = new Animated.Value(1);
     const anim = animRefs.current[option];
     Animated.sequence([
-      Animated.timing(anim, { toValue: 1.08, duration: 130, useNativeDriver: true }),
-      Animated.timing(anim, { toValue: 1, duration: 120, useNativeDriver: true }),
+      Animated.timing(anim, { toValue: 1.05, duration: 100, useNativeDriver: true }),
+      Animated.timing(anim, { toValue: 1, duration: 100, useNativeDriver: true }),
     ]).start();
     setSelectedOrientation(option);
   };
@@ -132,12 +138,18 @@ export default function OrientationSignup() {
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.container} edges={["top"]}>
         <StatusBar barStyle="dark-content" />
 
         {/* Back Button */}
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={moderateScale(26)} color="#FFFFFF" />
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.back()}
+          activeOpacity={0.7}
+        >
+          <View style={styles.backButtonCircle}>
+            <Ionicons name="arrow-back" size={24} color={Colors.INK} />
+          </View>
         </TouchableOpacity>
 
         {/* Skip Button */}
@@ -174,14 +186,12 @@ export default function OrientationSignup() {
               const isSelected = selectedOrientation === option;
               return (
                 <Pressable key={option} onPress={() => pressAnim(option)}>
-                  <Animated.View
-                    style={[{ transform: [{ scale: anim }] }, styles.shadowWrapper]}
-                  >
+                  <Animated.View style={{ transform: [{ scale: anim }] }}>
                     <LinearGradient
                       colors={
                         isSelected
-                          ? ["#1B44CD", "#3C6FFF", "#7AA9FF"]
-                          : ["#F8FAFF", "#EBF1FF"]
+                          ? (["#1B44CD", "#3C6FFF"] as const)
+                          : (["#FFFFFF", "#F8FAFF"] as const)
                       }
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
@@ -194,8 +204,8 @@ export default function OrientationSignup() {
                       </Text>
                       <Ionicons
                         name={isSelected ? "checkmark-circle" : "ellipse-outline"}
-                        size={moderateScale(22)}
-                        color={isSelected ? "#FFFFFF" : "#1B2B44"}
+                        size={22}
+                        color={isSelected ? "#FFFFFF" : Colors.BLUE}
                       />
                     </LinearGradient>
                   </Animated.View>
@@ -204,7 +214,7 @@ export default function OrientationSignup() {
                     <TextInput
                       style={styles.customInput}
                       placeholder="Please share how you identify"
-                      placeholderTextColor="#6C757D"
+                      placeholderTextColor="rgba(10,14,26,0.4)"
                       value={customOrientation}
                       onChangeText={setCustomOrientation}
                       returnKeyType="done"
@@ -224,7 +234,7 @@ export default function OrientationSignup() {
                 <Switch
                   value={showOnProfile}
                   onValueChange={setShowOnProfile}
-                  trackColor={{ false: "#C8CDD2", true: BLUE }}
+                  trackColor={{ false: "#C8CDD2", true: Colors.BLUE }}
                   thumbColor="#FFFFFF"
                   ios_backgroundColor="#C8CDD2"
                 />
@@ -238,149 +248,177 @@ export default function OrientationSignup() {
           style={[styles.nextButton, !selectedOrientation && { opacity: 0.5 }]}
           onPress={handleNext}
           disabled={loading || !selectedOrientation}
+          activeOpacity={0.8}
         >
-          <Ionicons name="chevron-forward" size={moderateScale(30)} color="#FFFFFF" />
+          <Ionicons name="arrow-forward" size={28} color="#FFFFFF" />
         </TouchableOpacity>
       </SafeAreaView>
     </TouchableWithoutFeedback>
   );
 }
 
-/* Theme Constants */
-const BG = "#EAF1F8";
-const INK = "#000910";
-const BLUE = "#1B44CD";
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: BG },
+  container: {
+    flex: 1,
+    backgroundColor: Colors.BG,
+  },
   backButton: {
     position: "absolute",
-    top: verticalScale(58),
-    left: scale(24),
-    width: scale(56),
-    height: verticalScale(56),
-    borderRadius: scale(28),
-    backgroundColor: INK,
+    top: verticalScale(16),
+    left: scale(20),
+    zIndex: 10,
+    paddingTop: verticalScale(60),
+  },
+  backButtonCircle: {
+    width: scale(40),
+    height: scale(40),
+    borderRadius: scale(20),
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
-    zIndex: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   skipButton: {
     position: "absolute",
-    top: verticalScale(64),
-    right: scale(24),
+    top: verticalScale(16),
+    right: scale(20),
     zIndex: 10,
-    backgroundColor: "transparent",
-    padding: scale(8),
+    paddingTop: verticalScale(60),
+    paddingHorizontal: scale(12),
+    paddingVertical: scale(8),
   },
   skipText: {
     fontFamily: Fonts.bold,
-    color: BLUE,
-    fontSize: moderateScale(16),
+    color: Colors.BLUE,
+    fontSize: scale(16),
   },
   progressWrapper: {
-    marginTop: verticalScale(88),
-    paddingHorizontal: scale(24),
+    marginTop: verticalScale(80),
+    paddingHorizontal: scale(20),
   },
   progressTrack: {
-    height: verticalScale(6),
-    backgroundColor: "#C8CDD2",
-    borderRadius: scale(3),
+    height: verticalScale(8),
+    backgroundColor: "rgba(27,68,205,0.15)",
+    borderRadius: scale(4),
+    overflow: "hidden",
   },
   progressFill: {
-    height: verticalScale(6),
-    width: "23.52%", // Updated progress percentage
-    backgroundColor: BLUE,
-    borderRadius: scale(3),
+    height: verticalScale(8),
+    width: "23.52%", // EXACT SAME PERCENTAGE - DO NOT CHANGE
+    backgroundColor: Colors.BLUE,
+    borderRadius: scale(4),
   },
-  scrollContainer: { flex: 1 },
+  scrollContainer: {
+    flex: 1,
+  },
   scrollContent: {
-    paddingHorizontal: scale(24),
-    paddingTop: verticalScale(30),
+    paddingHorizontal: scale(20),
+    paddingTop: verticalScale(24),
     paddingBottom: verticalScale(120),
   },
   title: {
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(26),
-    lineHeight: verticalScale(40),
-    color: INK,
+    fontSize: scale(24),
+    lineHeight: verticalScale(32),
+    color: Colors.INK,
     marginBottom: verticalScale(8),
+    paddingTop: verticalScale(6.5),
   },
   subtitle: {
-    fontFamily: Fonts.bold,
-    fontSize: moderateScale(15),
-    color: "#6C757D",
+    fontFamily: Fonts.primary,
+    fontSize: scale(15),
+    color: "rgba(10,14,26,0.6)",
     marginBottom: verticalScale(20),
     lineHeight: verticalScale(22),
   },
-  shadowWrapper: {
-    shadowColor: "#1B44CD",
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    marginBottom: verticalScale(12),
-  },
   optionButton: {
     borderRadius: scale(14),
-    paddingVertical: verticalScale(16),
-    paddingHorizontal: scale(20),
+    paddingVertical: verticalScale(14),
+    paddingHorizontal: scale(18),
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    marginBottom: verticalScale(10),
+    shadowColor: "#000",
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
   optionButtonSelected: {
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    transform: [{ scale: 1.02 }],
+    shadowColor: Colors.BLUE,
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
   },
   optionText: {
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(18),
-    color: "#1B2B44",
+    fontSize: scale(16),
+    color: Colors.INK,
   },
-  optionTextSelected: { color: "#FFFFFF" },
+  optionTextSelected: {
+    color: "#FFFFFF",
+  },
   customInput: {
     backgroundColor: "#FFFFFF",
-    borderRadius: scale(10),
+    borderRadius: scale(12),
     paddingVertical: verticalScale(12),
-    paddingHorizontal: scale(14),
+    paddingHorizontal: scale(16),
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(16),
-    color: INK,
+    fontSize: scale(15),
+    color: Colors.INK,
     marginTop: verticalScale(10),
-    marginBottom: verticalScale(14),
+    marginBottom: verticalScale(10),
+    borderWidth: 1.5,
+    borderColor: "rgba(27,68,205,0.2)",
+    shadowColor: "#000",
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
-  profileNoteWrapper: { marginTop: verticalScale(16) },
+  profileNoteWrapper: {
+    marginTop: verticalScale(24),
+    padding: scale(16),
+    backgroundColor: "rgba(27,68,205,0.06)",
+    borderRadius: scale(12),
+  },
   noteText: {
-    fontFamily: Fonts.bold,
-    fontSize: moderateScale(15),
-    color: "#6C757D",
-    lineHeight: verticalScale(26),
+    fontFamily: Fonts.primary,
+    fontSize: scale(14),
+    color: "rgba(10,14,26,0.7)",
+    lineHeight: verticalScale(20),
+    marginBottom: verticalScale(8),
   },
   switchRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: scale(12),
-    marginTop: verticalScale(4),
+    justifyContent: "space-between",
   },
   switchLabel: {
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(16),
-    color: "#6C757D",
+    fontSize: scale(15),
+    color: Colors.INK,
   },
   nextButton: {
     position: "absolute",
     bottom: verticalScale(40),
-    right: scale(24),
-    width: scale(70),
-    height: verticalScale(70),
-    borderRadius: scale(35),
-    backgroundColor: INK,
+    right: scale(20),
+    width: scale(64),
+    height: scale(64),
+    borderRadius: scale(32),
+    backgroundColor: Colors.BLUE,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 6 },
+    shadowColor: Colors.BLUE,
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
   },
 });

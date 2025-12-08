@@ -1,6 +1,7 @@
+// frontend/app/%28onboarding%29/value_signup.tsx
 import { Fonts } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
-import { moderateScale, scale, verticalScale } from "@/utils/responsive";
+import { scale, verticalScale } from "@/utils/responsive";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -8,15 +9,21 @@ import React, { useCallback, useRef, useState } from "react";
 import {
     Alert,
     Animated,
-    Platform,
     Pressable,
     ScrollView,
     StatusBar,
     StyleSheet,
     Text,
-    View,
+    TouchableOpacity,
+    View
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+
+const Colors = {
+  BG: "#F5F7FA",
+  BLUE: "#1B44CD",
+  INK: "#0A0E1A",
+};
 
 // ===========================================
 // UNIFIED VALUES - All value_enum options
@@ -97,23 +104,17 @@ const ValueChip = React.memo(
 
     return (
       <Pressable onPress={handlePress} hitSlop={6} style={({ pressed }) => [pressed && { opacity: 0.9 }]}>
-        <Animated.View
-          style={[
-            { transform: [{ scale: anim }] },
-            styles.shadowWrapper,
-            Platform.OS === "ios" && { shadowOpacity: selected ? 0.35 : 0.15 },
-          ]}
-        >
+        <Animated.View style={{ transform: [{ scale: anim }] }}>
           <LinearGradient
-            colors={selected ? ["#1B44CD", "#3C6FFF", "#7AA9FF"] : ["#F9FBFF", "#EEF3FF"]}
+            colors={selected ? (["#1B44CD", "#3C6FFF"] as const) : (["#FFFFFF", "#F8FAFF"] as const)}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={[styles.chip, selected && styles.chipSelected]}
           >
             <Ionicons
               name={option.icon as any}
-              size={moderateScale(16)}
-              color={selected ? "#FFFFFF" : "#1B44CD"}
+              size={16}
+              color={selected ? "#FFFFFF" : Colors.BLUE}
               style={styles.chipIcon}
             />
             <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{option.label}</Text>
@@ -199,7 +200,7 @@ export default function ValueSignup() {
   const renderSection = (title: string, icon: string, options: typeof OPTIONS) => (
     <View style={styles.sectionContainer}>
       <View style={styles.sectionHeader}>
-        <Ionicons name={icon as any} size={moderateScale(18)} color={BLUE} />
+        <Ionicons name={icon as any} size={18} color={Colors.BLUE} />
         <Text style={styles.sectionLabel}>{title}</Text>
       </View>
       <View style={styles.wrapContainer}>
@@ -219,13 +220,19 @@ export default function ValueSignup() {
   // RENDER
   // ===========================
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["top"]}>
       <StatusBar barStyle="dark-content" />
 
       {/* Back Button */}
-      <Pressable style={styles.backButton} onPress={() => router.back()}>
-        <Ionicons name="chevron-back" size={moderateScale(26)} color="#FFFFFF" />
-      </Pressable>
+      <TouchableOpacity
+        style={styles.backButton}
+        onPress={() => router.back()}
+        activeOpacity={0.7}
+      >
+        <View style={styles.backButtonCircle}>
+          <Ionicons name="arrow-back" size={24} color={Colors.INK} />
+        </View>
+      </TouchableOpacity>
 
       {/* Skip Button */}
       <Pressable style={styles.skipButton} onPress={handleSkip} disabled={loading}>
@@ -251,31 +258,46 @@ export default function ValueSignup() {
 
         {/* Selection Counter */}
         <View style={styles.counterContainer}>
-          <Text style={styles.counterText}>
-            {selected.length} / {MAX_SELECTIONS} selected
+          <View style={styles.counterBadge}>
+            <Text style={styles.counterText}>
+              {selected.length} / {MAX_SELECTIONS}
+            </Text>
+          </View>
+          <Text style={styles.counterLabel}>selected</Text>
+        </View>
+
+        {renderSection("Core Character", "", characterOptions)}
+        {renderSection("Communication", "", communicationOptions)}
+        {renderSection("Personality & Energy", "", personalityOptions)}
+        {renderSection("Support & Growth", "", supportOptions)}
+        {renderSection("Lifestyle & Interests", "", lifestyleOptions)}
+        {renderSection("Relationship", "", relationshipOptions)}
+
+        {/* Info Note */}
+        <View style={styles.infoNote}>
+          <Ionicons
+            name="information-circle-outline"
+            size={18}
+            color="rgba(10,14,26,0.5)"
+            style={{ marginRight: scale(8) }}
+          />
+          <Text style={styles.infoNoteText}>
+            This helps us find better matches and suggest relevant connections for you.
           </Text>
         </View>
 
-        {renderSection("Core Character", "shield", characterOptions)}
-        {renderSection("Communication", "chatbubble-ellipses", communicationOptions)}
-        {renderSection("Personality & Energy", "sparkles", personalityOptions)}
-        {renderSection("Support & Growth", "trending-up", supportOptions)}
-        {renderSection("Lifestyle & Interests", "compass", lifestyleOptions)}
-        {renderSection("Relationship", "heart", relationshipOptions)}
-
-        <Text style={styles.note}>
-          This helps us find better matches and suggest relevant connections for you.
-        </Text>
+        <View style={{ height: verticalScale(40) }} />
       </ScrollView>
 
       {/* Next Button */}
-      <Pressable
+      <TouchableOpacity
         onPress={handleNext}
         disabled={loading || selected.length === 0}
         style={[styles.nextButton, selected.length === 0 && { opacity: 0.5 }]}
+        activeOpacity={0.8}
       >
-        <Ionicons name="chevron-forward" size={moderateScale(30)} color="#FFFFFF" />
-      </Pressable>
+        <Ionicons name="arrow-forward" size={28} color="#FFFFFF" />
+      </TouchableOpacity>
     </SafeAreaView>
   );
 }
@@ -283,81 +305,114 @@ export default function ValueSignup() {
 // ===========================
 // STYLES
 // ===========================
-const BG = "#EAF1F8";
-const INK = "#000910";
-const BLUE = "#1B44CD";
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: BG },
+  container: {
+    flex: 1,
+    backgroundColor: Colors.BG,
+  },
 
   backButton: {
     position: "absolute",
-    top: verticalScale(58),
-    left: scale(24),
-    width: scale(56),
-    height: verticalScale(56),
-    borderRadius: scale(28),
-    backgroundColor: INK,
+    top: verticalScale(16),
+    left: scale(20),
+    zIndex: 10,
+    paddingTop: verticalScale(60),
+  },
+  backButtonCircle: {
+    width: scale(40),
+    height: scale(40),
+    borderRadius: scale(20),
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
-    zIndex: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
 
   skipButton: {
     position: "absolute",
-    top: verticalScale(64),
-    right: scale(24),
+    top: verticalScale(16),
+    right: scale(20),
     zIndex: 10,
-    backgroundColor: "transparent",
-    padding: scale(8),
+    paddingTop: verticalScale(60),
+    paddingHorizontal: scale(12),
+    paddingVertical: scale(8),
   },
   skipText: {
     fontFamily: Fonts.bold,
-    color: BLUE,
-    fontSize: moderateScale(16),
+    color: Colors.BLUE,
+    fontSize: scale(16),
   },
 
-  progressWrapper: { marginTop: verticalScale(88), paddingHorizontal: scale(24) },
-  progressTrack: { height: verticalScale(6), backgroundColor: "#C8CDD2", borderRadius: scale(3) },
-  progressFill: { height: verticalScale(6), width: "52.92%", backgroundColor: BLUE, borderRadius: scale(3) },
+  progressWrapper: {
+    marginTop: verticalScale(80),
+    paddingHorizontal: scale(20),
+  },
+  progressTrack: {
+    height: verticalScale(8),
+    backgroundColor: "rgba(27,68,205,0.15)",
+    borderRadius: scale(4),
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: verticalScale(8),
+    width: "52.92%", // EXACT SAME PERCENTAGE - DO NOT CHANGE
+    backgroundColor: Colors.BLUE,
+    borderRadius: scale(4),
+  },
 
   scrollContent: {
-    paddingHorizontal: scale(24),
-    paddingTop: verticalScale(28),
+    paddingHorizontal: scale(20),
+    paddingTop: verticalScale(24),
     paddingBottom: verticalScale(120),
   },
 
   title: {
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(28),
-    lineHeight: verticalScale(38),
-    color: INK,
+    fontSize: scale(24),
+    lineHeight: verticalScale(32),
+    color: Colors.INK,
     marginBottom: verticalScale(6),
+    paddingTop: verticalScale(6.5),
   },
   subtitle: {
-    fontFamily: Fonts.bold,
-    fontSize: moderateScale(15),
-    color: "#6C757D",
-    marginBottom: verticalScale(12),
+    fontFamily: Fonts.primary,
+    fontSize: scale(15),
+    color: "rgba(10,14,26,0.6)",
+    marginBottom: verticalScale(16),
     lineHeight: verticalScale(22),
   },
 
   counterContainer: {
-    backgroundColor: "#FFFFFF",
-    paddingVertical: verticalScale(8),
-    paddingHorizontal: scale(16),
-    borderRadius: scale(20),
+    flexDirection: "row",
+    alignItems: "center",
     alignSelf: "flex-start",
     marginBottom: verticalScale(20),
-    shadowColor: "#1B44CD",
-    shadowOpacity: 0.1,
+    gap: scale(8),
+  },
+  counterBadge: {
+    backgroundColor: Colors.BLUE,
+    paddingVertical: verticalScale(6),
+    paddingHorizontal: scale(12),
+    borderRadius: scale(20),
+    shadowColor: Colors.BLUE,
+    shadowOpacity: 0.3,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
   },
   counterText: {
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(14),
-    color: BLUE,
+    fontSize: scale(14),
+    color: "#FFFFFF",
+  },
+  counterLabel: {
+    fontFamily: Fonts.primary,
+    fontSize: scale(14),
+    color: "rgba(10,14,26,0.6)",
   },
 
   sectionContainer: {
@@ -367,28 +422,22 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     marginBottom: verticalScale(12),
+    
   },
   sectionLabel: {
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(14),
-    color: BLUE,
-    marginLeft: scale(8),
-    textTransform: "uppercase",
+    fontSize: scale(18),
+    color: Colors.INK,
+    
+    paddingRight: scale(12),
+    
     letterSpacing: 0.5,
   },
 
-  wrapContainer: { 
-    flexDirection: "row", 
-    flexWrap: "wrap", 
+  wrapContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: scale(8),
-  },
-
-  shadowWrapper: {
-    shadowColor: "#1B44CD",
-    shadowOpacity: 0.18,
-    shadowRadius: 5,
-    shadowOffset: { width: 0, height: 2 },
-    borderRadius: scale(25),
   },
 
   chip: {
@@ -396,40 +445,63 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: verticalScale(10),
     paddingHorizontal: scale(14),
-    borderRadius: scale(25),
+    borderRadius: scale(24),
+    shadowColor: "#000",
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
-  chipSelected: { transform: [{ scale: 1.02 }] },
+  chipSelected: {
+    shadowColor: Colors.BLUE,
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
   chipIcon: {
     marginRight: scale(6),
   },
   chipText: {
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(14),
-    color: "#1B2B44",
+    fontSize: scale(14),
+    color: Colors.INK,
   },
-  chipTextSelected: { color: "#FFFFFF" },
+  chipTextSelected: {
+    color: "#FFFFFF",
+  },
 
-  note: {
-    fontFamily: Fonts.bold,
-    fontSize: moderateScale(13),
-    color: "#6C757D",
+  infoNote: {
+    flexDirection: "row",
+    alignItems: "flex-start",
     marginTop: verticalScale(16),
-    lineHeight: verticalScale(20),
+    padding: scale(16),
+    backgroundColor: "rgba(27,68,205,0.06)",
+    borderRadius: scale(12),
+  },
+  infoNoteText: {
+    flex: 1,
+    fontSize: scale(13),
+    fontFamily: Fonts.primary,
+    color: "rgba(10,14,26,0.6)",
+    lineHeight: verticalScale(18),
+    paddingTop: verticalScale(0.5),
   },
 
   nextButton: {
     position: "absolute",
     bottom: verticalScale(40),
-    right: scale(24),
-    width: scale(68),
-    height: verticalScale(68),
-    borderRadius: scale(34),
-    backgroundColor: INK,
+    right: scale(20),
+    width: scale(64),
+    height: scale(64),
+    borderRadius: scale(32),
+    backgroundColor: Colors.BLUE,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.25,
+    shadowColor: Colors.BLUE,
+    shadowOpacity: 0.3,
     shadowRadius: 8,
-    shadowOffset: { width: 0, height: 5 },
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
   },
 });

@@ -1,20 +1,20 @@
-// app/(onboarding)/(common)/photo_signup.tsx
+// app/(onboarding)/photo_signup.tsx
 import { Fonts } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
-import { moderateScale, scale, verticalScale } from "@/utils/responsive";
+import { scale, verticalScale } from "@/utils/responsive";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { decode } from "base64-arraybuffer";
 import * as FileSystem from "expo-file-system/legacy";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
-import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   ActionSheetIOS,
   ActivityIndicator,
   Alert,
+  Animated,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -24,26 +24,43 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  UIManager,
+  View
 } from "react-native";
+import DraggableFlatList, { RenderItemParams } from "react-native-draggable-flatlist";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-const BG = "#EAF1F8";
-const INK = "#000910";
-const BLUE = "#1B44CD";
-const INK_SOFT = "#1B2B44";
-const INK_MUTED = "#5C6B7C";
+if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
-type UploadTarget = "main" | { type: "extra"; index: number };
-
-type DBPhoto = {
-  id: number;
-  photo_url: string;
-  is_main: boolean | null;
-  created_at?: string;
+const Colors = {
+  BG: "#F5F7FA",
+  BLUE: "#1B44CD",
+  INK: "#0A0E1A",
 };
 
-// ---- Signed URL helpers ----
+type Slot = {
+  id?: string;
+  rawUrl?: string;
+  storagePath?: string;
+  signedUrl?: string;
+  key?: string;
+};
+
+type SlotsState = {
+  main: Slot;
+  extra: [Slot, Slot, Slot];
+};
+
+type PhotoRow = {
+  id: string;
+  photo_url: string | null;
+  is_main: boolean | null;
+  created_at?: string | null;
+};
+
+// ---- Storage helpers (matching edit_main.tsx) ----
 const toStoragePath = (urlOrPath: string | null): string | null => {
   if (!urlOrPath) return null;
   if (!urlOrPath.startsWith("http")) return urlOrPath.replace(/^\/+/, "");
@@ -63,126 +80,117 @@ const toStoragePath = (urlOrPath: string | null): string | null => {
   return idx === -1 ? null : decodeURIComponent(urlOrPath.substring(idx + marker.length));
 };
 
-const signPath = async (path: string | null, expiresSeconds = 3600): Promise<string | null> => {
+const signPath = async (path: string | null): Promise<string | null> => {
   if (!path) return null;
-  const { data, error } = await supabase.storage
-    .from("user_photos")
-    .createSignedUrl(path, expiresSeconds);
-  if (error) {
-    console.warn("signPath error:", error.message);
+  try {
+    const { data, error } = await supabase.storage
+      .from("user_photos")
+      .createSignedUrl(path, 3600);
+    if (error) return null;
+    return data?.signedUrl ?? null;
+  } catch {
     return null;
   }
-  return data?.signedUrl ?? null;
 };
-// ----------------------------
-
 
 export default function PhotoSignup() {
   const [uploading, setUploading] = useState(false);
-  const [mainPhoto, setMainPhoto] = useState<string | null>(null);
-  const [extraPhotos, setExtraPhotos] = useState<(string | null)[]>([null, null, null]);
-  const [totalCount, setTotalCount] = useState(0); // internal only, not shown
+  const [slots, setSlots] = useState<SlotsState>({
+    main: {},
+    extra: [{}, {}, {}],
+  });
 
-  // Keep latest extras to preserve slot positions across refetches
-  const extrasRef = useRef<(string | null)[]>(extraPhotos);
-  useEffect(() => {
-    extrasRef.current = extraPhotos;
-  }, [extraPhotos]);
+  const mainPhotoOpacity = useRef(new Animated.Value(0)).current;
+  const extraPhotoOpacities = useRef([
+    new Animated.Value(0),
+    new Animated.Value(0),
+    new Animated.Value(0),
+  ]).current;
 
-  const getStoragePathFromPublicUrl = (url: string): string | null => {
-    const marker = "/user_photos/";
-    const idx = url.indexOf(marker);
-    if (idx === -1) return null;
-    return url.substring(idx + marker.length); // e.g. "{userId}/{filename}.jpg"
-  };
+  const extrasRowIdsRef = useRef<string[]>([]);
 
-  const fetchPhotos = useCallback(async () => {
-    const { data: sessionData } = await supabase.auth.getSession();
-    const userId = sessionData?.session?.user?.id;
-    if (!userId) return;
+  const reloadPhotos = async (userId: string) => {
+    try {
+      const [mainRes, othersRes] = await Promise.all([
+        supabase
+          .from("user_photos")
+          .select("id, photo_url, is_main")
+          .eq("user_id", userId)
+          .eq("is_main", true)
+          .maybeSingle(),
+        supabase
+          .from("user_photos")
+          .select("id, photo_url, is_main, created_at")
+          .eq("user_id", userId)
+          .neq("is_main", true)
+          .order("created_at", { ascending: true })
+          .limit(3),
+      ]);
 
-    const { data, error } = await supabase
-      .from("user_photos")
-      .select("id, photo_url, is_main, created_at")
-      .eq("user_id", userId)
-      .order("is_main", { ascending: false }) // main first
-      .order("created_at", { ascending: true });
+      const mainRow = (mainRes?.data as PhotoRow | null) ?? null;
+      let mainSlot: Slot = {};
+      if (mainRow?.photo_url) {
+        const storage = toStoragePath(mainRow.photo_url);
+        mainSlot = {
+          id: mainRow.id,
+          rawUrl: mainRow.photo_url,
+          storagePath: storage ?? undefined,
+          signedUrl: (await signPath(storage)) ?? undefined,
+        };
+        // Animate main photo in
+        Animated.timing(mainPhotoOpacity, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }).start();
+      } else {
+        mainPhotoOpacity.setValue(0);
+      }
 
-    if (error) {
-      console.error("fetchPhotos error:", error);
-      return;
+      const others: PhotoRow[] = (othersRes?.data as PhotoRow[] | null) ?? [];
+      extrasRowIdsRef.current = others.map((r) => r.id);
+
+      const extras: [Slot, Slot, Slot] = [{}, {}, {}];
+      for (let i = 0; i < Math.min(3, others.length); i++) {
+        const r = others[i];
+        if (r.photo_url) {
+          const storage = toStoragePath(r.photo_url);
+          extras[i] = {
+            id: r.id,
+            rawUrl: r.photo_url,
+            storagePath: storage ?? undefined,
+            signedUrl: (await signPath(storage)) ?? undefined,
+            key: `extra-${i}-${r.id}`,
+          };
+          // Animate extra photo in
+          Animated.timing(extraPhotoOpacities[i], {
+            toValue: 1,
+            duration: 300,
+            delay: i * 100,
+            useNativeDriver: true,
+          }).start();
+        } else {
+          extras[i] = { id: r.id, key: `extra-${i}-empty` };
+          extraPhotoOpacities[i].setValue(0);
+        }
+      }
+
+      setSlots({ main: mainSlot, extra: extras });
+    } catch (e) {
+      console.log("reloadPhotos error:", e);
     }
-
-    const rows = (data ?? []) as DBPhoto[];
-    setTotalCount(rows.length);
-
-    // MAIN: do NOT auto-promote extras if main is missing
-    // MAIN (signed URL support)
-    const main = rows.find((r) => r.is_main === true) ?? null;
-    const signedMain = main ? await signPath(toStoragePath(main.photo_url)) : null;
-    setMainPhoto(signedMain ?? main?.photo_url ?? null);
-
-    // EXTRAS (signed URL support for all)
-const extrasRows = rows.filter((r) => !r.is_main);
-
-// always re-sign each extra photo (safer for private buckets)
-const signedExtras: (string | null)[] = await Promise.all(
-  extrasRows.map(async (r) => {
-    const signed = await signPath(toStoragePath(r.photo_url));
-    return signed ?? r.photo_url;
-  })
-);
-
-// preserve slot order for UI stability
-const newSlots: (string | null)[] = [null, null, null];
-for (let i = 0; i < 3; i++) {
-  newSlots[i] = signedExtras[i] ?? null;
-}
-setExtraPhotos(newSlots);
-
-
-  }, []);
+  };
 
   useFocusEffect(
     useCallback(() => {
-      fetchPhotos();
-    }, [fetchPhotos])
+      (async () => {
+        const { data: auth } = await supabase.auth.getUser();
+        const userId = auth?.user?.id;
+        if (userId) await reloadPhotos(userId);
+      })();
+    }, [])
   );
 
-  const canAddAnother = totalCount < 4; // main + extras <= 4
-
-  const removePhoto = useCallback(
-    async (url: string, silent?: boolean) => {
-      try {
-        const { data: sessionData } = await supabase.auth.getSession();
-        const userId = sessionData?.session?.user?.id;
-        if (!userId) throw new Error("Session not found.");
-
-        // 1) Storage delete
-        const storagePath = getStoragePathFromPublicUrl(url);
-        if (storagePath) {
-          await supabase.storage.from("user_photos").remove([storagePath]);
-        }
-
-        // 2) DB delete
-        const { error: delError } = await supabase
-          .from("user_photos")
-          .delete()
-          .eq("user_id", userId)
-          .eq("photo_url", url);
-
-        if (delError) throw delError;
-
-        if (!silent) await fetchPhotos();
-      } catch (e: any) {
-        console.error("removePhoto error:", e);
-        Alert.alert("Delete failed", e?.message ?? "Please try again.");
-      }
-    },
-    [fetchPhotos]
-  );
-
-  // center-crop to target aspect then resize to exact output resolution
   const processToResolution = async (
     uri: string,
     sourceW: number,
@@ -223,36 +231,38 @@ setExtraPhotos(newSlots);
     return resized.uri;
   };
 
-  const uploadAndInsert = async (userId: string, uri: string, isMain: boolean) => {
-    const base64 = await FileSystem.readAsStringAsync(uri, { encoding: "base64" });
-    const filename = `${userId}/${Date.now()}_${Math.floor(Math.random() * 1e6)}.jpg`;
+  const uploadToSupabase = async (userId: string, localUri: string) => {
+    try {
+      const base64 = await FileSystem.readAsStringAsync(localUri, {
+        encoding: "base64",
+      });
+      const fileName = `${userId}/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
 
-    const { error: uploadError } = await supabase.storage
-      .from("user_photos")
-      .upload(filename, decode(base64), { contentType: "image/jpeg" });
-
-    if (uploadError) throw uploadError;
-
-    const { data: urlData } = supabase.storage.from("user_photos").getPublicUrl(filename);
-    const publicUrl = urlData.publicUrl;
-
-    const { data: inserted, error: insertError } = await supabase
-      .from("user_photos")
-      .insert({ user_id: userId, photo_url: publicUrl, is_main: isMain })
-      .select("id, photo_url")
-      .single();
-
-    if (insertError) throw insertError;
-
-    if (isMain && inserted?.id) {
-      await supabase
+      const { error } = await supabase.storage
         .from("user_photos")
-        .update({ is_main: false })
-        .eq("user_id", userId)
-        .neq("id", inserted.id);
-    }
+        .upload(fileName, decode(base64), {
+          contentType: "image/jpeg",
+          cacheControl: "3600",
+          upsert: false,
+        });
 
-    return publicUrl;
+      if (error) {
+        Alert.alert("Upload Failed", "Unable to upload photo. Please try again.");
+        return null;
+      }
+
+      const signedUrl = await signPath(fileName);
+      if (!signedUrl) {
+        Alert.alert("Error", "Failed to process uploaded photo");
+        return null;
+      }
+
+      return { storagePath: fileName, signedUrl };
+    } catch (e) {
+      console.log("Upload exception:", e);
+      Alert.alert("Upload Failed", "An unexpected error occurred");
+      return null;
+    }
   };
 
   const selectSource = async (): Promise<"camera" | "library" | null> => {
@@ -285,168 +295,260 @@ setExtraPhotos(newSlots);
     });
   };
 
-  const pickImage = useCallback(
-    async (target: UploadTarget) => {
-      try {
-        const source = await selectSource();
-        if (!source) return;
+  const pickImageForMain = async () => {
+    try {
+      const source = await selectSource();
+      if (!source) return;
 
-        if (source === "camera") {
-          const camPerm = await ImagePicker.requestCameraPermissionsAsync();
-          if (!camPerm.granted) {
-            Alert.alert("Permission needed", "Please allow camera access.");
-            return;
-          }
-        } else {
-          const libPerm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-          if (!libPerm.granted) {
-            Alert.alert("Permission needed", "Please allow photo library access.");
-            return;
-          }
-        }
-
-        const isMain = target === "main";
-        const isExtra = typeof target === "object";
-
-        let result: ImagePicker.ImagePickerResult;
-        if (source === "camera") {
-          // Camera is single-shot
-          result = await ImagePicker.launchCameraAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            allowsEditing: false,
-            quality: 1,
-          });
-        } else {
-          // Library: limit to MAX 3 selections for extras
-          const libraryOpts: any = {
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            allowsEditing: false,
-            quality: 1,
-            allowsMultipleSelection: isExtra, // multi-select only for extras
-          };
-          // Try to hard-limit picker UI (supported on some platforms)
-          if (isExtra) libraryOpts.selectionLimit = 3;
-
-          result = await ImagePicker.launchImageLibraryAsync(libraryOpts);
-        }
-
-        if (result.canceled) return;
-
-        let assets = result.assets ?? [];
-        if (!assets.length) return;
-
-        // Enforce MAX 3 for extras at code level (fallback if picker UI can't limit)
-        if (!isMain && assets.length > 3) {
-          assets = assets.slice(0, 3);
-          Alert.alert("Limit reached", "You can select up to 3 photos at a time.");
-        }
-
-        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-        if (sessionError || !sessionData?.session?.user) {
-          throw new Error("Session not found. Please log in again.");
-        }
-        const userId = sessionData.session.user.id;
-
-        setUploading(true);
-
-        // MAIN: single replace or add
-        if (isMain) {
-          const asset = assets[0];
-          if (!asset?.uri || !asset.width || !asset.height) {
-            Alert.alert("Upload failed", "Could not read image.");
-            setUploading(false);
-            return;
-          }
-
-          if (mainPhoto) {
-            await removePhoto(mainPhoto, true); // replace silently
-          } else if (!canAddAnother) {
-            Alert.alert("Limit reached", "You can upload up to 4 photos.");
-            setUploading(false);
-            return;
-          }
-
-          const processedUri = await processToResolution(asset.uri, asset.width, asset.height, 800, 800);
-          const publicUrl = await uploadAndInsert(userId, processedUri, true);
-
-          // Update local state instantly; then reconcile with DB
-          setMainPhoto(publicUrl);
-          await fetchPhotos();
-          setUploading(false);
+      if (source === "camera") {
+        const camPerm = await ImagePicker.requestCameraPermissionsAsync();
+        if (!camPerm.granted) {
+          Alert.alert("Permission needed", "Please allow camera access.");
           return;
         }
-
-        // EXTRAS: multi-select allowed (MAX 3 per selection, enforced above)
-        const startIndex = (target as any).index as number;
-
-        const current = extraPhotos;
-        const empties: number[] = [];
-        for (let i = 0; i < 3; i++) if (!current[i]) empties.push(i);
-
-        // Plan: tapped slot first (replace or fill), then remaining empties (to the right/any)
-        const plan: number[] = [];
-        if (current[startIndex]) plan.push(startIndex);
-        else plan.push(startIndex);
-        for (const idx of empties) if (!plan.includes(idx)) plan.push(idx);
-
-        // Additions cap = number of empty slots (replacements don't count towards cap)
-        const additionsCap = empties.length;
-
-        // Map assets to target indices respecting caps
-        const toProcess: { idx: number; asset: ImagePicker.ImagePickerAsset }[] = [];
-        let usedAdditions = 0;
-        for (let a = 0, p = 0; a < assets.length && p < plan.length; a++, p++) {
-          const idx = plan[p];
-          const replacing = Boolean(current[idx]);
-          if (!replacing && usedAdditions >= additionsCap) break;
-          toProcess.push({ idx, asset: assets[a] });
-          if (!replacing) usedAdditions++;
-        }
-
-        if (!toProcess.length) {
-          Alert.alert("Limit reached", "No free slots left. Delete a photo to add more.");
-          setUploading(false);
+      } else {
+        const libPerm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!libPerm.granted) {
+          Alert.alert("Permission needed", "Please allow photo library access.");
           return;
         }
-
-        // If replacing any, delete first (silent)
-        for (const step of toProcess) {
-          const { idx } = step;
-          if (current[idx]) {
-            await removePhoto(current[idx] as string, true);
-          }
-        }
-
-        // Upload sequentially to keep order predictable
-        const local = [...current];
-        for (const { idx, asset } of toProcess) {
-          if (!asset?.uri || !asset.width || !asset.height) continue;
-          const processedUri = await processToResolution(asset.uri, asset.width, asset.height, 600, 848);
-          const publicUrl = await uploadAndInsert(userId, processedUri, false);
-          local[idx] = publicUrl;
-          setExtraPhotos(local.slice());
-          extrasRef.current = local.slice();
-        }
-
-        // Reconcile with DB
-        await fetchPhotos();
-      } catch (e: any) {
-        console.error("Photo upload error:", e);
-        const msg =
-          typeof e?.message === "string" && e.message.includes("at most 4")
-            ? "You can upload up to 4 photos."
-            : e?.message ?? "Please try again.";
-        Alert.alert("Upload failed", msg);
-      } finally {
-        setUploading(false);
       }
-    },
-    [mainPhoto, extraPhotos, canAddAnother, fetchPhotos, removePhoto]
-  );
+
+      const result =
+        source === "camera"
+          ? await ImagePicker.launchCameraAsync({
+              mediaTypes: ["images"] as any,
+              quality: 1,
+            })
+          : await ImagePicker.launchImageLibraryAsync({
+              mediaTypes: ["images"] as any,
+              quality: 1,
+            });
+
+      if (result.canceled || !result.assets?.[0]) return;
+
+      const asset = result.assets[0];
+      if (!asset?.uri || !asset.width || !asset.height) {
+        Alert.alert("Upload failed", "Could not read image.");
+        return;
+      }
+
+      const { data: auth } = await supabase.auth.getUser();
+      const userId = auth?.user?.id;
+      if (!userId) return;
+
+      setUploading(true);
+
+      const processedUri = await processToResolution(
+        asset.uri,
+        asset.width,
+        asset.height,
+        800,
+        800
+      );
+      const uploaded = await uploadToSupabase(userId, processedUri);
+      if (!uploaded) {
+        setUploading(false);
+        return;
+      }
+
+      // Set all existing photos to is_main = false
+      await supabase.from("user_photos").update({ is_main: false }).eq("user_id", userId);
+
+      if (slots.main.id) {
+        // Update existing main photo
+        await supabase
+          .from("user_photos")
+          .update({ photo_url: uploaded.storagePath, is_main: true })
+          .eq("id", slots.main.id);
+      } else {
+        // Insert new main photo
+        await supabase
+          .from("user_photos")
+          .insert({ user_id: userId, photo_url: uploaded.storagePath, is_main: true });
+      }
+
+      await reloadPhotos(userId);
+      setUploading(false);
+    } catch (e: any) {
+      console.error("Photo upload error:", e);
+      Alert.alert("Upload failed", e?.message ?? "Please try again.");
+      setUploading(false);
+    }
+  };
+
+  const pickImageForExtra = async (index: number) => {
+    try {
+      const source = await selectSource();
+      if (!source) return;
+
+      if (source === "camera") {
+        const camPerm = await ImagePicker.requestCameraPermissionsAsync();
+        if (!camPerm.granted) {
+          Alert.alert("Permission needed", "Please allow camera access.");
+          return;
+        }
+      } else {
+        const libPerm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!libPerm.granted) {
+          Alert.alert("Permission needed", "Please allow photo library access.");
+          return;
+        }
+      }
+
+      // For library, allow multiple selection up to 3 photos
+      const result =
+        source === "camera"
+          ? await ImagePicker.launchCameraAsync({
+              mediaTypes: ["images"] as any,
+              quality: 1,
+            })
+          : await ImagePicker.launchImageLibraryAsync({
+              mediaTypes: ["images"] as any,
+              quality: 1,
+              allowsMultipleSelection: true,
+              selectionLimit: 3,
+            });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) return;
+
+      const { data: auth } = await supabase.auth.getUser();
+      const userId = auth?.user?.id;
+      if (!userId) return;
+
+      setUploading(true);
+
+      // Get empty slots
+      const emptySlots: number[] = [];
+      slots.extra.forEach((slot, i) => {
+        if (!slot.signedUrl) emptySlots.push(i);
+      });
+
+      // If clicked on filled slot, replace it first, then fill empties
+      const targetSlots: number[] = [];
+      if (slots.extra[index].signedUrl) {
+        targetSlots.push(index);
+        emptySlots.forEach((i) => {
+          if (i !== index) targetSlots.push(i);
+        });
+      } else {
+        targetSlots.push(index);
+        emptySlots.forEach((i) => {
+          if (i !== index) targetSlots.push(i);
+        });
+      }
+
+      // Process each selected asset
+      for (let i = 0; i < Math.min(result.assets.length, targetSlots.length); i++) {
+        const asset = result.assets[i];
+        const targetIndex = targetSlots[i];
+
+        if (!asset?.uri || !asset.width || !asset.height) continue;
+
+        const processedUri = await processToResolution(
+          asset.uri,
+          asset.width,
+          asset.height,
+          600,
+          800
+        );
+        const uploaded = await uploadToSupabase(userId, processedUri);
+        if (!uploaded) continue;
+
+        const target = slots.extra[targetIndex];
+        if (target.id) {
+          // Update existing extra photo
+          await supabase
+            .from("user_photos")
+            .update({ photo_url: uploaded.storagePath, is_main: false })
+            .eq("id", target.id);
+        } else {
+          // Insert new extra photo
+          await supabase
+            .from("user_photos")
+            .insert({ user_id: userId, photo_url: uploaded.storagePath, is_main: false });
+        }
+      }
+
+      await reloadPhotos(userId);
+      setUploading(false);
+    } catch (e: any) {
+      console.error("Photo upload error:", e);
+      Alert.alert("Upload failed", e?.message ?? "Please try again.");
+      setUploading(false);
+    }
+  };
+
+  const removeSlot = async (kind: "main" | "extra", index?: number) => {
+    try {
+      const { data: auth } = await supabase.auth.getUser();
+      const userId = auth?.user?.id;
+      if (!userId) return;
+
+      if (kind === "main") {
+        if (!slots.main.id) return;
+        
+        // Animate out
+        Animated.timing(mainPhotoOpacity, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }).start(async () => {
+          await supabase.from("user_photos").delete().eq("id", slots.main.id);
+          await reloadPhotos(userId);
+        });
+      } else {
+        const i = index ?? 0;
+        const target = slots.extra[i];
+        if (!target.id) return;
+
+        // Animate out
+        Animated.timing(extraPhotoOpacities[i], {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }).start(async () => {
+          await supabase.from("user_photos").delete().eq("id", target.id);
+          await reloadPhotos(userId);
+        });
+      }
+    } catch (e) {
+      console.log("removeSlot error:", e);
+    }
+  };
+
+  const persistExtrasOrder = async (newOrder: Slot[]) => {
+    try {
+      const { data: auth } = await supabase.auth.getUser();
+      const userId = auth?.user?.id;
+      if (!userId) return;
+
+      const { data: rows } = await supabase
+        .from("user_photos")
+        .select("id, photo_url, is_main, created_at")
+        .eq("user_id", userId)
+        .neq("is_main", true)
+        .order("created_at", { ascending: true })
+        .limit(3);
+
+      if (!rows) return;
+
+      for (let i = 0; i < Math.min(3, rows.length); i++) {
+        const desired = newOrder[i];
+        const newPath = desired?.storagePath ?? null;
+        await supabase
+          .from("user_photos")
+          .update({ photo_url: newPath, is_main: false })
+          .eq("id", rows[i].id);
+      }
+    } catch (e) {
+      console.log("persistExtrasOrder error:", e);
+    }
+  };
 
   const handleNext = useCallback(async () => {
-    const extraCount = extraPhotos.filter(Boolean).length;
-    if (!mainPhoto) {
+    const extraCount = slots.extra.filter((s) => s.signedUrl).length;
+    if (!slots.main.signedUrl) {
       Alert.alert("One more step", "Please add your profile picture.");
       return;
     }
@@ -458,25 +560,36 @@ setExtraPhotos(newSlots);
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       if (sessionData?.session?.user) {
-        await supabase.from("profiles").update({ onboarding_step: 4 }).eq("id", sessionData.session.user.id);
+        await supabase
+          .from("profiles")
+          .update({ onboarding_step: 4 })
+          .eq("id", sessionData.session.user.id);
       }
     } catch {
       /* non-fatal */
     }
 
     router.push("/final_signup");
-  }, [mainPhoto, extraPhotos]);
+  }, [slots]);
+
+  const extraCount = slots.extra.filter((s) => s.signedUrl).length;
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["top"]}>
       <StatusBar barStyle="dark-content" />
 
-      {/* Back button (UNCHANGED) */}
-      <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-        <Ionicons name="chevron-back" size={moderateScale(26)} color="#FFFFFF" />
+      {/* Back Button */}
+      <TouchableOpacity
+        style={styles.backButton}
+        onPress={() => router.back()}
+        activeOpacity={0.7}
+      >
+        <View style={styles.backButtonCircle}>
+          <Ionicons name="arrow-back" size={24} color={Colors.INK} />
+        </View>
       </TouchableOpacity>
 
-      {/* Progress (UNCHANGED) */}
+      {/* Progress Bar */}
       <View style={styles.progressWrapper}>
         <View style={styles.progressTrack}>
           <View style={styles.progressFill} />
@@ -489,307 +602,392 @@ setExtraPhotos(newSlots);
         keyboardVerticalOffset={verticalScale(20)}
       >
         <ScrollView
-          style={styles.scrollContainer}
+          style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.title}>Now let’s make you stand out</Text>
+          <Text style={styles.pageTitle}>Now let's make you stand out</Text>
+          <Text style={styles.pageSubtitle}>Add your best photos to complete your profile</Text>
 
-          {/* Profile picture */}
-          <View style={styles.row}>
-            <View style={{ position: "relative" }}>
-              <LinearGradient
-                colors={["#9FB7FF", "#1B44CD"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.avatarRing}
+          {/* Main Photo Section */}
+          <View style={styles.mainPhotoSection}>
+            <Text style={styles.sectionLabel}>Profile Photo</Text>
+            <View style={styles.mainPhotoContainer}>
+              <Pressable
+                onPress={pickImageForMain}
+                style={({ pressed }) => [
+                  styles.mainPhotoSlot,
+                  pressed && { opacity: 0.9 },
+                ]}
               >
+                {slots.main.signedUrl ? (
+                  <Animated.View style={{ opacity: mainPhotoOpacity, width: "100%", height: "100%" }}>
+                    <Image
+                      source={{ uri: slots.main.signedUrl }}
+                      style={styles.mainPhotoImage}
+                      resizeMode="cover"
+                    />
+                  </Animated.View>
+                ) : (
+                  <View style={styles.emptyMainSlot}>
+                    <View style={styles.cameraIconCircle}>
+                      <Ionicons name="camera" size={32} color={Colors.BLUE} />
+                    </View>
+                    <Text style={styles.addPhotoText}>Add profile photo</Text>
+                  </View>
+                )}
+              </Pressable>
+              {slots.main.signedUrl && (
                 <Pressable
-                  onPress={() => pickImage("main")}
-                  style={({ pressed }) => [styles.avatarCircle, pressed && { opacity: 0.92, transform: [{ scale: 0.98 }] }]}
+                  style={styles.removeMainBadge}
+                  onPress={() => removeSlot("main")}
                 >
-                  {mainPhoto ? (
-                    <Image source={{ uri: mainPhoto }} style={styles.avatarImg} resizeMode="cover" />
-                  ) : (
-                    <Ionicons name="camera" size={moderateScale(28)} color="#7E8A98" />
-                  )}
-                </Pressable>
-              </LinearGradient>
-              {mainPhoto && (
-                <Pressable style={styles.removeBadge} onPress={() => removePhoto(mainPhoto!)}>
-                  <Ionicons name="close" size={moderateScale(16)} color="#fff" />
+                  <Ionicons name="close" size={16} color="#FFFFFF" />
                 </Pressable>
               )}
             </View>
-
-            {/* Right-aligned clean button instead of text */}
-            <View style={{ flex: 1, marginLeft: scale(16), alignItems: "flex-end", justifyContent: "center" }}>
-              <TouchableOpacity onPress={() => pickImage("main")} activeOpacity={0.9} style={styles.chooseMainBtn}>
-                <Ionicons name="images-outline" size={moderateScale(16)} color="#fff" />
-                <Text style={styles.chooseMainText}>{mainPhoto ? "Change profile photo" : "Choose profile photo"}</Text>
-              </TouchableOpacity>
-            </View>
           </View>
 
-          {/* BEAUTIFIED WRAPPER RECTANGLE includes photos AND the helper text below */}
-          <LinearGradient
-            colors={["#DDE7FF", "#F1F5FF"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.cardOuter}
-          >
-            <View style={styles.cardInner}>
-              <View style={styles.cardHeaderRow}>
-                <Text style={styles.cardTitle}>Add up to 3 more photos</Text>
-                <View style={styles.counterPill}>
-                  <Ionicons name="images-outline" size={moderateScale(20)} color={BLUE} />
-                  <Text style={styles.counterText}>
-                    {(extraPhotos.filter(Boolean).length).toString()}/3
-                  </Text>
-                </View>
+          {/* Extra Photos Section */}
+          <View style={styles.extraPhotosSection}>
+            <View style={styles.extraPhotoHeader}>
+              <Text style={styles.sectionLabel}>More Photos</Text>
+              <View style={styles.counterBadge}>
+                <Ionicons name="images-outline" size={16} color={Colors.BLUE} />
+                <Text style={styles.counterText}>{extraCount}/3</Text>
               </View>
+            </View>
 
-              <View style={styles.grid3}>
-                {extraPhotos.map((uri, i) => (
-                  <View key={i} style={{ position: "relative", flex: 1 }}>
+            <DraggableFlatList
+              data={slots.extra.map((s, i) => ({ ...s, key: s.key || `extra-${i}-empty` }))}
+              horizontal
+              keyExtractor={(item) => item.key as string}
+              onDragEnd={async ({ data }) => {
+                const arranged: [Slot, Slot, Slot] = [
+                  data[0] ?? {},
+                  data[1] ?? {},
+                  data[2] ?? {},
+                ] as [Slot, Slot, Slot];
+                setSlots((prev) => ({ ...prev, extra: arranged }));
+                await persistExtrasOrder(arranged as Slot[]);
+              }}
+              activationDistance={8}
+              scrollEnabled={false}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.extraPhotosGrid}
+              renderItem={(params: RenderItemParams<Slot>) => {
+                const { item, drag, getIndex } = params;
+                const idx = (typeof getIndex === "function" ? getIndex() : 0) ?? 0;
+
+                return (
+                  <View style={styles.extraPhotoWrapper}>
                     <Pressable
-                      onPress={() => pickImage({ type: "extra", index: i })}
+                      onPress={() => pickImageForExtra(idx)}
+                      onLongPress={item.signedUrl ? drag : undefined}
                       style={({ pressed }) => [
-                        styles.gridItem,
-                        pressed && { opacity: 0.95, transform: [{ scale: 0.985 }] },
+                        styles.extraPhotoSlot,
+                        pressed && { opacity: 0.9 },
                       ]}
                     >
-                      {uri ? (
-                        <Image source={{ uri }} style={styles.gridImg} resizeMode="cover" />
+                      {item.signedUrl ? (
+                        <Animated.View
+                          style={{
+                            opacity: extraPhotoOpacities[idx],
+                            width: "100%",
+                            height: "100%",
+                          }}
+                        >
+                          <Image
+                            source={{ uri: item.signedUrl }}
+                            style={styles.extraPhotoImage}
+                            resizeMode="cover"
+                          />
+                        </Animated.View>
                       ) : (
-                        <View style={styles.emptyCell}>
-                          <Ionicons name="add" size={moderateScale(24)} color={INK_MUTED} />
-                          <Text style={styles.emptyText}>Add photo</Text>
+                        <View style={styles.emptyExtraSlot}>
+                          <Ionicons name="add-circle-outline" size={32} color="rgba(10,14,26,0.3)" />
+                          <Text style={styles.photoNumberText}>Photo {idx + 2}</Text>
                         </View>
                       )}
                     </Pressable>
-                    {uri && (
-                      <Pressable style={styles.removeBadgeSmall} onPress={() => removePhoto(uri!)}>
-                        <Ionicons name="close" size={moderateScale(14)} color="#fff" />
+                    {item.signedUrl && (
+                      <Pressable
+                        style={styles.removeExtraBadge}
+                        onPress={() => removeSlot("extra", idx)}
+                      >
+                        <Ionicons name="close" size={14} color="#FFFFFF" />
                       </Pressable>
                     )}
                   </View>
-                ))}
-              </View>
+                );
+              }}
+            />
+          </View>
 
-              {/* Helper row (INSIDE the rectangle) */}
-              <View style={styles.tipRow}>
-                <Ionicons name="information-circle-outline" size={moderateScale(15)} color={BLUE} />
-                <Text style={styles.tipText}>
-                  Crisp, solo shots work best. Avoid heavy filters. You can delete or replace anytime.
-                </Text>
-              </View>
-            </View>
-          </LinearGradient>
+          {/* Info Note */}
+          <View style={styles.infoNote}>
+            <Ionicons
+              name="bulb-outline"
+              size={20}
+              color={Colors.BLUE}
+              style={{ marginRight: scale(8) }}
+            />
+            <Text style={styles.infoNoteText}>
+              Choose clear photos where your face is visible. Avoid group photos or heavy filters.
+            </Text>
+          </View>
+
+          <View style={{ height: verticalScale(100) }} />
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Uploading overlay (non-blocking, small, no layout shift) */}
+      {/* Uploading Overlay */}
       {uploading && (
         <View style={styles.uploadingOverlay}>
           <ActivityIndicator size="small" color="#FFFFFF" />
-          <Text style={styles.uploadingText}>Uploading…</Text>
+          <Text style={styles.uploadingText}>Uploading...</Text>
         </View>
       )}
 
-      {/* Next button (UNCHANGED) */}
-      <TouchableOpacity style={styles.nextButton} onPress={handleNext} disabled={uploading}>
-        <Ionicons name="chevron-forward" size={moderateScale(30)} color="#FFFFFF" />
+      {/* Next Button */}
+      <TouchableOpacity
+        onPress={handleNext}
+        disabled={uploading}
+        style={[styles.nextButton, uploading && { opacity: 0.5 }]}
+        activeOpacity={0.8}
+      >
+        <Ionicons name="arrow-forward" size={28} color="#FFFFFF" />
       </TouchableOpacity>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: BG },
+  container: {
+    flex: 1,
+    backgroundColor: Colors.BG,
+  },
 
   backButton: {
     position: "absolute",
-    top: verticalScale(58),
-    left: scale(24),
-    width: scale(56),
-    height: verticalScale(56),
-    borderRadius: scale(28),
-    backgroundColor: INK,
-    alignItems: "center",
-    justifyContent: "center",
+    top: verticalScale(16),
+    left: scale(20),
     zIndex: 10,
+    paddingTop: verticalScale(60),
   },
-
-  progressWrapper: { marginTop: verticalScale(88), paddingHorizontal: scale(24) },
-  progressTrack: { height: verticalScale(6), backgroundColor: "#C8CDD2", borderRadius: scale(3) },
-  progressFill: { height: verticalScale(6), width: "94.98%", backgroundColor: BLUE, borderRadius: scale(3) },
-
-  scrollContainer: { flex: 1 },
-  scrollContent: { paddingHorizontal: scale(24), paddingTop: verticalScale(18), paddingBottom: verticalScale(120) },
-
-  title: {
-    fontFamily: Fonts.bold,
-    fontSize: moderateScale(26),
-    lineHeight: verticalScale(40),
-    color: INK,
-    marginBottom: verticalScale(-6),
-  },
-
-  row: { flexDirection: "row", alignItems: "center", marginBottom: verticalScale(16) },
-
-  // Gradient ring around avatar
-  avatarRing: {
-    width: scale(100),
-    height: scale(100),
-    borderRadius: scale(50),
-    padding: 2,
+  backButtonCircle: {
+    width: scale(40),
+    height: scale(40),
+    borderRadius: scale(20),
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  avatarCircle: {
-    width: scale(96),
-    height: scale(96),
-    borderRadius: scale(48),
-    backgroundColor: "#D9DDE2",
-    alignItems: "center",
-    justifyContent: "center",
+
+  progressWrapper: {
+    marginTop: verticalScale(80),
+    paddingHorizontal: scale(20),
+  },
+  progressTrack: {
+    height: verticalScale(8),
+    backgroundColor: "rgba(27,68,205,0.15)",
+    borderRadius: scale(4),
     overflow: "hidden",
   },
-  avatarImg: { width: "100%", height: "100%" },
-
-  /* Choose profile button (right-aligned, clean) */
-  chooseMainBtn: {
-    flexDirection: "row",
-    gap: scale(8),
-    paddingHorizontal: scale(17),
-    paddingVertical: verticalScale(10),
-    borderRadius: scale(12),
-    marginHorizontal: scale(20),
-    backgroundColor: BLUE,
-    alignItems: "center",
+  progressFill: {
+    height: verticalScale(8),
+    width: "97%",
+    backgroundColor: Colors.BLUE,
+    borderRadius: scale(4),
   },
-  chooseMainText: {
-    color: "#fff",
+
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingTop: verticalScale(24),
+    paddingHorizontal: scale(20),
+    paddingBottom: verticalScale(30),
+  },
+
+  pageTitle: {
+    fontSize: scale(24),
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(14),
+    color: Colors.INK,
+    marginBottom: verticalScale(8),
+    paddingTop: verticalScale(1),
+  },
+  pageSubtitle: {
+    fontSize: scale(15),
+    fontFamily: Fonts.primary,
+    color: "rgba(10,14,26,0.6)",
+    marginBottom: verticalScale(32),
+    lineHeight: verticalScale(22),
   },
 
-  /* Rectangle wrapper — gradient outer w/ soft inner card */
-  cardOuter: {
-    marginTop: verticalScale(12),
-    borderRadius: scale(20),
-    padding: 1.5,
+  mainPhotoSection: {
+    marginBottom: verticalScale(32),
   },
-  cardInner: {
-    backgroundColor: "#F7FAFF",
-    borderRadius: scale(16),
-    padding: scale(16),
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#D4DAE1",
+  sectionLabel: {
+    fontSize: scale(16),
+    fontFamily: Fonts.bold,
+    color: Colors.INK,
+    marginBottom: verticalScale(12),
+  },
+  mainPhotoContainer: {
+    alignItems: "center",
+    position: "relative",
+  },
+  mainPhotoSlot: {
+    width: scale(160),
+    height: scale(160),
+    borderRadius: scale(80),
+    backgroundColor: "#FFFFFF",
+    overflow: "hidden",
     shadowColor: "#000",
-    shadowOpacity: 0.07,
-    shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  cardHeaderRow: {
+  mainPhotoImage: {
+    width: "100%",
+    height: "100%",
+  },
+  emptyMainSlot: {
+    width: "100%",
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(27,68,205,0.04)",
+  },
+  cameraIconCircle: {
+    width: scale(64),
+    height: scale(64),
+    borderRadius: scale(32),
+    backgroundColor: "rgba(27,68,205,0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: verticalScale(8),
+  },
+  addPhotoText: {
+    fontSize: scale(14),
+    fontFamily: Fonts.bold,
+    color: "rgba(10,14,26,0.5)",
+  },
+  removeMainBadge: {
+    position: "absolute",
+    top: scale(0),
+    right: scale(0),
+    width: scale(32),
+    height: scale(32),
+    borderRadius: scale(16),
+    backgroundColor: "#000000DD",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  extraPhotosSection: {
+    marginBottom: verticalScale(24),
+  },
+  extraPhotoHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: verticalScale(12),
   },
-  cardTitle: {
-    fontFamily: Fonts.bold,
-    fontSize: moderateScale(18),
-    color: INK_SOFT,
-  },
-  counterPill: {
+  counterBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: scale(6),
-    paddingHorizontal: scale(10),
+    paddingHorizontal: scale(12),
     paddingVertical: verticalScale(6),
     borderRadius: scale(12),
-    backgroundColor: "#E4ECFF",
+    backgroundColor: "rgba(27,68,205,0.08)",
   },
   counterText: {
+    fontSize: scale(13),
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(13),
-    color: BLUE,
+    color: Colors.BLUE,
   },
-
-  // 3 fixed slots, no overflow
-  grid3: { flexDirection: "row", gap: scale(10) },
-  gridItem: {
-    flex: 1,
-    height: verticalScale(168),
-    backgroundColor: "#E2E7EF",
+  extraPhotosGrid: {
+    gap: scale(12),
+  },
+  extraPhotoWrapper: {
+    width: scale(110),
+    position: "relative",
+  },
+  extraPhotoSlot: {
+    width: "100%",
+    aspectRatio: 3 / 4,
     borderRadius: scale(12),
+    backgroundColor: "#FFFFFF",
     overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  extraPhotoImage: {
+    width: "100%",
+    height: "100%",
+  },
+  emptyExtraSlot: {
+    width: "100%",
+    height: "100%",
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#D6DEE8",
+    backgroundColor: "rgba(27,68,205,0.04)",
   },
-  gridImg: { width: "100%", height: "100%" },
-
-  emptyCell: { alignItems: "center", justifyContent: "center" },
-  emptyText: {
-    marginTop: verticalScale(6),
+  photoNumberText: {
+    fontSize: scale(12),
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(14),
-    color: INK_MUTED,
+    color: "rgba(10,14,26,0.4)",
+    marginTop: verticalScale(8),
   },
-
-  tipRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: scale(8),
-    paddingTop: verticalScale(12),
-  },
-  tipText: {
-    flex: 1,
-    fontFamily: Fonts.bold,
-    fontSize: moderateScale(13),
-    lineHeight: verticalScale(20),
-    color: INK_MUTED,
-  },
-
-  removeBadge: {
+  removeExtraBadge: {
     position: "absolute",
-    right: -4,
-    top: -4,
+    top: scale(6),
+    right: scale(6),
     width: scale(24),
-    height: verticalScale(24),
+    height: scale(24),
     borderRadius: scale(12),
-    backgroundColor: "#000000aa",
+    backgroundColor: "#000000DD",
     alignItems: "center",
     justifyContent: "center",
   },
-  removeBadgeSmall: {
-    position: "absolute",
-    right: 6,
-    top: 6,
-    width: scale(22),
-    height: verticalScale(22),
-    borderRadius: scale(11),
-    backgroundColor: "#000000aa",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 2,
+
+  infoNote: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    padding: scale(16),
+    borderRadius: scale(12),
+    backgroundColor: "rgba(27,68,205,0.06)",
+    paddingBottom: verticalScale(12),
+  },
+  infoNoteText: {
+    flex: 1,
+    fontSize: scale(13),
+    fontFamily: Fonts.primary,
+    color: "rgba(10,14,26,0.6)",
+    lineHeight: verticalScale(18),
+    paddingTop: verticalScale(0.5),
   },
 
   uploadingOverlay: {
     position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: verticalScale(118),
-    alignSelf: "center",
-    marginHorizontal: scale(24),
-    paddingVertical: verticalScale(10),
-    paddingHorizontal: scale(14),
-    backgroundColor: "#111827CC",
+    bottom: verticalScale(120),
+    left: scale(20),
+    right: scale(20),
+    paddingVertical: verticalScale(12),
+    paddingHorizontal: scale(16),
+    backgroundColor: "#000000CC",
     borderRadius: scale(12),
     flexDirection: "row",
     alignItems: "center",
@@ -799,22 +997,23 @@ const styles = StyleSheet.create({
   uploadingText: {
     color: "#FFFFFF",
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(13),
+    fontSize: scale(13),
   },
 
   nextButton: {
     position: "absolute",
     bottom: verticalScale(40),
-    right: scale(24),
-    width: scale(70),
-    height: verticalScale(70),
-    borderRadius: scale(35),
-    backgroundColor: INK,
+    right: scale(20),
+    width: scale(64),
+    height: scale(64),
+    borderRadius: scale(32),
+    backgroundColor: Colors.BLUE,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 6 },
+    shadowColor: Colors.BLUE,
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
   },
 });

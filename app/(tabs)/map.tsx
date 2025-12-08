@@ -95,6 +95,8 @@ interface UserMapCard {
   main_photo_url: string | null;
   last_seen?: string; // Track when user was last active
   gender?: string; // For gender filtering (needs backend RPC update)
+  looking_for?: string[] | null; // What they're looking for
+  access_level?: string; // 'full', 'limited', or 'none' - based on profile visibility
 }
 
 interface FilterState {
@@ -743,16 +745,15 @@ const UserProfileModal: React.FC<{
   const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
   const [userFrames, setUserFrames] = useState<any[]>([]);
   
-  // Preview data from RPC
-  const [previewData, setPreviewData] = useState<{
-    sexual_orientation: string | null;
-    looking_for_friend: string[] | null;
-    value_friend: string[] | null;
-  }>({ sexual_orientation: null, looking_for_friend: null, value_friend: null });
-  
   // Match request message state
   const [requestMessage, setRequestMessage] = useState('');
   const [showMessageInput, setShowMessageInput] = useState(false);
+  
+  // Looking for detail view state
+  const [showLookingForDetail, setShowLookingForDetail] = useState(false);
+  
+  // Check if profile is public (has full access)
+  const isPublicProfile = user?.access_level === 'full';
   
   // Calculate distance
   const calculateDistance = useCallback((lat1: number, lng1: number, lat2: number, lng2: number): number => {
@@ -771,7 +772,12 @@ const UserProfileModal: React.FC<{
   useEffect(() => {
     if (visible && user) {
       fetchMatchStatus();
-      fetchUserFrames();
+      // Only fetch frames if profile is public (has full access)
+      if (user.access_level === 'full' && user.frame_id) {
+        fetchUserFrames();
+      } else {
+        setUserFrames([]);
+      }
       setProfilePhoto(user.main_photo_url);
       setRequestMessage('');
       setShowMessageInput(false);
@@ -789,6 +795,7 @@ const UserProfileModal: React.FC<{
         useNativeDriver: true 
       }).start();
       setShowMessageInput(false);
+      setShowLookingForDetail(false);
     }
   }, [visible, user]);
   
@@ -937,6 +944,14 @@ const UserProfileModal: React.FC<{
   
   const handleViewProfile = () => {
     if (!user) return;
+    // Only allow viewing full profile if access_level is 'full' (public profile)
+    if (user.access_level !== 'full') {
+      Alert.alert(
+        "Private Profile",
+        "This user has a private profile. Connect with them first to see their full profile."
+      );
+      return;
+    }
     onClose();
     router.push({
       pathname: "/(tabs_support)/other_profile",
@@ -1062,6 +1077,23 @@ const UserProfileModal: React.FC<{
     return combinations[key] || displayLabels.slice(0, 2).join(" - ");
   };
   
+  // Get all looking_for items as display labels for detail view
+  const getAllLookingForLabels = (values: string[] | null): string[] => {
+    if (!values || values.length === 0) return [];
+    
+    const displayMap: Record<string, string> = {
+      'new_friends_nearby': 'New friends nearby',
+      'workout_fitness_buddy': 'Workout/fitness buddy',
+      'travel_companions': 'Travel companions',
+      'activity_hobby_partners': 'Activity/hobby partners',
+      'casual_hangouts': 'Casual hangouts',
+      'professional_networking': 'Professional networking',
+      'close_friendships': 'Close friendships',
+    };
+    
+    return values.map(v => displayMap[v] || v.replace(/_/g, ' ')).filter(Boolean);
+  };
+  
   // Format friend values display
   const formatFriendValues = (values: string[] | null) => {
     if (!values || values.length === 0) return null;
@@ -1108,10 +1140,9 @@ const UserProfileModal: React.FC<{
     }
   };
   
-
-  const orientationDisplay = formatOrientation(previewData.sexual_orientation);
-  const lookingForFriendDisplay = formatLookingForFriend(previewData.looking_for_friend);
-  const friendValuesDisplay = formatFriendValues(previewData.value_friend);
+  // Format looking_for display (using the user's looking_for data directly)
+  const lookingForDisplay = formatLookingForFriend(user?.looking_for || null);
+  const allLookingForLabels = getAllLookingForLabels(user?.looking_for || null);
   
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
@@ -1135,18 +1166,50 @@ const UserProfileModal: React.FC<{
               keyboardShouldPersistTaps="handled"
               contentContainerStyle={{ paddingBottom: 16 }}
             >
+            {/* Looking For Detail View */}
+            {showLookingForDetail ? (
+              <View>
+                {/* Back Button Header */}
+                <View style={styles.lookingForDetailHeader}>
+                  <TouchableOpacity 
+                    style={styles.lookingForBackBtn}
+                    onPress={() => setShowLookingForDetail(false)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="arrow-back" size={22} color={BLUE} />
+                  </TouchableOpacity>
+                  <Text style={styles.lookingForDetailTitle}>What they're looking for</Text>
+                  <View style={{ width: 36 }} />
+                </View>
+                
+                {/* All Looking For Items */}
+                <View style={styles.lookingForDetailList}>
+                  {allLookingForLabels.map((label, index) => (
+                    <View key={index} style={styles.lookingForDetailItem}>
+                      <View style={styles.lookingForDetailIcon}>
+                        <Ionicons name="checkmark" size={16} color={BLUE} />
+                      </View>
+                      <Text style={styles.lookingForDetailText}>{label}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : (
+            <>
             {/* Header Row */}
             <View style={styles.userSheetHeader}>
               {/* Profile Photo with Frame Ring */}
               <TouchableOpacity
-                activeOpacity={hasFrames ? 0.8 : 1}
+                activeOpacity={(hasFrames || isPublicProfile) ? 0.8 : 1}
                 onPress={() => {
                   if (hasFrames) {
                     onClose();
                     setTimeout(() => onOpenFrames(userFrames), 300);
+                  } else if (isPublicProfile) {
+                    handleViewProfile();
                   }
                 }}
-                disabled={!hasFrames}
+                disabled={!hasFrames && !isPublicProfile}
                 style={styles.userSheetAvatarWrap}
               >
                 {hasFrames && (
@@ -1170,33 +1233,54 @@ const UserProfileModal: React.FC<{
                 </View>
               </TouchableOpacity>
               
-              {/* Name, Age, Distance */}
-              <View style={styles.userSheetInfo}>
-                <Text style={styles.userSheetName}>{capitalizeWords(user.full_name)}, {user.age}</Text>
+              {/* Name, Age, Distance - Clickable to view profile if public */}
+              <TouchableOpacity 
+                style={styles.userSheetInfo}
+                onPress={isPublicProfile ? handleViewProfile : undefined}
+                activeOpacity={isPublicProfile ? 0.7 : 1}
+                disabled={!isPublicProfile}
+              >
+                <View style={styles.userSheetNameRow}>
+                  <Text style={styles.userSheetName}>{capitalizeWords(user.full_name)}, {user.age}</Text>
+                  {/* Public/Private Badge */}
+                  <View style={[
+                    styles.userSheetVisibilityBadge,
+                    { backgroundColor: isPublicProfile ? "rgba(34, 197, 94, 0.1)" : "rgba(139, 92, 246, 0.1)" }
+                  ]}>
+                    <Ionicons 
+                      name={isPublicProfile ? "globe-outline" : "lock-closed-outline"} 
+                      size={12} 
+                      color={isPublicProfile ? "#22C55E" : "#8B5CF6"} 
+                    />
+                    <Text style={[
+                      styles.userSheetVisibilityText,
+                      { color: isPublicProfile ? "#22C55E" : "#8B5CF6" }
+                    ]}>
+                      {isPublicProfile ? "Public" : "Private"}
+                    </Text>
+                  </View>
+                </View>
                 {formatDistance() && (
                   <View style={styles.userSheetDistanceRow}>
                     <Ionicons name="location-outline" size={14} color="rgba(10, 14, 26, 0.5)" />
                     <Text style={styles.userSheetDistance}>{formatDistance()}</Text>
                   </View>
                 )}
-              </View>
+              </TouchableOpacity>
             </View>
             
-            {/* Identity Chips */}
-            {(lookingForFriendDisplay || orientationDisplay) && (
+            {/* Looking For Section - Button to open detail view */}
+            {allLookingForLabels.length > 0 && (
               <View style={styles.userSheetChips}>
-                {lookingForFriendDisplay && (
-                  <View style={styles.userSheetChip}>
-                    <Ionicons name="people-outline" size={14} color={BLUE} />
-                    <Text style={styles.userSheetChipText}>{lookingForFriendDisplay}</Text>
-                  </View>
-                )}
-                {orientationDisplay && (
-                  <View style={styles.userSheetChip}>
-                    <Ionicons name="sparkles-outline" size={14} color={BLUE} />
-                    <Text style={styles.userSheetChipText}>{orientationDisplay}</Text>
-                  </View>
-                )}
+                <TouchableOpacity 
+                  style={styles.userSheetChip}
+                  onPress={() => setShowLookingForDetail(true)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="people-outline" size={14} color={BLUE} />
+                  <Text style={styles.userSheetChipText}>What they're looking for</Text>
+                  <Ionicons name="chevron-forward" size={14} color={BLUE} />
+                </TouchableOpacity>
               </View>
             )}
             
@@ -1366,6 +1450,8 @@ const UserProfileModal: React.FC<{
                 </View>
               )}
             </View>
+            </>
+            )}
             </ScrollView>
             
             {/* Footer Links */}
@@ -1373,7 +1459,7 @@ const UserProfileModal: React.FC<{
               <TouchableOpacity onPress={handleBlock}>
                 <Text style={styles.userSheetFooterLink}>Block</Text>
               </TouchableOpacity>
-              <Text style={styles.userSheetFooterDot}>Ã¢â‚¬Â¢</Text>
+              
               <TouchableOpacity onPress={() => Alert.alert("Report", "Report feature coming soon")}>
                 <Text style={styles.userSheetFooterLink}>Report</Text>
               </TouchableOpacity>
@@ -1426,10 +1512,10 @@ const EventDetailsModal: React.FC<{
       console.log(`EventDetailsModal opened for "${event?.event_name}": user_application_status=${initialStatus}`);
       
       if (initialStatus && initialStatus !== 'none' && initialStatus !== 'cancelled') {
-        console.log(`   Ã¢â‚¬â„¢ Setting applicationStatus to: ${initialStatus}`);
+        console.log(`Setting applicationStatus to: ${initialStatus}`);
         setApplicationStatus(initialStatus as 'pending' | 'approved' | 'rejected');
       } else {
-        console.log(`   Ã¢â‚¬â„¢ Setting applicationStatus to: none`);
+        console.log(`Setting applicationStatus to: none`);
         setApplicationStatus('none');
       }
       RNAnimated.spring(slideAnim, { toValue: 0, useNativeDriver: true, tension: 65, friction: 11 }).start();
@@ -1578,7 +1664,7 @@ const EventDetailsModal: React.FC<{
   const handleApply = async () => {
     if (!event || !currentUserId) return;
     
-    console.log(`Ã‚Â Attempting to join event: "${event.event_name}" (${event.id})`);
+    console.log(`Attempting to join event: "${event.event_name}" (${event.id})`);
     setApplyLoading(true);
     try {
       // Call the 2-parameter RPC function (returns JSON)
@@ -1617,7 +1703,7 @@ const EventDetailsModal: React.FC<{
           onApplySuccess?.();
         } else {
           // Check if it's "already applied" - update status accordingly
-          console.log(`[WARN] Â Join failed: ${rpcResult.error}, current status: ${rpcResult.status}`);
+          console.log(`[WARN] Join failed: ${rpcResult.error}, current status: ${rpcResult.status}`);
           if (rpcResult.status) {
             setApplicationStatus(rpcResult.status as 'approved' | 'pending' | 'rejected');
           }
@@ -1632,13 +1718,22 @@ const EventDetailsModal: React.FC<{
     }
   };
   
-  // Navigate to applications page (for hosts)
+  // Navigate to applications/participants page (for hosts)
   const handleViewApplications = () => {
     onClose();
-    router.push({
-      pathname: "/(tabs_support)/host_applications",
-      params: { eventId: event.id }
-    });
+    // For public events (no application required), route to participants page
+    if (event.event_type === 'public') {
+      router.push({
+        pathname: "/(tabs_support)/host_applications_public",
+        params: { eventId: event.id }
+      });
+    } else {
+      // For public_application, private, etc., route to applications page
+      router.push({
+        pathname: "/(tabs_support)/host_applications",
+        params: { eventId: event.id }
+      });
+    }
   };
   
   // Determine if event requires application
@@ -1855,10 +1950,12 @@ const EventDetailsModal: React.FC<{
                 {isOwnEvent ? (
                   // Host actions - two rows
                   <View style={{ flex: 1, gap: 10 }}>
-                    {/* First row: Applications button (full width) */}
+                    {/* First row: Applications/Participants button (full width) */}
                     <TouchableOpacity onPress={handleViewApplications} style={styles.applicationsBtnFull}>
                       <Ionicons name="people" size={20} color={BLUE} />
-                      <Text style={styles.applicationsBtnText}>View Applications</Text>
+                      <Text style={styles.applicationsBtnText}>
+                        {event.event_type === 'public' ? 'See Participants' : 'View Applications'}
+                      </Text>
                       <Ionicons name="chevron-forward" size={18} color="rgba(27, 68, 205, 0.5)" />
                     </TouchableOpacity>
                     
@@ -2418,13 +2515,13 @@ export default function MapScreen() {
         // Filter events based on time and coordinates
         const validEvents = data.filter((event: any) => {
           if (!event.latitude || !event.longitude) {
-            console.log(`   [WARN] Â Skipping ${event.event_name}: missing lat/lng`);
+            console.log(`   [WARN] Skipping ${event.event_name}: missing lat/lng`);
             return false;
           }
           const eventEndTime = new Date(event.time_end).getTime();
           const isValid = eventEndTime >= Date.now();
           if (!isValid) {
-            console.log(`   [WARN] Â Skipping ${event.event_name}: expired`);
+            console.log(`   [WARN] Skipping ${event.event_name}: expired`);
           }
           return isValid;
         });
@@ -2531,7 +2628,7 @@ export default function MapScreen() {
   // Fetch users from Supabase
   const fetchUsers = useCallback(async (retryCount: number = 0) => {
     if (!currentUserId) {
-      console.log("[WARN] Â No currentUserId, can't fetch users");
+      console.log("[WARN] Ãƒâ€šÃ‚Â No currentUserId, can't fetch users");
       return;
     }
     
@@ -2567,7 +2664,7 @@ export default function MapScreen() {
         
         // Debug: Log each user found
         data.forEach((u: any) => {
-          console.log(`   ${u.full_name}, age ${u.age}, gender: ${genderMap[u.user_id] || 'unknown'}, `);
+          console.log(`   ${u.full_name}, age ${u.age}, gender: ${genderMap[u.user_id] || 'unknown'}, access: ${u.access_level || 'unknown'}`);
         });
         
         // Process photo URLs with signed URLs and add gender
@@ -2675,7 +2772,7 @@ export default function MapScreen() {
           console.log("Real-time event:", payload.eventType);
           
           if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
-            console.log("Â¯Ã‚Â¸Ã‚Â Refetching events");
+            console.log("Refetching events");
             fetchEventsRef.current();
           } else if (payload.eventType === "DELETE") {
             const eventId = (payload.old as any)?.id;
@@ -2733,7 +2830,7 @@ export default function MapScreen() {
                   if (event.id !== eventId) return event;
                   
                   const newCount = Math.max(0, (event.accepted_count || 0) + countDelta);
-                  console.log(`   Updating ${event.event_name} count: ${event.accepted_count} Ã¢â‚¬â„¢ ${newCount}`);
+                  console.log(`   Updating ${event.event_name} count: ${event.accepted_count} ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ ${newCount}`);
                   return {
                     ...event,
                     accepted_count: newCount,
@@ -2745,7 +2842,7 @@ export default function MapScreen() {
               setSelectedEvent(prev => {
                 if (!prev || prev.id !== eventId) return prev;
                 const newCount = Math.max(0, (prev.accepted_count || 0) + countDelta);
-                console.log(`   Updating selected event count: ${prev.accepted_count} Ã¢â‚¬â„¢ ${newCount}`);
+                console.log(`   Updating selected event count: ${prev.accepted_count} ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ ${newCount}`);
                 return {
                   ...prev,
                   accepted_count: newCount,
@@ -2894,7 +2991,7 @@ export default function MapScreen() {
           if (saved) {
             console.log("Location saved successfully, users can now discover this user");
           } else {
-            console.warn("[WARN] Â Failed to save location, other users may not see this user");
+            console.warn("[WARN] Ãƒâ€šÃ‚Â Failed to save location, other users may not see this user");
           }
         }
 
@@ -3038,7 +3135,7 @@ export default function MapScreen() {
     if (!currentUserId || !pos) return;
     
     const refreshInterval = setInterval(() => {
-      console.log("Â¯Ã‚Â¸Ã‚Â Refreshing live users...");
+      console.log("Refreshing live users...");
       fetchUsers(0); // Pass 0 as retry count for periodic refresh
     }, 30000); // Every 30 seconds
     
@@ -3785,10 +3882,30 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 4,
   },
+  userSheetNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 8,
+  },
   userSheetName: {
     fontSize: 24,
     fontFamily: Fonts.bold,
     color: "#0A0E1A",
+    letterSpacing: 0.3,
+  },
+  userSheetVisibilityBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  userSheetVisibilityText: {
+    fontSize: 11,
+    fontFamily: Fonts.bold,
+    textTransform: "uppercase",
     letterSpacing: 0.3,
   },
   userSheetDistanceRow: {
@@ -3824,6 +3941,59 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.bold,
     color: BLUE,
     textTransform: "capitalize",
+  },
+  lookingForDetailHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(27, 68, 205, 0.08)",
+  },
+  lookingForBackBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(27, 68, 205, 0.06)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  lookingForDetailTitle: {
+    fontSize: 17,
+    fontFamily: Fonts.bold,
+    color: "#0A0E1A",
+  },
+  lookingForDetailList: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    gap: 12,
+  },
+  lookingForDetailItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(27, 68, 205, 0.04)",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 14,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: "rgba(27, 68, 205, 0.08)",
+  },
+  lookingForDetailIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(27, 68, 205, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  lookingForDetailText: {
+    flex: 1,
+    fontSize: 15,
+    fontFamily: Fonts.primary,
+    color: "#0A0E1A",
   },
   userSheetBioSection: {
     paddingHorizontal: 20,

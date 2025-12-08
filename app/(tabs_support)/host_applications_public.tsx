@@ -8,7 +8,6 @@ import { useCallback, useEffect, useState } from "react";
 import {
     ActivityIndicator,
     Alert,
-    Dimensions,
     Image,
     RefreshControl,
     ScrollView,
@@ -19,62 +18,26 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const { width: SCREEN_W } = Dimensions.get("window");
-
-const BLUES = {
-  b00: "#0B1C60", b10: "#0D236F", b20: "#0F2C8A", b30: "#1437A4", b40: "#1840B8",
-  b50: "#1B44CD", b60: "#2D58D6", b70: "#3E6BE0", b80: "#4E7DE9", b90: "#6B95F0",
-  b100: "#86A9F5", b110: "#A5BFF9", b120: "#C4D5FC", b130: "#E6EFFF",
-} as const;
-
-const BLUE = BLUES.b50;
+const BLUE = "#1B44CD";
+const BLUES = { b100: "#86A9F5", b120: "#C4D5FC" };
 
 interface Participant {
   id: string;
   applicant_id: string;
-  status: string;
   joined_at: string;
-  user: {
-    id: string;
-    full_name: string;
-    age: number;
-    bio: string | null;
-    main_photo_url: string | null;
-  } | null;
+  full_name: string;
+  age: number | null;
+  photo_url: string | null;
 }
 
-interface EventInfo {
-  id: string;
-  event_name: string;
-  capacity: number;
-  host_id: string;
-}
-
-// Helper to capitalize names
-const capitalizeWords = (str: string | null | undefined): string => {
-  if (!str) return '';
-  return str
-    .toLowerCase()
-    .split(' ')
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
-};
-
-// Format date helper
 const formatJoinedDate = (dateString: string): string => {
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
+  const diffMs = Date.now() - new Date(dateString).getTime();
   const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMs / 3600000);
-  const diffDays = Math.floor(diffMs / 86400000);
-
   if (diffMins < 1) return "Just now";
   if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-  
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  if (diffMins < 1440) return `${Math.floor(diffMins / 60)}h ago`;
+  if (diffMins < 10080) return `${Math.floor(diffMins / 1440)}d ago`;
+  return new Date(dateString).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 };
 
 export default function EventParticipantsScreen() {
@@ -85,170 +48,121 @@ export default function EventParticipantsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [participants, setParticipants] = useState<Participant[]>([]);
-  const [eventInfo, setEventInfo] = useState<EventInfo | null>(null);
+  const [eventName, setEventName] = useState("");
+  const [capacity, setCapacity] = useState(0);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [hostId, setHostId] = useState<string | null>(null);
 
-  // Get current user
   useEffect(() => {
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        setCurrentUserId(session.user.id);
-      }
+      if (session?.user) setCurrentUserId(session.user.id);
     })();
   }, []);
 
-  // Fetch event info and participants
   const fetchData = useCallback(async () => {
     if (!eventId) return;
 
     try {
-      // Fetch event info
-      const { data: eventData, error: eventError } = await supabase
+      const { data: eventData } = await supabase
         .from("events")
-        .select("id, event_name, capacity, host_id")
+        .select("event_name, capacity, host_id")
         .eq("id", eventId)
         .single();
 
-      if (eventError) {
-        console.error("Error fetching event:", eventError);
-        Alert.alert("Error", "Could not load event details");
-        return;
+      if (eventData) {
+        setEventName(eventData.event_name);
+        setCapacity(eventData.capacity);
+        setHostId(eventData.host_id);
       }
 
-      setEventInfo(eventData);
-
-      // Fetch participants (approved applications)
-      const { data: participantsData, error: participantsError } = await supabase
+      const { data: appData } = await supabase
         .from("event_applications")
-        .select(`
-          id,
-          applicant_id,
-          status,
-          created_at
-        `)
+        .select("id, applicant_id, created_at")
         .eq("event_id", eventId)
         .eq("status", "approved")
         .order("created_at", { ascending: true });
 
-      if (participantsError) {
-        console.error("Error fetching participants:", participantsError);
+      if (!appData || appData.length === 0) {
+        setParticipants([]);
         return;
       }
 
-      if (participantsData && participantsData.length > 0) {
-        // Fetch user details for each participant
-        const userIds = participantsData.map((p) => p.applicant_id);
-        
-        const { data: usersData } = await supabase
-          .from("profiles")
-          .select("id, full_name, age, bio")
-          .in("id", userIds);
+      const userIds = appData.map(p => p.applicant_id);
 
-        // Fetch main photos
-        const { data: photosData } = await supabase
-          .from("user_photos")
-          .select("user_id, photo_url")
-          .in("user_id", userIds)
-          .eq("is_main", true);
+      const { data: profilesData } = await supabase
+        .from("profiles")
+        .select("id, full_name, age")
+        .in("id", userIds);
 
-        // Create user map
-        const userMap: Record<string, any> = {};
-        usersData?.forEach((user) => {
-          userMap[user.id] = { ...user, main_photo_url: null };
-        });
+      const { data: photosData } = await supabase
+        .from("user_photos")
+        .select("user_id, photo_url")
+        .in("user_id", userIds)
+        .eq("is_main", true);
 
-        // Add photos to user map
-        photosData?.forEach((photo) => {
-          if (userMap[photo.user_id]) {
-            userMap[photo.user_id].main_photo_url = photo.photo_url;
-          }
-        });
+      const profileMap: Record<string, { full_name: string; age: number | null }> = {};
+      profilesData?.forEach(p => { profileMap[p.id] = { full_name: p.full_name, age: p.age }; });
 
-        // Sign photo URLs
-        const participantsWithUsers = await Promise.all(
-          participantsData.map(async (participant) => {
-            const user = userMap[participant.applicant_id] || null;
-            
-            if (user?.main_photo_url && !user.main_photo_url.startsWith("http")) {
-              const { data: signedData } = await supabase.storage
-                .from("user_photos")
-                .createSignedUrl(user.main_photo_url, 3600);
-              user.main_photo_url = signedData?.signedUrl || null;
+      const photoMap: Record<string, string> = {};
+      photosData?.forEach(p => { photoMap[p.user_id] = p.photo_url; });
+
+      const results: Participant[] = await Promise.all(
+        appData.map(async (app) => {
+          let signedUrl: string | null = null;
+          const rawUrl = photoMap[app.applicant_id];
+          if (rawUrl) {
+            const path = rawUrl.startsWith("http") ? null : rawUrl.replace(/^\/+/, "");
+            if (path) {
+              const { data } = await supabase.storage.from("user_photos").createSignedUrl(path, 3600);
+              signedUrl = data?.signedUrl || null;
+            } else {
+              signedUrl = rawUrl;
             }
+          }
+          return {
+            id: app.id,
+            applicant_id: app.applicant_id,
+            joined_at: app.created_at,
+            full_name: profileMap[app.applicant_id]?.full_name || "Unknown",
+            age: profileMap[app.applicant_id]?.age ?? null,
+            photo_url: signedUrl,
+          };
+        })
+      );
 
-            return {
-              ...participant,
-              joined_at: participant.created_at,
-              user,
-            };
-          })
-        );
-
-        setParticipants(participantsWithUsers);
-      } else {
-        setParticipants([]);
-      }
+      setParticipants(results);
     } catch (error) {
-      console.error("Exception fetching data:", error);
+      console.error("Error fetching data:", error);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, [eventId]);
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchData();
   }, [fetchData]);
 
-  // Remove participant
-  const handleRemoveParticipant = useCallback((participant: Participant) => {
-    Alert.alert(
-      "Remove Participant",
-      `Are you sure you want to remove ${capitalizeWords(participant.user?.full_name)} from this event?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Remove",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              const { error } = await supabase
-                .from("event_applications")
-                .delete()
-                .eq("id", participant.id);
-
-              if (error) {
-                console.error("Error removing participant:", error);
-                Alert.alert("Error", "Could not remove participant");
-                return;
-              }
-
-              // Update local state
-              setParticipants((prev) => prev.filter((p) => p.id !== participant.id));
-              Alert.alert("Success", "Participant removed from the event");
-            } catch (error) {
-              console.error("Exception removing participant:", error);
-              Alert.alert("Error", "An unexpected error occurred");
-            }
-          },
-        },
-      ]
-    );
+  const handleRemove = useCallback((p: Participant) => {
+    Alert.alert("Remove Participant", `Remove ${p.full_name}?`, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Remove", style: "destructive", onPress: async () => {
+        const { error } = await supabase.from("event_applications").delete().eq("id", p.id);
+        if (!error) setParticipants(prev => prev.filter(x => x.id !== p.id));
+        else Alert.alert("Error", "Could not remove");
+      }},
+    ]);
   }, []);
 
-  // View participant profile
-  const handleViewProfile = useCallback((userId: string) => {
-    router.push({
-      pathname: "/(tabs_support)/other_profile",
-      params: { userId }
-    });
-  }, [router]);
+  const handleViewProfile = (userId: string) => {
+    router.push({ pathname: "/(tabs_support)/other_profile", params: { userId } });
+  };
+
+  const isHost = hostId === currentUserId;
 
   if (loading) {
     return (
@@ -257,140 +171,82 @@ export default function EventParticipantsScreen() {
           <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
             <Ionicons name="arrow-back" size={24} color="#0A0E1A" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Event Participants</Text>
+          <Text style={styles.headerTitle}>Participants</Text>
           <View style={{ width: 40 }} />
         </View>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={BLUE} />
-          <Text style={styles.loadingText}>Loading participants...</Text>
         </View>
       </View>
     );
   }
 
-  const isHost = eventInfo?.host_id === currentUserId;
-
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color="#0A0E1A" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Event Participants</Text>
+        <Text style={styles.headerTitle}>Participants</Text>
         <View style={{ width: 40 }} />
       </View>
 
-      {/* Event Info Card */}
-      {eventInfo && (
-        <View style={styles.eventInfoCard}>
-          <View style={styles.eventInfoContent}>
-            <Text style={styles.eventName} numberOfLines={1}>
-              {eventInfo.event_name}
-            </Text>
-            <View style={styles.eventStats}>
-              <Ionicons name="people" size={16} color={BLUE} />
-              <Text style={styles.eventStatsText}>
-                {participants.length} / {eventInfo.capacity} participants
-              </Text>
-            </View>
-          </View>
-          {/* Progress bar */}
-          <View style={styles.capacityBar}>
-            <View 
-              style={[
-                styles.capacityFill, 
-                { width: `${Math.min((participants.length / eventInfo.capacity) * 100, 100)}%` }
-              ]} 
-            />
-          </View>
+      <View style={styles.infoCard}>
+        <Text style={styles.eventName} numberOfLines={1}>{eventName}</Text>
+        <View style={styles.statsRow}>
+          <Ionicons name="people" size={16} color={BLUE} />
+          <Text style={styles.statsText}>{participants.length} / {capacity}</Text>
         </View>
-      )}
+        <View style={styles.progressBar}>
+          <View style={[styles.progressFill, { width: `${Math.min((participants.length / capacity) * 100, 100)}%` }]} />
+        </View>
+      </View>
 
-      {/* Participants List */}
       <ScrollView
-        style={styles.scrollView}
+        style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={BLUE} />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={BLUE} />}
       >
         {participants.length === 0 ? (
           <View style={styles.emptyState}>
-            <View style={styles.emptyIcon}>
-              <Ionicons name="people-outline" size={48} color={BLUES.b100} />
-            </View>
+            <Ionicons name="people-outline" size={48} color={BLUES.b100} />
             <Text style={styles.emptyTitle}>No Participants Yet</Text>
-            <Text style={styles.emptySubtitle}>
-              People who join this event will appear here
-            </Text>
           </View>
         ) : (
-          <>
-            <Text style={styles.sectionLabel}>
-              {participants.length} {participants.length === 1 ? "Person" : "People"} Joining
-            </Text>
-            {participants.map((participant) => (
-              <View key={participant.id} style={styles.participantCard}>
-                <TouchableOpacity
-                  style={styles.participantMain}
-                  onPress={() => participant.user?.id && handleViewProfile(participant.user.id)}
-                  activeOpacity={0.7}
-                >
-                  {/* Avatar */}
-                  <View style={styles.avatarContainer}>
-                    {participant.user?.main_photo_url ? (
-                      <Image
-                        source={{ uri: participant.user.main_photo_url }}
-                        style={styles.avatar}
-                      />
-                    ) : (
-                      <View style={[styles.avatar, styles.avatarPlaceholder]}>
-                        <Text style={styles.avatarInitial}>
-                          {participant.user?.full_name?.charAt(0)?.toUpperCase() || "?"}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-
-                  {/* Info */}
-                  <View style={styles.participantInfo}>
-                    <View style={styles.nameRow}>
-                      <Text style={styles.participantName}>
-                        {capitalizeWords(participant.user?.full_name)}
-                      </Text>
-                      {participant.user?.age && (
-                        <Text style={styles.participantAge}>, {participant.user.age}</Text>
-                      )}
+          participants.map((p) => (
+            <TouchableOpacity
+              key={p.id}
+              style={styles.card}
+              onPress={() => handleViewProfile(p.applicant_id)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.cardRow}>
+                <View style={styles.avatarWrap}>
+                  {p.photo_url ? (
+                    <Image source={{ uri: p.photo_url }} style={styles.avatar} />
+                  ) : (
+                    <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                      <Text style={styles.avatarInitial}>{p.full_name?.charAt(0)?.toUpperCase() || "?"}</Text>
                     </View>
-                    <Text style={styles.joinedText}>
-                      Joined {formatJoinedDate(participant.joined_at)}
-                    </Text>
-                  </View>
-
-                  {/* Arrow */}
-                  <Ionicons name="chevron-forward" size={20} color="rgba(10, 14, 26, 0.3)" />
-                </TouchableOpacity>
-
-                {/* Host Actions */}
-                {isHost && (
-                  <View style={styles.hostActions}>
-                    <TouchableOpacity
-                      style={styles.removeBtn}
-                      onPress={() => handleRemoveParticipant(participant)}
-                    >
-                      <Ionicons name="close-circle-outline" size={20} color="#D5222B" />
-                      <Text style={styles.removeBtnText}>Remove</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
+                  )}
+                </View>
+                <View style={styles.info}>
+                  <Text style={styles.name}>{p.full_name}{p.age ? `, ${p.age}` : ''}</Text>
+                  <Text style={styles.joinedText}>Joined {formatJoinedDate(p.joined_at)}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="rgba(10,14,26,0.3)" />
               </View>
-            ))}
-          </>
+
+              {isHost && (
+                <TouchableOpacity style={styles.removeBtn} onPress={() => handleRemove(p)}>
+                  <Ionicons name="close-circle-outline" size={18} color="#D5222B" />
+                  <Text style={styles.removeText}>Remove</Text>
+                </TouchableOpacity>
+              )}
+            </TouchableOpacity>
+          ))
         )}
-        
-        {/* Bottom padding */}
         <View style={{ height: verticalScale(40) }} />
       </ScrollView>
     </View>
@@ -398,209 +254,30 @@ export default function EventParticipantsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#F8FAFF",
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: scale(16),
-    paddingVertical: verticalScale(12),
-    backgroundColor: "#FFFFFF",
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(27, 68, 205, 0.08)",
-  },
-  backBtn: {
-    width: 40,
-    height: 40,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 20,
-    backgroundColor: "rgba(10, 14, 26, 0.05)",
-  },
-  headerTitle: {
-    fontSize: scale(18),
-    fontFamily: Fonts.bold,
-    color: "#0A0E1A",
-    letterSpacing: 0.3,
-  },
-  loadingContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: verticalScale(16),
-  },
-  loadingText: {
-    fontSize: scale(14),
-    fontFamily: Fonts.primary,
-    color: "rgba(10, 14, 26, 0.5)",
-  },
-  eventInfoCard: {
-    backgroundColor: "#FFFFFF",
-    marginHorizontal: scale(16),
-    marginTop: verticalScale(16),
-    borderRadius: scale(16),
-    padding: scale(16),
-    borderWidth: 1,
-    borderColor: "rgba(27, 68, 205, 0.08)",
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    elevation: 3,
-  },
-  eventInfoContent: {
-    marginBottom: verticalScale(12),
-  },
-  eventName: {
-    fontSize: scale(18),
-    fontFamily: Fonts.bold,
-    color: "#0A0E1A",
-    marginBottom: verticalScale(6),
-  },
-  eventStats: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: scale(6),
-  },
-  eventStatsText: {
-    fontSize: scale(14),
-    fontFamily: Fonts.bold,
-    color: BLUE,
-  },
-  capacityBar: {
-    height: verticalScale(6),
-    backgroundColor: "rgba(27, 68, 205, 0.1)",
-    borderRadius: verticalScale(3),
-    overflow: "hidden",
-  },
-  capacityFill: {
-    height: "100%",
-    backgroundColor: BLUE,
-    borderRadius: verticalScale(3),
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: scale(16),
-    paddingTop: verticalScale(16),
-  },
-  sectionLabel: {
-    fontSize: scale(14),
-    fontFamily: Fonts.bold,
-    color: "rgba(10, 14, 26, 0.5)",
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-    marginBottom: verticalScale(12),
-  },
-  emptyState: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: verticalScale(60),
-    paddingHorizontal: scale(32),
-  },
-  emptyIcon: {
-    width: scale(96),
-    height: scale(96),
-    borderRadius: scale(48),
-    backgroundColor: "rgba(27, 68, 205, 0.08)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: verticalScale(20),
-  },
-  emptyTitle: {
-    fontSize: scale(20),
-    fontFamily: Fonts.bold,
-    color: "#0A0E1A",
-    marginBottom: verticalScale(8),
-  },
-  emptySubtitle: {
-    fontSize: scale(14),
-    fontFamily: Fonts.primary,
-    color: "rgba(10, 14, 26, 0.5)",
-    textAlign: "center",
-    lineHeight: scale(20),
-  },
-  participantCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: scale(16),
-    marginBottom: verticalScale(12),
-    borderWidth: 1,
-    borderColor: "rgba(27, 68, 205, 0.08)",
-    overflow: "hidden",
-  },
-  participantMain: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: scale(14),
-    gap: scale(12),
-  },
-  avatarContainer: {
-    position: "relative",
-  },
-  avatar: {
-    width: scale(52),
-    height: scale(52),
-    borderRadius: scale(26),
-    backgroundColor: "#FFFFFF",
-    borderWidth: 2,
-    borderColor: BLUES.b100,
-  },
-  avatarPlaceholder: {
-    backgroundColor: BLUES.b120,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarInitial: {
-    fontSize: scale(20),
-    fontFamily: Fonts.bold,
-    color: BLUE,
-  },
-  participantInfo: {
-    flex: 1,
-  },
-  nameRow: {
-    flexDirection: "row",
-    alignItems: "baseline",
-  },
-  participantName: {
-    fontSize: scale(16),
-    fontFamily: Fonts.bold,
-    color: "#0A0E1A",
-  },
-  participantAge: {
-    fontSize: scale(15),
-    fontFamily: Fonts.primary,
-    color: "#0A0E1A",
-  },
-  joinedText: {
-    fontSize: scale(13),
-    fontFamily: Fonts.primary,
-    color: "rgba(10, 14, 26, 0.5)",
-    marginTop: verticalScale(2),
-  },
-  hostActions: {
-    flexDirection: "row",
-    borderTopWidth: 1,
-    borderTopColor: "rgba(10, 14, 26, 0.06)",
-    paddingHorizontal: scale(14),
-    paddingVertical: verticalScale(10),
-  },
-  removeBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: scale(6),
-    paddingVertical: verticalScale(6),
-    paddingHorizontal: scale(12),
-    borderRadius: scale(8),
-    backgroundColor: "rgba(213, 34, 43, 0.08)",
-  },
-  removeBtnText: {
-    fontSize: scale(13),
-    fontFamily: Fonts.bold,
-    color: "#D5222B",
-  },
+  container: { flex: 1, backgroundColor: "#F8FAFF" },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: scale(16), paddingVertical: verticalScale(12), backgroundColor: "#FFF", borderBottomWidth: 1, borderBottomColor: "rgba(27,68,205,0.08)" },
+  backBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center", borderRadius: 20, backgroundColor: "rgba(10,14,26,0.05)" },
+  headerTitle: { fontSize: scale(18), fontFamily: Fonts.bold, color: "#0A0E1A" },
+  loadingContainer: { flex: 1, alignItems: "center", justifyContent: "center" },
+  infoCard: { backgroundColor: "#FFF", marginHorizontal: scale(16), marginTop: verticalScale(16), borderRadius: scale(16), padding: scale(16), elevation: 3 },
+  eventName: { fontSize: scale(18), fontFamily: Fonts.bold, color: "#0A0E1A", marginBottom: verticalScale(6) },
+  statsRow: { flexDirection: "row", alignItems: "center", gap: scale(6) },
+  statsText: { fontSize: scale(14), fontFamily: Fonts.bold, color: BLUE },
+  progressBar: { height: 6, backgroundColor: "rgba(27,68,205,0.1)", borderRadius: 3, marginTop: verticalScale(10), overflow: "hidden" },
+  progressFill: { height: "100%", backgroundColor: BLUE, borderRadius: 3 },
+  scroll: { flex: 1 },
+  scrollContent: { paddingHorizontal: scale(16), paddingTop: verticalScale(16) },
+  emptyState: { alignItems: "center", paddingVertical: verticalScale(60) },
+  emptyTitle: { fontSize: scale(18), fontFamily: Fonts.bold, color: "#0A0E1A", marginTop: verticalScale(12) },
+  card: { backgroundColor: "#FFF", borderRadius: scale(14), padding: scale(12), marginBottom: verticalScale(10), elevation: 2, borderWidth: 1, borderColor: "rgba(27,68,205,0.06)" },
+  cardRow: { flexDirection: "row", alignItems: "center" },
+  avatarWrap: { marginRight: scale(12) },
+  avatar: { width: scale(48), height: scale(48), borderRadius: scale(24), borderWidth: 2, borderColor: BLUES.b100 },
+  avatarPlaceholder: { backgroundColor: BLUES.b120, alignItems: "center", justifyContent: "center" },
+  avatarInitial: { fontSize: scale(18), fontFamily: Fonts.bold, color: BLUE },
+  info: { flex: 1 },
+  name: { fontSize: scale(15), fontFamily: Fonts.bold, color: "#0A0E1A" },
+  joinedText: { fontSize: scale(12), fontFamily: Fonts.primary, color: "rgba(10,14,26,0.5)", marginTop: verticalScale(2) },
+  removeBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginTop: verticalScale(10), paddingTop: verticalScale(10), borderTopWidth: 1, borderTopColor: "rgba(10,14,26,0.06)", gap: scale(4) },
+  removeText: { fontSize: scale(12), fontFamily: Fonts.bold, color: "#D5222B" },
 });

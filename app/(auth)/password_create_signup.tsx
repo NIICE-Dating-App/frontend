@@ -1,18 +1,29 @@
+import { Fonts } from "@/constants/theme";
+import { scale, verticalScale } from "@/utils/responsive";
+import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useState } from "react";
+import { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BackButton } from "../../components/BackButton";
-import { Fonts } from "../../constants/theme";
 import { supabase } from "../../lib/supabase";
+
+const Colors = {
+  BG: "#F5F7FA",
+  BLUE: "#1B44CD",
+  INK: "#0A0E1A",
+};
 
 export default function PasswordCreateSignup() {
   const params = useLocalSearchParams();
@@ -21,6 +32,8 @@ export default function PasswordCreateSignup() {
   const [password, setPassword] = useState("");
   const [verifyPassword, setVerifyPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showVerifyPassword, setShowVerifyPassword] = useState(false);
 
   const handleNext = async () => {
     if (!password || !verifyPassword) return;
@@ -75,127 +88,244 @@ export default function PasswordCreateSignup() {
   const isValid = password.length >= 6 && password === verifyPassword;
 
   return (
-    <SafeAreaView style={styles.container}>
-      <BackButton style={styles.backButton} />
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={verticalScale(20)}
+        >
+          <View style={styles.content}>
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => router.back()}
+              disabled={loading}
+            >
+              <Ionicons name="arrow-back" size={24} color={Colors.INK} />
+            </TouchableOpacity>
 
-      {/* Title */}
-      <View style={styles.titleWrapper}>
-        <Text style={styles.titleText}>Create a password</Text>
-      </View>
+            <View style={styles.headerSection}>
+              <Text style={styles.pageTitle}>Create a Password</Text>
+              <Text style={styles.pageSubtitle}>
+                Choose a strong password for your account
+              </Text>
+            </View>
 
-      {/* Password */}
-      <View style={styles.inputContainer}>
-        <Text style={styles.inputLabel}>Password</Text>
-        <TextInput
-          style={styles.input}
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry={true}
-          placeholder=""
-          placeholderTextColor="#999"
-          editable={!loading}
-        />
-      </View>
+            <View style={styles.inputCard}>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Password</Text>
+                <View style={styles.inputWrapper}>
+                  <Ionicons
+                    name="lock-closed-outline"
+                    size={20}
+                    color="rgba(10,14,26,0.4)"
+                    style={{ marginRight: scale(8) }}
+                  />
+                  <TextInput
+                    style={styles.textInput}
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry={!showPassword}
+                    placeholder="Enter password"
+                    placeholderTextColor="rgba(10,14,26,0.4)"
+                    editable={!loading}
+                    returnKeyType="next"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  <TouchableOpacity
+                    onPress={() => setShowPassword(!showPassword)}
+                    style={styles.eyeButton}
+                  >
+                    <Ionicons
+                      name={showPassword ? "eye-off-outline" : "eye-outline"}
+                      size={20}
+                      color="rgba(10,14,26,0.4)"
+                    />
+                  </TouchableOpacity>
+                </View>
+              </View>
 
-      {/* Verify Password */}
-      <View style={styles.inputContainer}>
-        <Text style={styles.inputLabel}>Verify Password</Text>
-        <TextInput
-          style={styles.input}
-          value={verifyPassword}
-          onChangeText={setVerifyPassword}
-          secureTextEntry={true}
-          placeholder=""
-          placeholderTextColor="#999"
-          editable={!loading}
-        />
-      </View>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Confirm Password</Text>
+                <View style={styles.inputWrapper}>
+                  <Ionicons
+                    name="lock-closed-outline"
+                    size={20}
+                    color="rgba(10,14,26,0.4)"
+                    style={{ marginRight: scale(8) }}
+                  />
+                  <TextInput
+                    style={styles.textInput}
+                    value={verifyPassword}
+                    onChangeText={setVerifyPassword}
+                    secureTextEntry={!showVerifyPassword}
+                    placeholder="Confirm password"
+                    placeholderTextColor="rgba(10,14,26,0.4)"
+                    editable={!loading}
+                    returnKeyType="done"
+                    onSubmitEditing={handleNext}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  <TouchableOpacity
+                    onPress={() => setShowVerifyPassword(!showVerifyPassword)}
+                    style={styles.eyeButton}
+                  >
+                    <Ionicons
+                      name={showVerifyPassword ? "eye-off-outline" : "eye-outline"}
+                      size={20}
+                      color="rgba(10,14,26,0.4)"
+                    />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
 
-      {/* Next Button */}
-      <TouchableOpacity
-        style={[styles.button, (!isValid || loading) && styles.buttonDisabled]}
-        onPress={handleNext}
-        disabled={!isValid || loading}
-        activeOpacity={0.9}
-      >
-        {loading ? (
-          <ActivityIndicator color="#EEF7FF" />
-        ) : (
-          <Text style={styles.buttonText}>Next</Text>
-        )}
-      </TouchableOpacity>
-    </SafeAreaView>
+            <TouchableOpacity
+              style={[
+                styles.nextButton,
+                (!isValid || loading) && styles.nextButtonDisabled,
+              ]}
+              onPress={handleNext}
+              disabled={!isValid || loading}
+              activeOpacity={0.9}
+            >
+              {loading ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.nextButtonText}>Continue</Text>
+              )}
+            </TouchableOpacity>
+
+            <View style={styles.infoNote}>
+              <Ionicons
+                name="information-circle-outline"
+                size={18}
+                color="rgba(10,14,26,0.5)"
+                style={{ marginRight: scale(8) }}
+              />
+              <Text style={styles.infoNoteText}>
+                Password must be at least 6 characters long
+              </Text>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </TouchableWithoutFeedback>
   );
 }
-
-const BG = "#EEF7FF";
-const BOX = "#DDE9F4";
-const INK = "#000910";
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: BG,
-    paddingHorizontal: 24,
+    backgroundColor: Colors.BG,
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: scale(20),
+    paddingTop: verticalScale(20),
   },
   backButton: {
-    marginTop: 16,
-    marginBottom: 24,
-  },
-  titleWrapper: {
-    marginBottom: 36,
-  },
-  titleText: {
-    color: INK,
-    fontSize: 32,
-    fontWeight: "bold",
-    fontFamily: Fonts.bold,
-    lineHeight: 60,
-  },
-  inputContainer: {
-    marginBottom: 24,
-  },
-  inputLabel: {
-    fontSize: 16,
-    fontWeight: "600",
-    fontFamily: Fonts.bold,
-    color: INK,
-    marginBottom: 8,
-  },
-  input: {
-    height: 52,
-    backgroundColor: BOX,
-    borderRadius: 26,
-    paddingHorizontal: 18,
-    fontSize: 18,
-    color: "#1A44CC",
-    letterSpacing: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  button: {
-    height: 56,
-    backgroundColor: INK,
-    borderRadius: 28,
+    width: scale(40),
+    height: scale(40),
+    borderRadius: scale(20),
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 8,
-    shadowColor: "#00000040",
-    shadowOpacity: 0.3,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 4,
-    elevation: 4,
+    marginBottom: verticalScale(32),
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  buttonDisabled: {
-    opacity: 0.6,
+  headerSection: {
+    marginBottom: verticalScale(32),
   },
-  buttonText: {
-    color: BG,
-    fontSize: 18,
-    fontWeight: "bold",
+  pageTitle: {
+    fontSize: scale(28),
     fontFamily: Fonts.bold,
+    color: Colors.INK,
+    marginBottom: verticalScale(4),
+  },
+  pageSubtitle: {
+    fontSize: scale(15),
+    fontFamily: Fonts.primary,
+    color: "rgba(10,14,26,0.6)",
+  },
+  inputCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: scale(16),
+    padding: scale(20),
+    marginBottom: verticalScale(24),
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  inputGroup: {
+    marginBottom: verticalScale(20),
+  },
+  inputLabel: {
+    fontSize: scale(14),
+    fontFamily: Fonts.bold,
+    color: "rgba(10,14,26,0.6)",
+    marginBottom: verticalScale(12),
+  },
+  inputWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderBottomWidth: 2,
+    borderBottomColor: Colors.BLUE,
+    paddingBottom: verticalScale(8),
+  },
+  textInput: {
+    flex: 1,
+    fontSize: scale(17),
+    fontFamily: Fonts.bold,
+    color: Colors.INK,
+    paddingVertical: 0,
+  },
+  eyeButton: {
+    padding: scale(4),
+  },
+  nextButton: {
+    backgroundColor: Colors.BLUE,
+    borderRadius: scale(50),
+    paddingVertical: verticalScale(16),
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: Colors.BLUE,
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+    marginBottom: verticalScale(24),
+  },
+  nextButtonDisabled: {
+    opacity: 0.5,
+    shadowOpacity: 0.1,
+  },
+  nextButtonText: {
+    fontSize: scale(16),
+    fontFamily: Fonts.bold,
+    color: "#FFFFFF",
+  },
+  infoNote: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    padding: scale(16),
+    backgroundColor: "rgba(27,68,205,0.06)",
+    borderRadius: scale(12),
+  },
+  infoNoteText: {
+    flex: 1,
+    fontSize: scale(13),
+    fontFamily: Fonts.primary,
+    color: "rgba(10,14,26,0.6)",
+    lineHeight: verticalScale(18),
+    paddingTop: verticalScale(4.5),
   },
 });

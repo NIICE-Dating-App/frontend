@@ -1,19 +1,28 @@
+import { Fonts } from "@/constants/theme";
+import { scale, verticalScale } from "@/utils/responsive";
+import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import { useState } from "react";
 import {
+  Keyboard,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   View,
 } from "react-native";
 import CountryPicker, { Country, CountryCode } from "react-native-country-picker-modal";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BackButton } from "../../components/BackButton";
-import { Fonts } from "../../constants/theme";
+
+const Colors = {
+  BG: "#F5F7FA",
+  BLUE: "#1B44CD",
+  INK: "#0A0E1A",
+};
 
 export default function SignupPhone() {
-  const [countryCode, setCountryCode] = useState<CountryCode>("TR");
+  const [countryCode, setCountryCode] = useState<CountryCode>("US");
   const [country, setCountry] = useState<Country | null>(null);
   const [phoneNumber, setPhoneNumber] = useState("");
   const [pickerVisible, setPickerVisible] = useState(false);
@@ -25,131 +34,202 @@ export default function SignupPhone() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Back Button */}
-      <BackButton style={styles.backButton} />
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <View style={styles.content}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <Ionicons name="arrow-back" size={24} color={Colors.INK} />
+          </TouchableOpacity>
 
-      {/* Title */}
-      <View style={styles.titleWrapper}>
-        <Text style={styles.titleBlue}>Let's start</Text>
-        <Text style={styles.titleBlack}>with your number</Text>
-      </View>
+          <View style={styles.headerSection}>
+            <Text style={styles.pageTitle}>Your Phone Number</Text>
+            <Text style={styles.pageSubtitle}>
+              We'll send you a verification code
+            </Text>
+          </View>
 
-      {/* Country + Phone Input */}
-      <View style={styles.inputRow}>
-        <TouchableOpacity
-          style={styles.countryBox}
-          onPress={() => setPickerVisible(true)}
-        >
-          <CountryPicker
-            withFlag
-            withCallingCode   // ✅ show +90
-            withFilter
-            withEmoji
-            countryCode={countryCode}
-            onSelect={onSelect}
-            visible={pickerVisible}
-            onClose={() => setPickerVisible(false)}
-          />
-          <Text style={styles.callingCodeText}>
-            {country?.callingCode ? `+${country.callingCode}` : "+90"}
-          </Text>
-        </TouchableOpacity>
+          <View style={styles.inputCard}>
+            <Text style={styles.inputLabel}>Phone Number</Text>
+            <View style={styles.inputRow}>
+              <TouchableOpacity
+                style={styles.countrySelector}
+                onPress={() => setPickerVisible(true)}
+              >
+                <CountryPicker
+                  withFlag
+                  withCallingCode
+                  withFilter
+                  withEmoji
+                  countryCode={countryCode}
+                  onSelect={onSelect}
+                  visible={pickerVisible}
+                  onClose={() => setPickerVisible(false)}
+                />
+                <Text style={styles.callingCode}>
+                  {country?.callingCode ? `+${country.callingCode}` : "Code"}
+                </Text>
+                <Ionicons
+                  name="chevron-down"
+                  size={18}
+                  color="rgba(10,14,26,0.4)"
+                  style={{ marginLeft: scale(4) }}
+                />
+              </TouchableOpacity>
 
-        <TextInput
-          style={styles.phoneInput}
-          placeholder="Enter phone number"
-          placeholderTextColor="#999"
-          keyboardType="phone-pad"
-          value={phoneNumber}
-          onChangeText={setPhoneNumber}
-        />
-      </View>
+              <TextInput
+                style={styles.phoneInput}
+                placeholder="Enter phone number"
+                placeholderTextColor="rgba(10,14,26,0.4)"
+                keyboardType="phone-pad"
+                value={phoneNumber}
+                onChangeText={setPhoneNumber}
+                returnKeyType="done"
+                onSubmitEditing={Keyboard.dismiss}
+              />
+            </View>
+          </View>
 
-      {/* Next Button */}
-      <TouchableOpacity
-        style={styles.button}
-        onPress={() => router.push("/phone_verif_signup")}
-        >
-        <Text style={styles.buttonText}>Next</Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.nextButton}
+            onPress={() => router.push("/phone_verif_signup")}
+          >
+            <Text style={styles.nextButtonText}>Continue</Text>
+          </TouchableOpacity>
 
-    </SafeAreaView>
+          <View style={styles.infoNote}>
+            <Ionicons
+              name="information-circle-outline"
+              size={18}
+              color="rgba(10,14,26,0.5)"
+              style={{ marginRight: scale(8) }}
+            />
+            <Text style={styles.infoNoteText}>
+              Standard message and data rates may apply
+            </Text>
+          </View>
+        </View>
+      </SafeAreaView>
+    </TouchableWithoutFeedback>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#EEF7FF",
-    paddingHorizontal: 24,
+    backgroundColor: Colors.BG,
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: scale(20),
+    paddingTop: verticalScale(20),
   },
   backButton: {
-    marginTop: 16,
-    marginBottom: 40,
+    width: scale(40),
+    height: scale(40),
+    borderRadius: scale(20),
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: verticalScale(32),
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  titleBlue: {
-    color: "#1A44CC",
-    fontSize: 56,
-    fontWeight: "bold",
+  headerSection: {
+    marginBottom: verticalScale(32),
+  },
+  pageTitle: {
+    fontSize: scale(28),
     fontFamily: Fonts.bold,
-    lineHeight: 80,   // just above fontSize (prevents clipping)
+    color: Colors.INK,
+    marginBottom: verticalScale(4),
   },
-  titleBlack: {
-    color: "#000910",
-    fontSize: 30,
-    fontWeight: "bold",
+  pageSubtitle: {
+    fontSize: scale(15),
+    fontFamily: Fonts.primary,
+    color: "rgba(10,14,26,0.6)",
+  },
+  inputCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: scale(16),
+    padding: scale(20),
+    marginBottom: verticalScale(24),
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  inputLabel: {
+    fontSize: scale(14),
     fontFamily: Fonts.bold,
-    lineHeight: 45,
-    marginTop: -6,    // pulls it closer under the blue text
-  },
-  titleWrapper: {
-    marginBottom: 28, // keeps input field close after the title
+    color: "rgba(10,14,26,0.6)",
+    marginBottom: verticalScale(12),
   },
   inputRow: {
     flexDirection: "row",
     alignItems: "center",
-    borderBottomWidth: 3,
-    borderBottomColor: "#1A44CC",
-    marginBottom: 40,
-    paddingBottom: 6,
+    borderBottomWidth: 2,
+    borderBottomColor: Colors.BLUE,
+    paddingBottom: verticalScale(8),
   },
-  countryBox: {
+  countrySelector: {
     flexDirection: "row",
     alignItems: "center",
-    marginRight: 12,
+    paddingRight: scale(12),
+    borderRightWidth: 1,
+    borderRightColor: "rgba(10,14,26,0.12)",
+    marginRight: scale(12),
   },
-  callingCodeText: {
-    fontSize: 20,
-    fontWeight: "bold",
+  callingCode: {
+    fontSize: scale(17),
     fontFamily: Fonts.bold,
-    color: "#000910",
-    marginLeft: 6,
+    color: Colors.INK,
+    marginLeft: scale(8),
   },
   phoneInput: {
     flex: 1,
-    fontSize: 20,
-    fontWeight: "bold", // ✅ matches design
+    fontSize: scale(17),
     fontFamily: Fonts.bold,
-    color: "#000910",
+    color: Colors.INK,
+    paddingVertical: 0,
   },
-  button: {
-    height: 56, // ✅ same as login button
-    backgroundColor: "#000910",
-    borderRadius: 28,
+  nextButton: {
+    backgroundColor: Colors.BLUE,
+    borderRadius: scale(50),
+    paddingVertical: verticalScale(16),
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 24,
-    shadowColor: "#00000040",
-    shadowOpacity: 0.3,
+    shadowColor: Colors.BLUE,
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 4,
     elevation: 4,
+    marginBottom: verticalScale(24),
   },
-  buttonText: {
-    color: "#EEF7FF",
-    fontSize: 18,
-    fontWeight: "bold",
+  nextButtonText: {
+    fontSize: scale(16),
     fontFamily: Fonts.bold,
+    color: "#FFFFFF",
+  },
+  infoNote: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    padding: scale(16),
+    backgroundColor: "rgba(27,68,205,0.06)",
+    borderRadius: scale(12),
+  },
+  infoNoteText: {
+    flex: 1,
+    fontSize: scale(13),
+    fontFamily: Fonts.primary,
+    color: "rgba(10,14,26,0.6)",
+    lineHeight: verticalScale(18),
+    paddingTop: verticalScale(4.5),
   },
 });

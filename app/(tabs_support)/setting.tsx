@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { scale, verticalScale } from "@/utils/responsive";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
     ActivityIndicator,
     Alert,
@@ -14,6 +14,7 @@ import {
     ScrollView,
     StatusBar,
     StyleSheet,
+    Switch,
     Text,
     TextInput,
     TouchableOpacity,
@@ -30,6 +31,62 @@ export default function SettingsScreen() {
   const [loading, setLoading] = useState(false);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [confirmationText, setConfirmationText] = useState("");
+  
+  // Profile visibility state
+  const [isPublicProfile, setIsPublicProfile] = useState(true);
+  const [visibilityLoading, setVisibilityLoading] = useState(true);
+
+  // ========== FETCH PROFILE VISIBILITY ==========
+  useEffect(() => {
+    fetchProfileVisibility();
+  }, []);
+
+  const fetchProfileVisibility = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("profile_visibility")
+        .eq("id", user.id)
+        .single();
+
+      if (error) throw error;
+      
+      setIsPublicProfile(data?.profile_visibility === "public");
+    } catch (error) {
+      console.error("Error fetching profile visibility:", error);
+    } finally {
+      setVisibilityLoading(false);
+    }
+  };
+
+  // ========== TOGGLE PROFILE VISIBILITY ==========
+  const handleVisibilityToggle = async (value: boolean) => {
+    const newVisibility = value ? "public" : "private";
+    const previousValue = isPublicProfile;
+    
+    // Optimistic update
+    setIsPublicProfile(value);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("User not found");
+
+      const { error } = await supabase
+        .from("profiles")
+        .update({ profile_visibility: newVisibility })
+        .eq("id", user.id);
+
+      if (error) throw error;
+    } catch (error: any) {
+      // Revert on error
+      setIsPublicProfile(previousValue);
+      console.error("Error updating visibility:", error);
+      Alert.alert("Error", "Failed to update profile visibility. Please try again.");
+    }
+  };
 
   // ========== LOGOUT FUNCTION ==========
   const handleLogout = async () => {
@@ -48,14 +105,12 @@ export default function SettingsScreen() {
             try {
               setLoading(true);
               
-              // Sign out from Supabase
               const { error } = await supabase.auth.signOut();
               
               if (error) {
                 throw error;
               }
 
-              // Navigate to login screen
               router.replace("/login");
             } catch (error: any) {
               console.error("Logout error:", error);
@@ -76,7 +131,6 @@ export default function SettingsScreen() {
   };
 
   const confirmDeleteProfile = async () => {
-    // Check confirmation text
     if (confirmationText.toLowerCase().trim() !== "delete") {
       Alert.alert("Invalid Input", 'Please type "DELETE" to confirm');
       return;
@@ -85,16 +139,12 @@ export default function SettingsScreen() {
     try {
       setLoading(true);
 
-      // Get current user
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       
       if (userError || !user) {
         throw new Error("User not found");
       }
 
-      // Delete related data first (in order of dependencies)
-      
-      // 1. Delete user photos
       const { error: photosError } = await supabase
         .from("user_photos")
         .delete()
@@ -104,7 +154,6 @@ export default function SettingsScreen() {
         console.error("Error deleting photos:", photosError);
       }
 
-      // 2. Delete frames
       const { error: framesError } = await supabase
         .from("frames")
         .delete()
@@ -114,7 +163,6 @@ export default function SettingsScreen() {
         console.error("Error deleting frames:", framesError);
       }
 
-      // 3. Delete user hobbies
       const { error: hobbiesError } = await supabase
         .from("user_hobbies")
         .delete()
@@ -124,7 +172,6 @@ export default function SettingsScreen() {
         console.error("Error deleting hobbies:", hobbiesError);
       }
 
-      // 4. Delete user modes
       const { error: modesError } = await supabase
         .from("user_modes")
         .delete()
@@ -134,7 +181,6 @@ export default function SettingsScreen() {
         console.error("Error deleting modes:", modesError);
       }
 
-      // 5. Delete lifestyle data
       const { error: lifestyleError } = await supabase
         .from("lifestyle")
         .delete()
@@ -144,7 +190,6 @@ export default function SettingsScreen() {
         console.error("Error deleting lifestyle:", lifestyleError);
       }
 
-      // 6. Delete match requests
       const { error: matchRequestsError } = await supabase
         .from("match_requests")
         .delete()
@@ -154,7 +199,6 @@ export default function SettingsScreen() {
         console.error("Error deleting match requests:", matchRequestsError);
       }
 
-      // 7. Delete conversations and messages
       const { data: conversations } = await supabase
         .from("conversations")
         .select("id")
@@ -174,7 +218,6 @@ export default function SettingsScreen() {
           .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`);
       }
 
-      // 8. Delete profile
       const { error: profileError } = await supabase
         .from("profiles")
         .delete()
@@ -184,18 +227,15 @@ export default function SettingsScreen() {
         throw profileError;
       }
 
-      // 9. Delete auth user (this also signs them out)
       const { error: deleteUserError } = await supabase.rpc(
         'delete_user'
       );
 
       if (deleteUserError) {
-        // If RPC doesn't exist, try alternative method
         console.warn("delete_user RPC not available, using signOut");
         await supabase.auth.signOut();
       }
 
-      // Close modal and show success
       setDeleteModalVisible(false);
       
       Alert.alert(
@@ -242,11 +282,75 @@ export default function SettingsScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        {/* Privacy Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Privacy</Text>
+
+          <View style={styles.settingCard}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingIconContainer}>
+                <Ionicons
+                  name={isPublicProfile ? "eye-outline" : "eye-off-outline"}
+                  size={22}
+                  color={BLUE}
+                />
+              </View>
+              <View style={styles.settingTextContainer}>
+                <Text style={styles.settingLabel}>Public Profile</Text>
+                <Text style={styles.settingDescription}>
+                  {isPublicProfile
+                    ? "Anyone nearby can see your full profile"
+                    : "Only matches see your full profile"}
+                </Text>
+              </View>
+              {visibilityLoading ? (
+                <ActivityIndicator size="small" color={BLUE} />
+              ) : (
+                <Switch
+                  value={isPublicProfile}
+                  onValueChange={handleVisibilityToggle}
+                  trackColor={{ 
+                    false: "rgba(10,14,26,0.1)", 
+                    true: "rgba(27,68,205,0.3)" 
+                  }}
+                  thumbColor={isPublicProfile ? BLUE : "#f4f3f4"}
+                  ios_backgroundColor="rgba(10,14,26,0.1)"
+                />
+              )}
+            </View>
+
+            {/* Visibility Info */}
+            <View style={styles.visibilityInfo}>
+              <View style={styles.visibilityInfoRow}>
+                <Ionicons
+                  name="checkmark-circle"
+                  size={16}
+                  color={isPublicProfile ? "#34C759" : BLUE}
+                />
+                <Text style={styles.visibilityInfoText}>
+                  {isPublicProfile
+                    ? "Full profile visible in events, groups & nearby"
+                    : "Limited info shown (photo, name, age, bio)"}
+                </Text>
+              </View>
+              <View style={styles.visibilityInfoRow}>
+                <Ionicons
+                  name="shield-checkmark"
+                  size={16}
+                  color={BLUE}
+                />
+                <Text style={styles.visibilityInfoText}>
+                  Matches always see your full profile
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
         {/* Account Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Account</Text>
 
-          {/* Logout Button - Blue style matching Frames button */}
           <TouchableOpacity
             style={styles.logoutButton}
             onPress={handleLogout}
@@ -269,7 +373,6 @@ export default function SettingsScreen() {
             )}
           </TouchableOpacity>
 
-          {/* Delete Profile Button - Gradient style matching Events button */}
           <TouchableOpacity
             style={styles.deleteButton}
             onPress={handleDeleteProfile}
@@ -311,21 +414,17 @@ export default function SettingsScreen() {
           />
           
           <View style={styles.modalContent}>
-            {/* Warning Icon */}
             <View style={styles.warningIconContainer}>
               <Ionicons name="warning" size={48} color="#FF3B30" />
             </View>
 
-            {/* Title */}
             <Text style={styles.modalTitle}>Delete Account?</Text>
 
-            {/* Description */}
             <Text style={styles.modalDescription}>
               This action cannot be undone. All your data, photos, matches, and
               messages will be permanently deleted.
             </Text>
 
-            {/* Confirmation Input */}
             <View style={styles.inputContainer}>
               <Text style={styles.inputLabel}>
                 Type <Text style={styles.inputLabelBold}>DELETE</Text> to
@@ -342,7 +441,6 @@ export default function SettingsScreen() {
               />
             </View>
 
-            {/* Action Buttons */}
             <View style={styles.modalActions}>
               <TouchableOpacity
                 style={styles.cancelButton}
@@ -435,7 +533,69 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
 
-  // Logout Button - Matching Frames button (solid blue)
+  // Setting Card
+  settingCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: scale(16),
+    padding: scale(16),
+    borderWidth: 1,
+    borderColor: "rgba(27,68,205,0.1)",
+    shadowColor: BLUE,
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  settingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  settingIconContainer: {
+    width: scale(40),
+    height: scale(40),
+    borderRadius: scale(12),
+    backgroundColor: "rgba(27,68,205,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: scale(12),
+  },
+  settingTextContainer: {
+    flex: 1,
+    marginRight: scale(12),
+  },
+  settingLabel: {
+    fontSize: scale(16),
+    fontFamily: Fonts.bold,
+    color: INK,
+    marginBottom: verticalScale(2),
+  },
+  settingDescription: {
+    fontSize: scale(13),
+    fontFamily: Fonts.primary,
+    color: "rgba(10,14,26,0.6)",
+  },
+
+  // Visibility Info
+  visibilityInfo: {
+    marginTop: verticalScale(16),
+    paddingTop: verticalScale(16),
+    borderTopWidth: 1,
+    borderTopColor: "rgba(27,68,205,0.08)",
+    gap: verticalScale(10),
+  },
+  visibilityInfoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: scale(10),
+  },
+  visibilityInfoText: {
+    fontSize: scale(13),
+    fontFamily: Fonts.primary,
+    color: "rgba(10,14,26,0.7)",
+    flex: 1,
+  },
+
+  // Logout Button
   logoutButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -458,7 +618,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
 
-  // Delete Button - Matching Events button (gradient with border)
+  // Delete Button
   deleteButton: {
     borderRadius: scale(28),
     borderWidth: 1.5,
@@ -515,8 +675,6 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 12,
   },
-
-  // Warning Icon
   warningIconContainer: {
     width: scale(80),
     height: scale(80),
@@ -527,8 +685,6 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     marginBottom: verticalScale(20),
   },
-
-  // Modal Text
   modalTitle: {
     fontSize: scale(24),
     fontFamily: Fonts.bold,
@@ -545,8 +701,6 @@ const styles = StyleSheet.create({
     lineHeight: scale(22),
     marginBottom: verticalScale(24),
   },
-
-  // Input
   inputContainer: {
     marginBottom: verticalScale(24),
   },
@@ -573,8 +727,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(27,68,205,0.12)",
   },
-
-  // Modal Actions
   modalActions: {
     flexDirection: "row",
     gap: scale(12),

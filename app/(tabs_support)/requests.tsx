@@ -22,6 +22,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Colors } from "@/components/theme";
 import { Fonts } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
+import type { ProfileAccessLevel } from "@/types/profile";
 import { scale, verticalScale } from "@/utils/responsive";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -40,10 +41,13 @@ interface MatchRequest {
   full_name: string | null;
   age: number | null;
   main_photo_url: string | null;
+  bio: string | null;
+  looking_for: string[] | null;
   status: MatchStatus;
   is_incoming: boolean;
   sender_message: string | null;
   created_at: string;
+  access_level: ProfileAccessLevel;
 }
 
 // ================== UTILITY FUNCTIONS ==================
@@ -78,6 +82,7 @@ const RequestRow: React.FC<{
   onDecline?: () => void 
 }> = ({ request, onPress, onAccept, onDecline }) => {
   const scaleAnim = useRef(new RNAnimated.Value(1)).current;
+  const isLimited = request.access_level === 'limited';
   
   const handlePressIn = () => {
     RNAnimated.timing(scaleAnim, {
@@ -106,7 +111,8 @@ const RequestRow: React.FC<{
       <RNAnimated.View 
         style={[
           styles.requestRow,
-          { transform: [{ scale: scaleAnim }] }
+          { transform: [{ scale: scaleAnim }] },
+          isLimited && styles.requestRowLimited
         ]}
       >
         <View style={styles.requestAvatar}>
@@ -117,15 +123,34 @@ const RequestRow: React.FC<{
               <Ionicons name="person" size={20} color="rgba(10,14,26,0.4)" />
             </View>
           )}
+          {/* Limited access indicator on avatar */}
+          {isLimited && (
+            <View style={styles.limitedBadge}>
+              <Ionicons name="lock-closed" size={10} color="#FFFFFF" />
+            </View>
+          )}
         </View>
         <View style={styles.requestInfo}>
-          <Text style={styles.requestName} numberOfLines={1}>
-            {capitalizeName(request.full_name) || "Someone"}
-            {request.age ? `, ${request.age}` : ""}
-          </Text>
+          <View style={styles.nameRow}>
+            <Text style={styles.requestName} numberOfLines={1}>
+              {capitalizeName(request.full_name) || "Someone"}
+              {request.age ? `, ${request.age}` : ""}
+            </Text>
+            {isLimited && (
+              <View style={styles.privateBadge}>
+                <Text style={styles.privateBadgeText}>Private</Text>
+              </View>
+            )}
+          </View>
           <Text style={styles.requestSubtext}>
             Connection request
           </Text>
+          {/* Show bio snippet for limited profiles (part of LIMITED access fields) */}
+          {isLimited && request.bio && (
+            <Text style={styles.requestBioSnippet} numberOfLines={1}>
+              {request.bio}
+            </Text>
+          )}
           {request.sender_message && request.is_incoming && (
             <Text style={styles.requestMessage} numberOfLines={1}>"{request.sender_message}"</Text>
           )}
@@ -155,16 +180,27 @@ const RequestRow: React.FC<{
             </TouchableOpacity>
           </View>
         ) : (
-          <View style={[
-            styles.requestStatusBadge, 
-            request.status === "accepted" && styles.requestStatusAccepted
-          ]}>
-            <Text style={[
-              styles.requestStatusText, 
-              request.status === "accepted" && styles.requestStatusTextAccepted
+          <View style={styles.rightSection}>
+            {/* Show chevron for full access profiles */}
+            {request.access_level === 'full' && (
+              <Ionicons 
+                name="chevron-forward" 
+                size={20} 
+                color="rgba(10,14,26,0.3)" 
+                style={styles.chevron}
+              />
+            )}
+            <View style={[
+              styles.requestStatusBadge, 
+              request.status === "accepted" && styles.requestStatusAccepted
             ]}>
-              {request.status === "pending" ? "Pending" : request.status === "accepted" ? "Accepted" : "Declined"}
-            </Text>
+              <Text style={[
+                styles.requestStatusText, 
+                request.status === "accepted" && styles.requestStatusTextAccepted
+              ]}>
+                {request.status === "pending" ? "Pending" : request.status === "accepted" ? "Accepted" : "Declined"}
+              </Text>
+            </View>
           </View>
         )}
       </RNAnimated.View>
@@ -188,18 +224,57 @@ function RequestsScreen() {
     return data?.user?.id;
   }, []);
 
-  const getUserPreview = useCallback(async (targetUserId: string) => {
+  const getUserPreview = useCallback(async (targetUserId: string): Promise<{
+    full_name: string | null;
+    age: number | null;
+    main_photo_url: string | null;
+    bio: string | null;
+    looking_for: string[] | null;
+    access_level: ProfileAccessLevel;
+  }> => {
     try {
-      const { data } = await supabase.rpc('get_matched_user_profile', { target_user_id: targetUserId });
-      const row = Array.isArray(data) ? data[0] : data;
-      let photoUrl = row?.main_photo_url;
+      // Use get_profile_for_viewer which respects access levels
+      const { data, error } = await supabase.rpc('get_profile_for_viewer', { 
+        p_target_user_id: targetUserId 
+      });
+      
+      if (error || !data) {
+        return { 
+          full_name: null, 
+          age: null, 
+          main_photo_url: null,
+          bio: null,
+          looking_for: null,
+          access_level: 'none' 
+        };
+      }
+
+      // Handle photo URL signing if needed
+      let photoUrl = data.main_photo_url;
       if (photoUrl && !photoUrl.startsWith('http')) {
-        const { data: signedData } = await supabase.storage.from("user_photos").createSignedUrl(photoUrl, 3600);
+        const { data: signedData } = await supabase.storage
+          .from("user_photos")
+          .createSignedUrl(photoUrl, 3600);
         photoUrl = signedData?.signedUrl || null;
       }
-      return { full_name: row?.full_name ?? null, age: row?.age ?? null, main_photo_url: photoUrl };
+
+      return { 
+        full_name: data.full_name ?? null, 
+        age: data.age ?? null, 
+        main_photo_url: photoUrl,
+        bio: data.bio ?? null,
+        looking_for: data.looking_for ?? null,
+        access_level: data.access_level as ProfileAccessLevel
+      };
     } catch { 
-      return { full_name: null, age: null, main_photo_url: null }; 
+      return { 
+        full_name: null, 
+        age: null, 
+        main_photo_url: null,
+        bio: null,
+        looking_for: null,
+        access_level: 'none' 
+      }; 
     }
   }, []);
 
@@ -225,16 +300,23 @@ function RequestsScreen() {
         const isIncoming = row.target_id === uid;
         const otherId = isIncoming ? row.requester_id : row.target_id;
         const preview = await getUserPreview(otherId);
+        
+        // Skip if no access
+        if (preview.access_level === 'none') continue;
+        
         const req: MatchRequest = { 
           id: row.id, 
           other_user_id: otherId, 
           full_name: preview.full_name, 
           age: preview.age, 
-          main_photo_url: preview.main_photo_url, 
+          main_photo_url: preview.main_photo_url,
+          bio: preview.bio,
+          looking_for: preview.looking_for,
           status: row.status, 
           is_incoming: isIncoming, 
           sender_message: row.sender_message, 
-          created_at: row.created_at 
+          created_at: row.created_at,
+          access_level: preview.access_level
         };
         if (isIncoming) incoming.push(req); 
         else outgoing.push(req);
@@ -304,8 +386,23 @@ function RequestsScreen() {
     }
   };
 
-  const handleViewProfile = (targetUserId: string) => {
-    router.push({ pathname: "/profile", params: { userId: targetUserId } });
+  const handleViewProfile = (request: MatchRequest) => {
+    // Only navigate to full profile for users with 'full' access
+    if (request.access_level === 'full') {
+      router.push({ 
+        pathname: "/(tabs_support)/other_profile", 
+        params: { userId: request.other_user_id } 
+      });
+    } else if (request.access_level === 'limited') {
+      // Show limited info alert for private profiles
+      Alert.alert(
+        "Private Profile",
+        `${capitalizeName(request.full_name) || "This user"} has a private profile. You can see limited information until they accept your request or you become connected.`,
+        [
+          { text: "OK", style: "default" }
+        ]
+      );
+    }
   };
 
   const pendingCount = incomingRequests.filter(r => r.status === "pending").length;
@@ -410,7 +507,7 @@ function RequestsScreen() {
               <RequestRow 
                 key={r.id} 
                 request={r} 
-                onPress={() => handleViewProfile(r.other_user_id)} 
+                onPress={() => handleViewProfile(r)} 
                 onAccept={r.is_incoming && r.status === "pending" ? () => handleAcceptRequest(r) : undefined} 
                 onDecline={r.is_incoming && r.status === "pending" ? () => handleDeclineRequest(r) : undefined} 
               />
@@ -602,13 +699,18 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
+  requestRowLimited: {
+    borderColor: "rgba(156,163,175,0.2)",
+    backgroundColor: "#FAFAFA",
+  },
   requestAvatar: { 
     width: scale(56), 
     height: scale(56), 
     borderRadius: scale(28), 
     overflow: "hidden", 
     backgroundColor: "#E8F4FF", 
-    marginRight: scale(14) 
+    marginRight: scale(14),
+    position: "relative",
   },
   requestPhoto: { 
     width: "100%", 
@@ -619,21 +721,57 @@ const styles = StyleSheet.create({
     alignItems: "center", 
     justifyContent: "center" 
   },
+  limitedBadge: {
+    position: "absolute",
+    bottom: 0,
+    right: 0,
+    width: scale(18),
+    height: scale(18),
+    borderRadius: scale(9),
+    backgroundColor: "rgba(107,114,128,0.9)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+  },
   requestInfo: { 
     flex: 1, 
     marginRight: scale(12) 
   },
+  nameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: scale(6),
+    marginBottom: verticalScale(2),
+  },
   requestName: { 
     fontFamily: Fonts.bold, 
     fontSize: scale(16), 
-    color: INK, 
-    marginBottom: verticalScale(2) 
+    color: INK,
+    flexShrink: 1,
+  },
+  privateBadge: {
+    backgroundColor: "rgba(107,114,128,0.1)",
+    paddingHorizontal: scale(6),
+    paddingVertical: verticalScale(2),
+    borderRadius: scale(4),
+  },
+  privateBadgeText: {
+    fontFamily: Fonts.primary,
+    fontSize: scale(10),
+    color: "rgba(107,114,128,0.8)",
   },
   requestSubtext: { 
     fontFamily: Fonts.primary, 
     fontSize: scale(13), 
     color: "rgba(10,14,26,0.6)", 
     marginBottom: verticalScale(2) 
+  },
+  requestBioSnippet: {
+    fontFamily: Fonts.primary,
+    fontSize: scale(12),
+    color: "rgba(10,14,26,0.5)",
+    marginBottom: verticalScale(2),
   },
   requestMessage: { 
     fontFamily: Fonts.primary, 
@@ -673,6 +811,15 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 4,
     elevation: 4,
+  },
+
+  // Right Section
+  rightSection: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  chevron: {
+    marginRight: scale(8),
   },
 
   // Status Badge

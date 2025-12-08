@@ -1,24 +1,31 @@
+import { Fonts } from "@/constants/theme";
+import { scale, verticalScale } from "@/utils/responsive";
+import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BackButton } from "../../components/BackButton";
-import { Fonts } from "../../constants/theme";
-// import { router } from "expo-router"; // use if you want navigation
+
+const Colors = {
+  BG: "#F5F7FA",
+  BLUE: "#1B44CD",
+  INK: "#0A0E1A",
+};
 
 export default function VerifSignup() {
   const [code, setCode] = useState("");
   const [cooldown, setCooldown] = useState(30);
 
-  // cooldown timer for Resend
   useEffect(() => {
     if (cooldown <= 0) return;
     const t = setInterval(() => setCooldown((s) => s - 1), 1000);
@@ -27,173 +34,215 @@ export default function VerifSignup() {
 
   const handleResend = () => {
     if (cooldown > 0) return;
-    // TODO: trigger resend logic here
     setCooldown(30);
-  };
-
-  const handleNext = () => {
-    // TODO: verify code logic here
-    // router.push("/next-screen");
   };
 
   const isValid = code.trim().length === 6;
 
   return (
-    <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        {/* Back */}
-        <BackButton style={styles.backButton} />
-
-        {/* Title */}
-        <View style={styles.titleWrapper}>
-          <Text style={styles.titleText}>Enter your code</Text>
-        </View>
-
-        {/* Code input + Resend */}
-        <View style={styles.codeArea}>
-          {/* keep code centered regardless of resend */}
-          <View style={styles.codeBox}>
-            <TextInput
-              value={code}
-              onChangeText={(t) => setCode(t.replace(/[^0-9]/g, "").slice(0, 6))}
-              keyboardType="number-pad"
-              maxLength={6}
-              autoFocus
-              style={styles.codeInput}
-              placeholder=""
-              textAlign="center"
-            />
-            <View style={styles.codeUnderline} />
-          </View>
-
-          <TouchableOpacity
-            onPress={handleResend}
-            disabled={cooldown > 0}
-            style={styles.resendBtn}
-          >
-            <Text
-              style={[
-                styles.resendText,
-                cooldown > 0 && styles.resendDisabled,
-              ]}
-            >
-              {cooldown > 0 ? `Resend (${cooldown})` : "Resend"}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Next */}
-        <TouchableOpacity
-          style={[styles.button, !isValid && styles.buttonDisabled]}
-          onPress={() => router.push("/email_signup")}
-          disabled={!isValid}
-          activeOpacity={0.9}
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={verticalScale(20)}
         >
-          <Text style={styles.buttonText}>Next</Text>
-        </TouchableOpacity>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+          <View style={styles.content}>
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => router.back()}
+            >
+              <Ionicons name="arrow-back" size={24} color={Colors.INK} />
+            </TouchableOpacity>
+
+            <View style={styles.headerSection}>
+              <Text style={styles.pageTitle}>Enter your code</Text>
+              <Text style={styles.pageSubtitle}>
+                We sent a 6-digit code to your phone
+              </Text>
+            </View>
+
+            <View style={styles.inputCard}>
+              <Text style={styles.inputLabel}>Verification Code</Text>
+              <TextInput
+                value={code}
+                onChangeText={(t) => setCode(t.replace(/[^0-9]/g, "").slice(0, 6))}
+                keyboardType="number-pad"
+                maxLength={6}
+                autoFocus
+                style={styles.codeInput}
+                placeholder="000000"
+                placeholderTextColor="rgba(10,14,26,0.2)"
+                textAlign="center"
+              />
+              <View style={styles.codeUnderline} />
+            </View>
+
+            <TouchableOpacity
+              onPress={handleResend}
+              disabled={cooldown > 0}
+              style={styles.resendButton}
+            >
+              <Ionicons
+                name="refresh"
+                size={18}
+                color={cooldown > 0 ? "rgba(27,68,205,0.4)" : Colors.BLUE}
+                style={{ marginRight: scale(6) }}
+              />
+              <Text
+                style={[
+                  styles.resendText,
+                  cooldown > 0 && styles.resendDisabled,
+                ]}
+              >
+                {cooldown > 0 ? `Resend in ${cooldown}s` : "Resend code"}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.nextButton, !isValid && styles.nextButtonDisabled]}
+              onPress={() => router.push("/email_signup")}
+              disabled={!isValid}
+              activeOpacity={0.9}
+            >
+              <Text style={styles.nextButtonText}>Continue</Text>
+            </TouchableOpacity>
+
+            <View style={styles.infoNote}>
+              <Ionicons
+                name="information-circle-outline"
+                size={18}
+                color="rgba(10,14,26,0.5)"
+                style={{ marginRight: scale(8) }}
+              />
+              <Text style={styles.infoNoteText}>
+                Didn't receive the code? Check your spam folder or try resending
+              </Text>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </TouchableWithoutFeedback>
   );
 }
-
-const BLUE = "#1A44CC";
-const INK = "#000910";
-const BG = "#EEF7FF";
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: BG,
-    paddingHorizontal: 24,
+    backgroundColor: Colors.BG,
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: scale(20),
+    paddingTop: verticalScale(20),
   },
   backButton: {
-    marginTop: 16,
-    marginBottom: 24,
-  },
-
-  // Title
-  titleWrapper: {
-    marginTop: 12,
-    marginBottom: 36,
-  },
-  titleText: {
-    color: INK,
-    fontSize: 32,             // matches the vibe in your mock
-    fontWeight: "bold",
-    fontFamily: Fonts.bold,
-    lineHeight: 60,
-  },
-
-  // Code input area
-  codeArea: {
-    marginBottom: 36,
-    minHeight: 110,
-    justifyContent: "flex-start",
-  },
-  codeBox: {
-    alignSelf: "center",
-    width: "62%",              // keep a nice width on all devices
-    alignItems: "center",
-  },
-  codeInput: {
-    width: "100%",
-    fontSize: 36,
-    fontWeight: "bold",
-    fontFamily: Fonts.bold,
-    color: INK,
-    paddingVertical: 6,
-  },
-  codeUnderline: {
-    marginTop: 4,
-    height: 5,
-    width: "100%",
-    backgroundColor: BLUE,
-    borderRadius: 3,
-  },
-
-  // Resend link pinned to the right
-  resendBtn: {
-    position: "absolute",
-    right: 0,
-    top: 10,
-    padding: 6,
-  },
-  resendText: {
-    color: BLUE,
-    fontSize: 16,
-    fontWeight: "700",
-    fontFamily: Fonts.bold,
-    textDecorationLine: "underline",
-  },
-  resendDisabled: {
-    opacity: 0.45,
-    textDecorationLine: "none",
-  },
-
-  // Next button — same sizing as your login button
-  button: {
-    height: 56,
-    backgroundColor: INK,
-    borderRadius: 28,
+    width: scale(40),
+    height: scale(40),
+    borderRadius: scale(20),
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 8,
-    shadowColor: "#00000040",
-    shadowOpacity: 0.3,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 4,
-    elevation: 4,
+    marginBottom: verticalScale(32),
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  buttonDisabled: {
-    opacity: 0.6,
+  headerSection: {
+    marginBottom: verticalScale(32),
   },
-  buttonText: {
-    color: BG,
-    fontSize: 18,
-    fontWeight: "bold",
+  pageTitle: {
+    fontSize: scale(28),
     fontFamily: Fonts.bold,
+    color: Colors.INK,
+    marginBottom: verticalScale(4),
+  },
+  pageSubtitle: {
+    fontSize: scale(15),
+    fontFamily: Fonts.primary,
+    color: "rgba(10,14,26,0.6)",
+  },
+  inputCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: scale(16),
+    padding: scale(20),
+    marginBottom: verticalScale(24),
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  inputLabel: {
+    fontSize: scale(14),
+    fontFamily: Fonts.bold,
+    color: "rgba(10,14,26,0.6)",
+    marginBottom: verticalScale(12),
+  },
+  codeInput: {
+    fontSize: scale(32),
+    fontFamily: Fonts.bold,
+    color: Colors.INK,
+    paddingVertical: verticalScale(8),
+    letterSpacing: scale(8),
+  },
+  codeUnderline: {
+    marginTop: verticalScale(4),
+    height: 3,
+    backgroundColor: Colors.BLUE,
+    borderRadius: scale(2),
+  },
+  resendButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: verticalScale(12),
+    marginBottom: verticalScale(24),
+  },
+  resendText: {
+    fontSize: scale(15),
+    fontFamily: Fonts.bold,
+    color: Colors.BLUE,
+  },
+  resendDisabled: {
+    color: "rgba(27,68,205,0.4)",
+  },
+  nextButton: {
+    backgroundColor: Colors.BLUE,
+    borderRadius: scale(50),
+    paddingVertical: verticalScale(16),
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: Colors.BLUE,
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+    marginBottom: verticalScale(24),
+  },
+  nextButtonDisabled: {
+    opacity: 0.5,
+    shadowOpacity: 0.1,
+  },
+  nextButtonText: {
+    fontSize: scale(16),
+    fontFamily: Fonts.bold,
+    color: "#FFFFFF",
+  },
+  infoNote: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    padding: scale(16),
+    backgroundColor: "rgba(27,68,205,0.06)",
+    borderRadius: scale(12),
+  },
+  infoNoteText: {
+    flex: 1,
+    fontSize: scale(13),
+    fontFamily: Fonts.primary,
+    color: "rgba(10,14,26,0.6)",
+    lineHeight: verticalScale(18),
   },
 });

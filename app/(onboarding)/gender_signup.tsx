@@ -1,6 +1,6 @@
 import { Fonts } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
-import { moderateScale, scale, verticalScale } from "@/utils/responsive";
+import { scale, verticalScale } from "@/utils/responsive";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
@@ -20,6 +20,12 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+
+const Colors = {
+  BG: "#F5F7FA",
+  BLUE: "#1B44CD",
+  INK: "#0A0E1A",
+};
 
 export default function GenderSignup() {
   const params = useLocalSearchParams();
@@ -102,7 +108,6 @@ export default function GenderSignup() {
         return;
       }
 
-      // ✅ NEW FLOW: Route to unified hope_to_find_signup instead of orientation_signup
       router.push("/(onboarding)/hope_to_find_signup");
     } catch (err) {
       console.error("Gender update error:", err);
@@ -114,12 +119,18 @@ export default function GenderSignup() {
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.container} edges={["top"]}>
         <StatusBar barStyle="dark-content" />
 
         {/* Back Button */}
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={moderateScale(26)} color="#FFFFFF" />
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.back()}
+          activeOpacity={0.7}
+        >
+          <View style={styles.backButtonCircle}>
+            <Ionicons name="arrow-back" size={24} color={Colors.INK} />
+          </View>
         </TouchableOpacity>
 
         {/* Progress Bar */}
@@ -135,16 +146,14 @@ export default function GenderSignup() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          <View style={{ height: verticalScale(10) }} />
-
           {/* Heading */}
-          <View style={{ marginBottom: verticalScale(9) }}>
+          <View style={{ marginBottom: verticalScale(12) }}>
             <Text style={styles.titleLine}>
               Hello <Text style={styles.name}>{userName}</Text>
             </Text>
 
             <View style={styles.inlineRow}>
-              <Text style={styles.titleLine}>It&apos;s </Text>
+              <Text style={styles.titleLine}>It's </Text>
               <Text style={styles.highlightBig}>Niice</Text>
               <Text style={styles.titleLine}> to</Text>
             </View>
@@ -165,12 +174,12 @@ export default function GenderSignup() {
                   selectedGender === gender && styles.genderButtonSelected,
                 ]}
                 onPress={() => toggleGender(gender)}
-                activeOpacity={0.9}
+                activeOpacity={0.8}
               >
                 <Text style={styles.genderText}>{gender}</Text>
                 <Ionicons
                   name={selectedGender === gender ? "chevron-up" : "chevron-down"}
-                  size={moderateScale(22)}
+                  size={22}
                   color="#FFFFFF"
                 />
               </TouchableOpacity>
@@ -191,13 +200,13 @@ export default function GenderSignup() {
                     const pressAnim = () => {
                       Animated.sequence([
                         Animated.timing(anim, {
-                          toValue: 1.08,
-                          duration: 130,
+                          toValue: 1.05,
+                          duration: 100,
                           useNativeDriver: true,
                         }),
                         Animated.timing(anim, {
                           toValue: 1,
-                          duration: 150,
+                          duration: 100,
                           useNativeDriver: true,
                         }),
                       ]).start();
@@ -209,14 +218,13 @@ export default function GenderSignup() {
                         <Animated.View
                           style={[
                             { transform: [{ scale: anim }] },
-                            styles.shadowWrapper,
                           ]}
                         >
                           <LinearGradient
                             colors={
                               isSelected
-                                ? ["#1B44CD", "#3C6FFF", "#7AA9FF"]
-                                : ["#F8FAFF", "#EBF1FF"]
+                                ? ["#1B44CD", "#3C6FFF"] as const
+                                : ["#FFFFFF", "#F8FAFF"] as const
                             }
                             start={{ x: 0, y: 0 }}
                             end={{ x: 1, y: 1 }}
@@ -246,14 +254,14 @@ export default function GenderSignup() {
           {/* Show/Hide on Profile */}
           <View style={styles.profileNoteWrapper}>
             <Text style={styles.noteText}>
-              It&apos;s up to you to show this information on your profile.
+              It's up to you to show this information on your profile.
             </Text>
             <View style={styles.switchRow}>
               <Text style={styles.switchLabel}>Do not show on profile</Text>
               <Switch
                 value={hideFromProfile}
                 onValueChange={setHideFromProfile}
-                trackColor={{ false: "#C8CDD2", true: BLUE }}
+                trackColor={{ false: "#C8CDD2", true: Colors.BLUE }}
                 thumbColor="#FFFFFF"
                 ios_backgroundColor="#C8CDD2"
               />
@@ -262,161 +270,194 @@ export default function GenderSignup() {
         </ScrollView>
 
         {/* Next Button */}
-        <TouchableOpacity style={styles.nextButton} onPress={handleNext} disabled={loading}>
-          <Ionicons
-            name="chevron-forward"
-            size={moderateScale(30)}
-            color="#FFFFFF"
-          />
+        <TouchableOpacity
+          style={styles.nextButton}
+          onPress={handleNext}
+          disabled={loading}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="arrow-forward" size={28} color="#FFFFFF" />
         </TouchableOpacity>
       </SafeAreaView>
     </TouchableWithoutFeedback>
   );
 }
 
-const BG = "#EAF1F8";
-const INK = "#000910";
-const BLUE = "#1B44CD";
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: BG },
+  container: {
+    flex: 1,
+    backgroundColor: Colors.BG,
+  },
   backButton: {
     position: "absolute",
-    top: verticalScale(58),
-    left: scale(24),
-    width: scale(56),
-    height: verticalScale(56),
-    borderRadius: scale(28),
-    backgroundColor: INK,
+    top: verticalScale(16),
+    left: scale(20),
+    zIndex: 10,
+    paddingTop: verticalScale(60),
+  },
+  backButtonCircle: {
+    width: scale(40),
+    height: scale(40),
+    borderRadius: scale(20),
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
-    zIndex: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   progressWrapper: {
-    marginTop: verticalScale(58 + 30),
-    paddingHorizontal: scale(24),
+    marginTop: verticalScale(80),
+    paddingHorizontal: scale(20),
   },
   progressTrack: {
-    height: verticalScale(6),
-    backgroundColor: "#C8CDD2",
-    borderRadius: scale(3),
+    height: verticalScale(8),
+    backgroundColor: "rgba(27,68,205,0.15)",
+    borderRadius: scale(4),
+    overflow: "hidden",
   },
   progressFill: {
-    height: verticalScale(6),
-    width: "11.76%",
-    backgroundColor: BLUE,
-    borderRadius: scale(3),
+    height: verticalScale(8),
+    width: "11.76%", // EXACT SAME PERCENTAGE - DO NOT CHANGE
+    backgroundColor: Colors.BLUE,
+    borderRadius: scale(4),
   },
-  scrollContainer: { flex: 1 },
+  scrollContainer: {
+    flex: 1,
+  },
   scrollContent: {
-    paddingHorizontal: scale(24),
-    paddingTop: verticalScale(10),
+    paddingHorizontal: scale(20),
+    paddingTop: verticalScale(24),
     paddingBottom: verticalScale(120),
   },
   titleLine: {
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(30),
-    lineHeight: verticalScale(48),
-    color: INK,
+    fontSize: scale(28),
+    lineHeight: verticalScale(38),
+    color: Colors.INK,
+    paddingTop: verticalScale(6.5),
   },
   inlineRow: {
     flexDirection: "row",
     alignItems: "baseline",
-    height: verticalScale(48),
   },
-  name: { color: BLUE },
+  name: {
+    color: Colors.BLUE,
+  },
   highlightBig: {
     fontFamily: Fonts.bold,
-    color: BLUE,
-    fontSize: moderateScale(42),
-    lineHeight: verticalScale(60),
+    color: Colors.BLUE,
+    fontSize: scale(38),
+    lineHeight: verticalScale(48),
     marginHorizontal: scale(4),
-    transform: [{ translateY: verticalScale(-2) }],
+    paddingTop: verticalScale(8.5),
   },
   subtitle: {
-    fontFamily: Fonts.bold,
-    fontSize: moderateScale(18),
-    lineHeight: verticalScale(26),
-    color: INK,
+    fontFamily: Fonts.primary,
+    fontSize: scale(16),
+    lineHeight: verticalScale(24),
+    color: Colors.INK,
     marginBottom: verticalScale(24),
   },
   genderButton: {
-    backgroundColor: BLUE,
-    borderRadius: scale(12),
-    paddingVertical: verticalScale(14),
-    paddingHorizontal: scale(18),
+    backgroundColor: Colors.BLUE,
+    borderRadius: scale(16),
+    paddingVertical: verticalScale(16),
+    paddingHorizontal: scale(20),
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    shadowColor: Colors.BLUE,
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
   },
-  genderButtonSelected: { backgroundColor: "#1838B3" },
+  genderButtonSelected: {
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 5,
+  },
   genderText: {
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(18),
+    fontSize: scale(17),
     color: "#FFFFFF",
   },
   subMenuWrapper: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: scale(10),
-    marginTop: verticalScale(10),
+    marginTop: verticalScale(12),
   },
-  shadowWrapper: {
-    shadowColor: "#1B44CD",
+  subButton: {
+    borderRadius: scale(24),
+    paddingVertical: verticalScale(10),
+    paddingHorizontal: scale(18),
+    minWidth: scale(110),
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  subButtonSelected: {
+    shadowColor: Colors.BLUE,
     shadowOpacity: 0.3,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 3 },
-  },
-  subButton: {
-    borderRadius: scale(30),
-    paddingVertical: verticalScale(12),
-    paddingHorizontal: scale(24),
-    minWidth: scale(120),
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  subButtonSelected: {
-    shadowOpacity: 0.45,
-    shadowRadius: 10,
-    transform: [{ scale: 1.02 }],
+    elevation: 4,
   },
   subText: {
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(17),
-    color: "#1B2B44",
+    fontSize: scale(15),
+    color: Colors.INK,
     textAlign: "center",
   },
   subTextSelected: {
     color: "#FFFFFF",
   },
-  profileNoteWrapper: { marginTop: verticalScale(24) },
+  profileNoteWrapper: {
+    marginTop: verticalScale(24),
+    padding: scale(16),
+    backgroundColor: "rgba(27,68,205,0.06)",
+    borderRadius: scale(12),
+  },
   noteText: {
-    fontFamily: Fonts.bold,
-    fontSize: moderateScale(16),
-    color: "#6C757D",
-    lineHeight: verticalScale(30),
+    fontFamily: Fonts.primary,
+    fontSize: scale(14),
+    color: "rgba(10,14,26,0.7)",
+    lineHeight: verticalScale(20),
+    marginBottom: verticalScale(8),
   },
   switchRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: scale(12),
-    marginTop: verticalScale(4),
+    justifyContent: "space-between",
   },
   switchLabel: {
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(16),
-    color: "#6C757D",
-    lineHeight: verticalScale(30),
+    fontSize: scale(15),
+    color: Colors.INK,
   },
   nextButton: {
     position: "absolute",
     bottom: verticalScale(40),
-    right: scale(24),
-    width: scale(70),
-    height: verticalScale(70),
-    borderRadius: scale(35),
-    backgroundColor: INK,
+    right: scale(20),
+    width: scale(64),
+    height: scale(64),
+    borderRadius: scale(32),
+    backgroundColor: Colors.BLUE,
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: Colors.BLUE,
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
   },
 });

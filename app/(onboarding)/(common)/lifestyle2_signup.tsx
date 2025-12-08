@@ -1,6 +1,6 @@
 import { Fonts } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
-import { moderateScale, scale, verticalScale } from "@/utils/responsive";
+import { scale, verticalScale } from "@/utils/responsive";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -15,95 +15,97 @@ import {
   StatusBar,
   StyleSheet,
   Text,
+  TouchableOpacity,
   UIManager,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+
+const Colors = {
+  BG: "#F5F7FA",
+  BLUE: "#1B44CD",
+  INK: "#0A0E1A",
+};
 
 // Enable layout animation on Android
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const BG = "#EAF1F8";
-const INK = "#000910";
-const BLUE = "#1B44CD";
-const INK_SOFT = "#1B2B44";
-
 const QUESTIONS = [
   {
     key: "drinking",
     label: "How often do you drink?",
     options: [
-      "🚫 Not for me",
-      "☕ Sober",
-      "🤔 Sober curious",
-      "🥂 On special occasions",
-      "🍻 Socially on weekends",
-      "🍷 Most Nights",
+      { label: "Not for me", icon: "close-circle" },
+      { label: "Sober", icon: "cafe" },
+      { label: "Sober curious", icon: "help-circle" },
+      { label: "On special occasions", icon: "wine" },
+      { label: "Socially on weekends", icon: "beer" },
+      { label: "Most Nights", icon: "wine" },
     ],
   },
   {
     key: "smoking",
     label: "How often do you smoke?",
     options: [
-      "💨 Social smoker",
-      "🚬 Smoker when drinking",
-      "🚭 Non-smoker",
-      "🚬 Smoker",
-      "🚫 Trying to quit",
+      { label: "Social smoker", icon: "people" },
+      { label: "Smoker when drinking", icon: "beer" },
+      { label: "Non-smoker", icon: "checkmark-circle" },
+      { label: "Smoker", icon: "cloud" },
+      { label: "Trying to quit", icon: "trending-down" },
     ],
   },
   {
     key: "workout",
     label: "Do you workout?",
     options: [
-      "💪 Everyday",
-      "🏋 Often",
-      "🏃 Sometimes",
-      "💯 Gym rat",
-      "🤷 Occasionally",
-      "🛋 Never",
+      { label: "Everyday", icon: "barbell" },
+      { label: "Often", icon: "fitness" },
+      { label: "Sometimes", icon: "walk" },
+      { label: "Gym rat", icon: "trophy" },
+      { label: "Occasionally", icon: "calendar" },
+      { label: "Never", icon: "close-circle" },
     ],
   },
   {
     key: "communication",
     label: "What is your communication style?",
     options: [
-      "📱 Big time texter",
-      "📞 Phone caller",
-      "📹 Video chatter",
-      "😅 Bad texter",
-      "🤝 Better in person",
+      { label: "Big time texter", icon: "chatbubble" },
+      { label: "Phone caller", icon: "call" },
+      { label: "Video chatter", icon: "videocam" },
+      { label: "Bad texter", icon: "chatbubble-ellipses" },
+      { label: "Better in person", icon: "people" },
     ],
   },
   {
     key: "love_language",
     label: "How do you receive love?",
     options: [
-      "💭 Thoughtful gestures",
-      "🎁 Presents",
-      "🤗 Touch",
-      "💬 Compliments",
-      "⏰ Time together",
+      { label: "Thoughtful gestures", icon: "sparkles" },
+      { label: "Presents", icon: "gift" },
+      { label: "Touch", icon: "hand-right" },
+      { label: "Compliments", icon: "chatbubbles" },
+      { label: "Time together", icon: "time" },
     ],
   },
   {
     key: "zodiac",
     label: "What is your zodiac sign?",
     options: [
-      "♑ Capricorn",
-      "♒ Aquarius",
-      "♓ Pisces",
-      "♈ Aries",
-      "♉ Taurus",
-      "♊ Gemini",
-      "♋ Cancer",
-      "♌ Leo",
-      "♍ Virgo",
-      "♎ Libra",
-      "♏ Scorpio",
-      "♐ Sagittarius",
+      { label: "Capricorn", icon: "triangle" },
+      { label: "Aquarius", icon: "water" },
+      { label: "Pisces", icon: "fish" },
+      { label: "Aries", icon: "flame" },
+      { label: "Taurus", icon: "leaf" },
+      { label: "Gemini", icon: "people" },
+      { label: "Cancer", icon: "moon" },
+      { label: "Leo", icon: "sunny" },
+      { label: "Virgo", icon: "flower" },
+      { label: "Libra", icon: "analytics" },
+      { label: "Scorpio", icon: "bug" },
+      { label: "Sagittarius", icon: "compass" },
     ],
   },
 ];
@@ -112,8 +114,19 @@ const QUESTIONS = [
 // CHIP COMPONENT
 // ===========================
 const OptionChip = React.memo(
-  ({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) => {
+  ({ 
+    label, 
+    icon, 
+    selected, 
+    onPress 
+  }: { 
+    label: string; 
+    icon: string; 
+    selected: boolean; 
+    onPress: () => void;
+  }) => {
     const anim = useRef(new Animated.Value(1)).current;
+    
     const handlePress = useCallback(() => {
       Animated.sequence([
         Animated.timing(anim, { toValue: 1.06, duration: 95, useNativeDriver: true }),
@@ -124,19 +137,19 @@ const OptionChip = React.memo(
 
     return (
       <Pressable onPress={handlePress} hitSlop={6} style={({ pressed }) => [pressed && { opacity: 0.9 }]}>
-        <Animated.View
-          style={[
-            { transform: [{ scale: anim }] },
-            styles.shadowWrapper,
-            Platform.OS === "ios" && { shadowOpacity: selected ? 0.35 : 0.15 },
-          ]}
-        >
+        <Animated.View style={{ transform: [{ scale: anim }] }}>
           <LinearGradient
-            colors={selected ? ["#1B44CD", "#3C6FFF", "#7AA9FF"] : ["#F9FBFF", "#EEF3FF"]}
+            colors={selected ? (["#1B44CD", "#3C6FFF"] as const) : (["#FFFFFF", "#F8FAFF"] as const)}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={[styles.optionChip, selected && styles.optionSelected]}
           >
+            <Ionicons
+              name={icon as any}
+              size={16}
+              color={selected ? "#FFFFFF" : Colors.BLUE}
+              style={styles.chipIcon}
+            />
             <Text style={[styles.optionText, selected && styles.optionTextSelected]}>{label}</Text>
           </LinearGradient>
         </Animated.View>
@@ -148,29 +161,31 @@ const OptionChip = React.memo(
 // ===========================
 // MAIN COMPONENT
 // ===========================
-export default function LifestyleSignup() {
+export default function Lifestyle2Signup() {
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(false);
 
-  const handleSelect = useCallback((questionKey: string, option: string) => {
+  const handleSelect = useCallback((questionKey: string, optionLabel: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setAnswers((prev) => {
-      if (prev[questionKey] === option) {
+      if (prev[questionKey] === optionLabel) {
         const updated = { ...prev };
         delete updated[questionKey];
         return updated;
       }
-      return { ...prev, [questionKey]: option };
+      return { ...prev, [questionKey]: optionLabel };
     });
   }, []);
 
   const handleNext = async () => {
     try {
+      setLoading(true);
       const {
         data: { session },
       } = await supabase.auth.getSession();
       if (!session?.user) throw new Error("No active session");
 
-      // Single UPSERT to satisfy RLS once (no delete-then-insert)
+      // Single UPSERT to satisfy RLS once
       const payload = {
         user_id: session.user.id,
         drinking: answers.drinking ?? null,
@@ -184,13 +199,15 @@ export default function LifestyleSignup() {
 
       const { error } = await supabase
         .from("lifestyle")
-        .upsert(payload, { onConflict: "user_id" }); // <= key change
+        .upsert(payload, { onConflict: "user_id" });
 
       if (error) throw error;
 
-      router.push("/lifestyle3_signup");
+      router.push("/(onboarding)/(common)/lifestyle3_signup");
     } catch (e: any) {
-      Alert.alert("Error", e.message);
+      Alert.alert("Error", e.message ?? "Something went wrong");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -198,18 +215,24 @@ export default function LifestyleSignup() {
   // RENDER
   // ===========================
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["top"]}>
       <StatusBar barStyle="dark-content" />
 
       {/* Back Button */}
-      <Pressable style={styles.backButton} onPress={() => router.back()}>
-        <Ionicons name="chevron-back" size={moderateScale(26)} color="#FFFFFF" />
-      </Pressable>
+      <TouchableOpacity
+        style={styles.backButton}
+        onPress={() => router.back()}
+        activeOpacity={0.7}
+      >
+        <View style={styles.backButtonCircle}>
+          <Ionicons name="arrow-back" size={24} color={Colors.INK} />
+        </View>
+      </TouchableOpacity>
 
       {/* Skip Button */}
-      <Pressable style={styles.skipButton} onPress={() => handleNext()}>
+      <TouchableOpacity style={styles.skipButton} onPress={handleNext} activeOpacity={0.7}>
         <Text style={styles.skipText}>Skip</Text>
-      </Pressable>
+      </TouchableOpacity>
 
       {/* Progress Bar */}
       <View style={styles.progressWrapper}>
@@ -220,29 +243,53 @@ export default function LifestyleSignup() {
 
       {/* Content */}
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.title}>Let’s talk about your{"\n"}lifestyle and habits.</Text>
+        <Text style={styles.title}>Let's talk about your lifestyle and habits</Text>
+        <Text style={styles.subtitle}>
+          Share your preferences to help us find compatible matches.
+        </Text>
 
-        {QUESTIONS.map((q, i) => (
-          <View key={q.key} style={{ marginBottom: verticalScale(26), marginTop: i === 0 ? verticalScale(6) : 0 }}>
+        {QUESTIONS.map((q) => (
+          <View key={q.key} style={styles.questionSection}>
             <Text style={styles.question}>{q.label}</Text>
             <View style={styles.optionGroup}>
               {q.options.map((opt) => (
                 <OptionChip
-                  key={opt}
-                  label={opt}
-                  selected={answers[q.key] === opt}
-                  onPress={() => handleSelect(q.key, opt)}
+                  key={opt.label}
+                  label={opt.label}
+                  icon={opt.icon}
+                  selected={answers[q.key] === opt.label}
+                  onPress={() => handleSelect(q.key, opt.label)}
                 />
               ))}
             </View>
           </View>
         ))}
+
+        {/* Info Note */}
+        <View style={styles.infoNote}>
+          <Ionicons
+            name="information-circle-outline"
+            size={18}
+            color="rgba(10,14,26,0.5)"
+            style={{ marginRight: scale(8) }}
+          />
+          <Text style={styles.infoNoteText}>
+            These details are optional but help us find better matches for you.
+          </Text>
+        </View>
+
+        <View style={{ height: verticalScale(40) }} />
       </ScrollView>
 
       {/* Next Button */}
-      <Pressable onPress={handleNext} style={styles.nextButton}>
-        <Ionicons name="chevron-forward" size={moderateScale(30)} color="#FFFFFF" />
-      </Pressable>
+      <TouchableOpacity
+        onPress={handleNext}
+        disabled={loading}
+        style={[styles.nextButton, loading && { opacity: 0.5 }]}
+        activeOpacity={0.8}
+      >
+        <Ionicons name="arrow-forward" size={28} color="#FFFFFF" />
+      </TouchableOpacity>
     </SafeAreaView>
   );
 }
@@ -251,99 +298,163 @@ export default function LifestyleSignup() {
 // STYLES
 // ===========================
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: BG },
+  container: {
+    flex: 1,
+    backgroundColor: Colors.BG,
+  },
 
   backButton: {
     position: "absolute",
-    top: verticalScale(58),
-    left: scale(24),
-    width: scale(56),
-    height: verticalScale(56),
-    borderRadius: scale(28),
-    backgroundColor: INK,
+    top: verticalScale(16),
+    left: scale(20),
+    zIndex: 10,
+    paddingTop: verticalScale(60),
+  },
+  backButtonCircle: {
+    width: scale(40),
+    height: scale(40),
+    borderRadius: scale(20),
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
-    zIndex: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
 
   skipButton: {
     position: "absolute",
-    top: verticalScale(64),
-    right: scale(24),
+    top: verticalScale(16),
+    right: scale(20),
     zIndex: 10,
-    backgroundColor: "transparent",
+    paddingTop: verticalScale(60),
     padding: scale(8),
   },
   skipText: {
     fontFamily: Fonts.bold,
-    color: "#7A838E",
-    fontSize: moderateScale(15),
+    fontSize: scale(15),
+    color: Colors.BLUE,
   },
 
-  progressWrapper: { marginTop: verticalScale(88), paddingHorizontal: scale(24) },
-  progressTrack: { height: verticalScale(6), backgroundColor: "#C8CDD2", borderRadius: scale(3) },
-  progressFill: { height: verticalScale(6), width: "64.68%", backgroundColor: BLUE, borderRadius: scale(3) },
+  progressWrapper: {
+    marginTop: verticalScale(80),
+    paddingHorizontal: scale(20),
+  },
+  progressTrack: {
+    height: verticalScale(8),
+    backgroundColor: "rgba(27,68,205,0.15)",
+    borderRadius: scale(4),
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: verticalScale(8),
+    width: "64.68%", // EXACT SAME PERCENTAGE - DO NOT CHANGE
+    backgroundColor: Colors.BLUE,
+    borderRadius: scale(4),
+  },
 
   scrollContent: {
-    paddingHorizontal: scale(24),
-    paddingTop: verticalScale(28),
+    paddingHorizontal: scale(20),
+    paddingTop: verticalScale(24),
     paddingBottom: verticalScale(120),
   },
 
   title: {
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(33),
-    lineHeight: verticalScale(48),
-    color: INK,
-    marginBottom: verticalScale(18),
+    fontSize: scale(24),
+    lineHeight: verticalScale(32),
+    color: Colors.INK,
+    marginBottom: verticalScale(6),
+    paddingTop: verticalScale(6.5),
+  },
+  subtitle: {
+    fontFamily: Fonts.primary,
+    fontSize: scale(15),
+    color: "rgba(10,14,26,0.6)",
+    marginBottom: verticalScale(20),
+    lineHeight: verticalScale(22),
+  },
+
+  questionSection: {
+    marginBottom: verticalScale(24),
   },
   question: {
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(20),
-    color: INK_SOFT,
+    fontSize: scale(18),
+    color: Colors.INK,
     marginBottom: verticalScale(12),
   },
-  optionGroup: { flexDirection: "row", flexWrap: "wrap", gap: scale(8) },
-
-  shadowWrapper: {
-    shadowColor: "#1B44CD",
-    shadowOpacity: 0.22,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    borderRadius: scale(30),
+  optionGroup: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: scale(8),
   },
 
   optionChip: {
-    paddingVertical: verticalScale(12),
-    paddingHorizontal: scale(22),
-    borderRadius: scale(30),
-    minWidth: scale(110),
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    paddingVertical: verticalScale(10),
+    paddingHorizontal: scale(14),
+    borderRadius: scale(24),
+    shadowColor: "#000",
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
-  optionSelected: { transform: [{ scale: 1.02 }] },
-
+  optionSelected: {
+    shadowColor: Colors.BLUE,
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
+  chipIcon: {
+    marginRight: scale(6),
+  },
   optionText: {
     fontFamily: Fonts.bold,
-    fontSize: moderateScale(16),
-    color: "#1B2B44",
+    fontSize: scale(14),
+    color: Colors.INK,
     textAlign: "center",
   },
-  optionTextSelected: { color: "#FFFFFF" },
+  optionTextSelected: {
+    color: "#FFFFFF",
+  },
+
+  infoNote: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginTop: verticalScale(16),
+    padding: scale(16),
+    backgroundColor: "rgba(27,68,205,0.06)",
+    borderRadius: scale(12),
+  },
+  infoNoteText: {
+    flex: 1,
+    fontSize: scale(13),
+    fontFamily: Fonts.primary,
+    color: "rgba(10,14,26,0.6)",
+    lineHeight: verticalScale(18),
+    paddingTop: verticalScale(0.5),
+  },
 
   nextButton: {
     position: "absolute",
     bottom: verticalScale(40),
-    right: scale(24),
-    width: scale(68),
-    height: verticalScale(68),
-    borderRadius: scale(34),
-    backgroundColor: INK,
+    right: scale(20),
+    width: scale(64),
+    height: scale(64),
+    borderRadius: scale(32),
+    backgroundColor: Colors.BLUE,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.25,
+    shadowColor: Colors.BLUE,
+    shadowOpacity: 0.3,
     shadowRadius: 8,
-    shadowOffset: { width: 0, height: 5 },
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
   },
 });

@@ -1,7 +1,9 @@
 // app/(auth)/notification_signup.tsx
+import { scale, verticalScale } from "@/utils/responsive";
+import { Ionicons } from "@expo/vector-icons";
 import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Alert,
   Animated,
@@ -15,13 +17,13 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Path, Circle as SvgCircle } from "react-native-svg";
-import { BackButton } from "../../components/BackButton";
 import { Fonts } from "../../constants/theme";
 
-const BG = "#EEF7FF";
-const INK = "#000910";
-const BLUE = "#1A44CC";
-const BTNBLUE = "#2347E8";
+const Colors = {
+  BG: "#F5F7FA",
+  BLUE: "#1B44CD",
+  INK: "#0A0E1A",
+};
 
 const { width: W } = Dimensions.get("window");
 const isSmall = W < 380;
@@ -116,9 +118,9 @@ const BellRinging = ({ size = 250 }: { size?: number }) => {
         <Svg width={size} height={size} viewBox="0 0 64 64">
           <Path
             d="M32 8c8.8 0 16 7.2 16 16v10.5c0 1.8.6 3.6 1.6 5.1l2.1 3.2c.8 1.2-.1 2.7-1.5 2.7H13.8c-1.4 0-2.3-1.5-1.5-2.7l2.1-3.2c1-1.6 1.6-3.3 1.6-5.1V24c0-8.8 7.2-16 16-16Z"
-            fill={BTNBLUE}
+            fill={Colors.BLUE}
           />
-          <SvgCircle cx="32" cy="48" r="5" fill={INK} />
+          <SvgCircle cx="32" cy="48" r="5" fill={Colors.INK} />
         </Svg>
       </Animated.View>
 
@@ -131,7 +133,7 @@ const BellRinging = ({ size = 250 }: { size?: number }) => {
       >
         <Path
           d="M8 6c0 3.3 10.7 6 24 6s24-2.7 24-6S45.3 0 32 0 8 2.7 8 6Z"
-          fill={BTNBLUE}
+          fill={Colors.BLUE}
           opacity={0.25}
         />
       </Svg>
@@ -149,19 +151,19 @@ const BellRinging = ({ size = 250 }: { size?: number }) => {
         <Svg width={160} height={120} viewBox="0 0 140 90">
           <Path
             d="M8,22 q28,18 56,0"
-            stroke={BTNBLUE}
+            stroke={Colors.BLUE}
             strokeWidth={4.5}
             fill="none"
           />
           <Path
             d="M10,38 q30,20 60,0"
-            stroke={BTNBLUE}
+            stroke={Colors.BLUE}
             strokeWidth={5}
             fill="none"
           />
           <Path
             d="M12,54 q32,22 64,0"
-            stroke={BTNBLUE}
+            stroke={Colors.BLUE}
             strokeWidth={5.5}
             fill="none"
           />
@@ -172,60 +174,84 @@ const BellRinging = ({ size = 250 }: { size?: number }) => {
 };
 
 export default function NotificationSignup() {
-    const [loading, setLoading] = useState(false);
-  
-    const onAllow = async () => {
-      try {
-        setLoading(true);
-        await Notifications.requestPermissionsAsync();
-        // regardless of status, go to done_signup
-        router.push("/done_signup");
-      } catch {
-        Alert.alert("Error", "Could not request notifications.");
-        // still continue to done_signup
-        router.push("/done_signup");
-      } finally {
-        setLoading(false);
-      }
-    };
-  
-    const onSkip = () => {
+  const [loading, setLoading] = useState(false);
+
+  const onAllow = async () => {
+    try {
+      setLoading(true);
+      await Notifications.requestPermissionsAsync();
       router.push("/done_signup");
-    };
+    } catch {
+      Alert.alert("Error", "Could not request notifications.");
+      router.push("/done_signup");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onSkip = () => {
+    router.push("/done_signup");
+  };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["top"]}>
       <StatusBar barStyle="dark-content" />
-      <BackButton style={styles.backButton} />
+      
+      {/* Back Button */}
+      <TouchableOpacity
+        style={styles.backButton}
+        onPress={() => router.back()}
+        activeOpacity={0.7}
+      >
+        <View style={styles.backButtonCircle}>
+          <Ionicons name="arrow-back" size={24} color={Colors.INK} />
+        </View>
+      </TouchableOpacity>
 
       {/* Header */}
-      <View style={styles.copy}>
-        <Text style={styles.title}>
-          Get the latest likes{"\n"}in your area
-        </Text>
-        <Text style={styles.subtitle}>
-          Turn on your notifications so we can let you know when a Niiice around liked you
+      <View style={styles.headerContainer}>
+        <Text style={styles.pageTitle}>Get the latest likes{"\n"}in your area</Text>
+        <Text style={styles.pageSubtitle}>
+          Turn on your notifications so we can let you know when a Niice around liked you
         </Text>
       </View>
 
-      {/* CTAs */}
-      <View style={styles.ctaArea}>
-        <View style={styles.bellWrapper}>
-          <BellRinging size={isSmall ? 180 : 220} />
-        </View>
+      {/* Bell Animation */}
+      <View style={styles.bellWrapper}>
+        <BellRinging size={isSmall ? 180 : 220} />
+      </View>
 
+      {/* Buttons */}
+      <View style={styles.buttonContainer}>
         <TouchableOpacity
-          activeOpacity={0.9}
-          style={[styles.primaryBtn, loading && { opacity: 0.75 }]}
+          activeOpacity={0.8}
+          style={[styles.primaryButton, loading && { opacity: 0.6 }]}
           onPress={onAllow}
           disabled={loading}
         >
-          <Text style={styles.primaryText}>Allow Notifications</Text>
+          <Text style={styles.primaryButtonText}>Allow Notifications</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity activeOpacity={0.9} style={styles.secondaryBtn} onPress={onSkip}>
-          <Text style={styles.secondaryText}>Not Now</Text>
+        <TouchableOpacity
+          activeOpacity={0.8}
+          style={styles.secondaryButton}
+          onPress={onSkip}
+        >
+          <Text style={styles.secondaryButtonText}>Not Now</Text>
         </TouchableOpacity>
+
+        {/* Info Note */}
+        <View style={styles.infoNote}>
+          <Ionicons
+            name="information-circle-outline"
+            size={18}
+            color="rgba(10,14,26,0.5)"
+            style={{ marginRight: scale(8) }}
+          />
+          <Text style={styles.infoNoteText}>
+            You can always change this later in your device settings
+          </Text>
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -234,86 +260,104 @@ export default function NotificationSignup() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: BG,
-    paddingHorizontal: 24,
+    backgroundColor: Colors.BG,
   },
   backButton: {
-    marginTop: 16,
-    marginBottom: 16,
+    marginTop: verticalScale(16),
+    marginLeft: scale(20),
   },
-
-  copy: {
-    marginTop: 8,
-    marginBottom: 24,
+  backButtonCircle: {
+    width: scale(40),
+    height: scale(40),
+    borderRadius: scale(20),
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  title: {
-    color: INK,
-    fontSize: 36,
-    lineHeight: 48,
+  headerContainer: {
+    paddingHorizontal: scale(20),
+    marginTop: verticalScale(24),
+  },
+  pageTitle: {
+    fontSize: scale(28),
     fontFamily: Fonts.bold,
-    fontWeight: "bold",
-    marginBottom: 8,
-    paddingTop: 4,
+    color: Colors.INK,
+    lineHeight: verticalScale(36),
+    marginBottom: verticalScale(12),
+    paddingTop: verticalScale(6.5),
   },
-  subtitle: {
-    color: BLUE,
-    fontSize: 18,
-    lineHeight: 26,
-    fontFamily: Fonts.bold,
-    fontWeight: "bold",
+  pageSubtitle: {
+    fontSize: scale(15),
+    fontFamily: Fonts.primary,
+    color: "rgba(10,14,26,0.6)",
+    lineHeight: verticalScale(22),
   },
   bellWrapper: {
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 5,
-    marginTop: -20,
+    marginTop: verticalScale(100),
+    flex: 1,
   },
-
-  ctaArea: {
-    marginTop: "auto",
-    paddingBottom: 36,
-    gap: 16,
+  buttonContainer: {
+    paddingHorizontal: scale(20),
+    paddingBottom: verticalScale(30),
+    gap: verticalScale(12),
   },
-  primaryBtn: {
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: BTNBLUE,
+  primaryButton: {
+    backgroundColor: Colors.BLUE,
+    borderRadius: scale(50),
+    paddingVertical: verticalScale(16),
     alignItems: "center",
     justifyContent: "center",
-    width: "92%",
-    alignSelf: "center",
-    shadowColor: "#00000040",
+    shadowColor: Colors.BLUE,
     shadowOpacity: 0.25,
-    shadowOffset: { width: 0, height: 6 },
     shadowRadius: 8,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
   },
-  primaryText: {
-    color: INK,
-    fontSize: 18,
+  primaryButtonText: {
+    fontSize: scale(16),
     fontFamily: Fonts.bold,
-    fontWeight: "bold",
+    color: "#FFFFFF",
   },
-  secondaryBtn: {
-    height: 56,
-    borderRadius: 28,
+  secondaryButton: {
     backgroundColor: "#FFFFFF",
-    borderWidth: 2,
-    borderColor: BTNBLUE,
+    borderRadius: scale(50),
+    paddingVertical: verticalScale(16),
     alignItems: "center",
     justifyContent: "center",
-    width: "92%",
-    alignSelf: "center",
-    shadowColor: "#00000015",
-    shadowOpacity: 0.15,
-    shadowOffset: { width: 0, height: 3 },
-    shadowRadius: 5,
-    elevation: 3,
+    borderWidth: 1,
+    borderColor: "rgba(27,68,205,0.12)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  secondaryText: {
-    color: BTNBLUE,
-    fontSize: 18,
+  secondaryButtonText: {
+    fontSize: scale(16),
     fontFamily: Fonts.bold,
-    fontWeight: "bold",
+    color: Colors.INK,
+  },
+  infoNote: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginTop: verticalScale(8),
+    padding: scale(16),
+    backgroundColor: "rgba(27,68,205,0.06)",
+    borderRadius: scale(12),
+  },
+  infoNoteText: {
+    flex: 1,
+    fontSize: scale(13),
+    fontFamily: Fonts.primary,
+    color: "rgba(10,14,26,0.6)",
+    lineHeight: verticalScale(18),
+    paddingTop: verticalScale(0.5),
   },
 });

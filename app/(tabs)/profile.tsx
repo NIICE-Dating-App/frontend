@@ -135,7 +135,7 @@ const getCombinedLookingFor = (options: string[]): string => {
   const sorted = [...options].map((s) => s.trim()).sort();
   const key = sorted.join("|||");
 
-  return combinations[key] || sorted.join(" · ");
+  return combinations[key] || sorted.join(" Â· ");
 };
 // ========== END OF FRIEND MODE COMBINATIONS ==========
 
@@ -581,34 +581,33 @@ export default function ProfileTop() {
 
       // ========== COMMUNITY OPTIONS ==========
       const COMMUNITY_OPTIONS = [
-  "🌿 Environmentalism",
-  "✊ Social justice",
-  "🏳️‍🌈 LGBTQIA+",
-  "♀️ Feminism",
-  "🧠 Mental health awareness",
-  "✊🏾 Black community",
-  "🧧 Asian community",
-  "🪅 Latino/Hispanic community",
-  "✡️ Jewish community",
-  "☪️ Muslim community",
-  "♿ Disability awareness",
-  "💖 Body positivity",
-  "🐾 Animal rights",
-  "🌍 Climate action",
-];
+        "Environmentalism",
+        "Social justice",
+        "LGBTQIA+",
+        "Feminism",
+        "Mental health awareness",
+        "Black community",
+        "Asian community",
+        "Latino/Hispanic community",
+        "Jewish community",
+        "Muslim community",
+        "Disability awareness",
+        "Body positivity",
+        "Animal rights",
+        "Climate action",
+      ];
 
-      const stripEmoji = (s: string) => s.replace(/^[^\w\s]+\s*/, '').trim();
-      const normalizeLabel = (s: string) => stripEmoji(s).toLowerCase().trim();
+      const normalizeLabel = (s: string) => s.toLowerCase().trim();
 
-      // Load communities from lifestyle and match with emoji versions
+      // Load communities from lifestyle and match
       const communityList = Array.isArray(l.communities) ? l.communities : [];
       const matchedCommunities: string[] = [];
 
       communityList.forEach((comm: string) => {
         const normalized = normalizeLabel(comm);
-        COMMUNITY_OPTIONS.forEach(commWithEmoji => {
-          if (normalizeLabel(commWithEmoji) === normalized) {
-            matchedCommunities.push(commWithEmoji);
+        COMMUNITY_OPTIONS.forEach(option => {
+          if (normalizeLabel(option) === normalized) {
+            matchedCommunities.push(option);
           }
         });
       });
@@ -707,7 +706,7 @@ export default function ProfileTop() {
     }
   };
 
-  const displayName = useMemo(() => toTitleCase(profile.fullName) || "—", [profile.fullName]);
+  const displayName = useMemo(() => toTitleCase(profile.fullName) || "â€”", [profile.fullName]);
   const nameSize = useMemo(() => getNameFontSize(displayName.length), [displayName]);
 
   // Lifestyle table logic
@@ -1351,7 +1350,7 @@ export default function ProfileTop() {
             onPress={() => setModalVisible(false)} 
             activeOpacity={0.8}
           >
-            <Text style={styles.closeButtonText}>âœ•</Text>
+            <Text style={styles.closeButtonText}>Ã¢Å“â€¢</Text>
           </TouchableOpacity>
           {!!selectedModalUri && (
             <Image 
@@ -1512,7 +1511,7 @@ const styles = StyleSheet.create({
     marginBottom: verticalScale(2),
   },
 
-  // âœ… Friend rectangle: same size, rounded like featured chip
+  // Ã¢Å“â€¦ Friend rectangle: same size, rounded like featured chip
   friendPill: {
     marginLeft: scale(6),
     marginTop: verticalScale(4),
@@ -1669,7 +1668,7 @@ const styles = StyleSheet.create({
     marginTop: verticalScale(6),
   },
 
-  // âœ… Frames button: unified roundness & size style
+  // Ã¢Å“â€¦ Frames button: unified roundness & size style
   framesButton: { 
     flexDirection: "row",
     alignItems: "center",
@@ -1697,7 +1696,7 @@ const styles = StyleSheet.create({
     gap: verticalScale(8),
   },
 
-  // âœ… Add New Frame / Frame Archive buttons: unified roundness & size
+  // Ã¢Å“â€¦ Add New Frame / Frame Archive buttons: unified roundness & size
   frameActionButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -2407,7 +2406,7 @@ const styles = StyleSheet.create({
     marginTop: verticalScale(8) 
   },
 
-  // âœ… Events button: unified roundness & size style
+  // Ã¢Å“â€¦ Events button: unified roundness & size style
   eventsButton: {
     flexDirection: "row",
     alignItems: "center",

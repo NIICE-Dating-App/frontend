@@ -1,18 +1,29 @@
+import { Fonts } from "@/constants/theme";
+import { scale, verticalScale } from "@/utils/responsive";
+import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BackButton } from "../../components/BackButton";
-import { Colors, Fonts } from "../../constants/theme";
 import { supabase } from "../../lib/supabase";
+
+const Colors = {
+  BG: "#F5F7FA",
+  BLUE: "#1B44CD",
+  INK: "#0A0E1A",
+};
 
 export default function EmailSignup() {
   const [email, setEmail] = useState("");
@@ -21,7 +32,6 @@ export default function EmailSignup() {
   const handleNext = async () => {
     if (!email) return;
 
-    // Basic email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       Alert.alert("Invalid Email", "Please enter a valid email address");
@@ -33,7 +43,6 @@ export default function EmailSignup() {
     try {
       const trimmedEmail = email.toLowerCase().trim();
 
-      // Check if user already exists using RPC function
       const { data: userExists, error: checkError } = await supabase
         .rpc('check_user_exists', { user_email: trimmedEmail });
 
@@ -64,7 +73,6 @@ export default function EmailSignup() {
         return;
       }
 
-      // Send OTP to email for new user signup
       const { data, error } = await supabase.auth.signInWithOtp({
         email: trimmedEmail,
         options: {
@@ -76,7 +84,6 @@ export default function EmailSignup() {
 
       console.log("OTP sent successfully:", data);
 
-      // Navigate to verification page with email as parameter
       router.push({
         pathname: "/email_verif_signup",
         params: { email: trimmedEmail },
@@ -93,121 +100,206 @@ export default function EmailSignup() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <BackButton
-        style={styles.backButton}
-        color="#FFFFFF"
-        backgroundColor="#000910"
-      />
-
-      <View style={styles.content}>
-        <Text style={styles.titleBlue}>Now Continue</Text>
-        <Text style={styles.titleBlack}>with your email</Text>
-
-        <TextInput
-          style={styles.input}
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          placeholder="Enter your email"
-          placeholderTextColor="#999"
-          editable={!loading}
-        />
-
-        <TouchableOpacity
-          style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={handleNext}
-          disabled={loading || !email}
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={verticalScale(20)}
         >
-          {loading ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <Text style={styles.buttonText}>Next</Text>
-          )}
-        </TouchableOpacity>
+          <View style={styles.content}>
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => router.back()}
+              disabled={loading}
+            >
+              <Ionicons name="arrow-back" size={24} color={Colors.INK} />
+            </TouchableOpacity>
 
-        <TouchableOpacity
-          onPress={() => router.push("/in_progress")}
-          disabled={loading}
-        >
-          <Text style={styles.skipText}>I will do this later</Text>
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
+            <View style={styles.headerSection}>
+              <Text style={styles.pageTitle}>Your Email</Text>
+              <Text style={styles.pageSubtitle}>
+                We'll send you a verification code
+              </Text>
+            </View>
+
+            <View style={styles.inputCard}>
+              <Text style={styles.inputLabel}>Email Address</Text>
+              <View style={styles.inputWrapper}>
+                <Ionicons
+                  name="mail-outline"
+                  size={20}
+                  color="rgba(10,14,26,0.4)"
+                  style={{ marginRight: scale(8) }}
+                />
+                <TextInput
+                  style={styles.emailInput}
+                  value={email}
+                  onChangeText={setEmail}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  placeholder="Enter your email"
+                  placeholderTextColor="rgba(10,14,26,0.4)"
+                  editable={!loading}
+                  returnKeyType="done"
+                  onSubmitEditing={Keyboard.dismiss}
+                />
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.nextButton, (loading || !email) && styles.nextButtonDisabled]}
+              onPress={handleNext}
+              disabled={loading || !email}
+            >
+              {loading ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.nextButtonText}>Continue</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.skipButton}
+              onPress={() => router.push("/in_progress")}
+              disabled={loading}
+            >
+              <Text style={styles.skipText}>I'll do this later</Text>
+            </TouchableOpacity>
+
+            <View style={styles.infoNote}>
+              <Ionicons
+                name="information-circle-outline"
+                size={18}
+                color="rgba(10,14,26,0.5)"
+                style={{ marginRight: scale(8) }}
+              />
+              <Text style={styles.infoNoteText}>
+                We'll never share your email with anyone else
+              </Text>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </TouchableWithoutFeedback>
   );
 }
-
-const BG = "#EEF7FF";
-const INK = "#000910";
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: BG,
-  },
-  backButton: {
-    position: "absolute",
-    top: 58,
-    left: 24,
-    zIndex: 10,
+    backgroundColor: Colors.BG,
   },
   content: {
     flex: 1,
-    justifyContent: "flex-start",
-    paddingHorizontal: 32,
-    marginTop: 96,
+    paddingHorizontal: scale(20),
+    paddingTop: verticalScale(20),
   },
-  titleBlue: {
-    fontFamily: Fonts.bold,
-    fontSize: 42,
-    color: Colors.light.primary,
-    marginBottom: 0,
-    lineHeight: 60,
-  },
-  titleBlack: {
-    fontFamily: Fonts.bold,
-    fontSize: 26,
-    color: INK,
-    marginTop: -6,
-    marginBottom: 22,
-    lineHeight: 45,
-  },
-  input: {
-    fontFamily: Fonts.bold,
-    fontSize: 18,
-    color: INK,
-    borderBottomWidth: 3,
-    borderBottomColor: Colors.light.primary,
-    paddingVertical: 6,
-    marginBottom: 22,
-  },
-  button: {
-    height: 56,
-    backgroundColor: INK,
-    borderRadius: 28,
+  backButton: {
+    width: scale(40),
+    height: scale(40),
+    borderRadius: scale(20),
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 18,
-    shadowColor: "#00000040",
-    shadowOpacity: 0.3,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 4,
-    elevation: 4,
+    marginBottom: verticalScale(32),
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  buttonDisabled: {
-    opacity: 0.6,
+  headerSection: {
+    marginBottom: verticalScale(32),
   },
-  buttonText: {
-    color: "#FFFFFF",
-    fontSize: 18,
+  pageTitle: {
+    fontSize: scale(28),
     fontFamily: Fonts.bold,
+    color: Colors.INK,
+    marginBottom: verticalScale(4),
+  },
+  pageSubtitle: {
+    fontSize: scale(15),
+    fontFamily: Fonts.primary,
+    color: "rgba(10,14,26,0.6)",
+  },
+  inputCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: scale(16),
+    padding: scale(20),
+    marginBottom: verticalScale(24),
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  inputLabel: {
+    fontSize: scale(14),
+    fontFamily: Fonts.bold,
+    color: "rgba(10,14,26,0.6)",
+    marginBottom: verticalScale(12),
+  },
+  inputWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderBottomWidth: 2,
+    borderBottomColor: Colors.BLUE,
+    paddingBottom: verticalScale(8),
+  },
+  emailInput: {
+    flex: 1,
+    fontSize: scale(17),
+    fontFamily: Fonts.bold,
+    color: Colors.INK,
+    paddingVertical: 0,
+  },
+  nextButton: {
+    backgroundColor: Colors.BLUE,
+    borderRadius: scale(50),
+    paddingVertical: verticalScale(16),
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: Colors.BLUE,
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+    marginBottom: verticalScale(16),
+  },
+  nextButtonDisabled: {
+    opacity: 0.5,
+    shadowOpacity: 0.1,
+  },
+  nextButtonText: {
+    fontSize: scale(16),
+    fontFamily: Fonts.bold,
+    color: "#FFFFFF",
+  },
+  skipButton: {
+    paddingVertical: verticalScale(12),
+    alignItems: "center",
+    marginBottom: verticalScale(24),
   },
   skipText: {
+    fontSize: scale(15),
     fontFamily: Fonts.primary,
-    fontSize: 16,
-    color: Colors.light.primary,
-    textAlign: "center",
+    color: Colors.BLUE,
     textDecorationLine: "underline",
+  },
+  infoNote: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    padding: scale(16),
+    backgroundColor: "rgba(27,68,205,0.06)",
+    borderRadius: scale(12),
+  },
+  infoNoteText: {
+    flex: 1,
+    fontSize: scale(13),
+    fontFamily: Fonts.primary,
+    color: "rgba(10,14,26,0.6)",
+    lineHeight: verticalScale(18),
+    paddingTop: verticalScale(4.5),
   },
 });
