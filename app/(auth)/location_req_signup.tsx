@@ -1,5 +1,5 @@
 import { Fonts } from "@/constants/theme";
-import { scale, verticalScale } from "@/utils/responsive";
+import { moderateScale, scale, verticalScale } from "@/utils/responsive";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { router } from "expo-router";
@@ -51,6 +51,7 @@ export default function LocationReqSignup() {
           style={styles.backButton}
           onPress={() => router.back()}
           disabled={loading}
+          activeOpacity={0.7}
         >
           <Ionicons name="arrow-back" size={24} color={Colors.INK} />
         </TouchableOpacity>
@@ -71,9 +72,13 @@ export default function LocationReqSignup() {
             onPress={askLocation}
             disabled={loading}
             style={[styles.locationButton, loading && styles.locationButtonDisabled]}
+            activeOpacity={0.8}
           >
             {loading ? (
-              <ActivityIndicator color="#FFFFFF" />
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator color="#FFFFFF" size="small" />
+                <Text style={styles.locationButtonText}>Getting location...</Text>
+              </View>
             ) : (
               <>
                 <Ionicons
@@ -88,12 +93,13 @@ export default function LocationReqSignup() {
           </TouchableOpacity>
 
           <View style={styles.infoNote}>
-            <Ionicons
-              name="information-circle-outline"
-              size={18}
-              color="rgba(10,14,26,0.5)"
-              style={{ marginRight: scale(8) }}
-            />
+            <View style={styles.infoIconCircle}>
+              <Ionicons
+                name="information-circle"
+                size={18}
+                color={Colors.BLUE}
+              />
+            </View>
             <Text style={styles.infoNoteText}>
               We use your location to show you people nearby. You can change this anytime in settings.
             </Text>
@@ -132,14 +138,14 @@ const styles = StyleSheet.create({
     marginBottom: verticalScale(24),
   },
   pageTitle: {
-    fontSize: scale(28),
+    fontSize: moderateScale(28),
     fontFamily: Fonts.bold,
     color: Colors.INK,
     marginBottom: verticalScale(4),
-
+    letterSpacing: 0.3,
   },
   pageSubtitle: {
-    fontSize: scale(15),
+    fontSize: moderateScale(15),
     fontFamily: Fonts.primary,
     color: "rgba(10,14,26,0.6)",
     lineHeight: verticalScale(22),
@@ -167,24 +173,43 @@ const styles = StyleSheet.create({
     marginBottom: verticalScale(16),
   },
   locationButtonDisabled: {
-    opacity: 0.5,
-    shadowOpacity: 0.1,
+    backgroundColor: "rgba(27,68,205,0.3)",
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  loadingContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: scale(10),
   },
   locationButtonText: {
-    fontSize: scale(16),
+    fontSize: moderateScale(16),
     fontFamily: Fonts.bold,
     color: "#FFFFFF",
+    letterSpacing: 0.3,
   },
   infoNote: {
     flexDirection: "row",
     alignItems: "flex-start",
     padding: scale(16),
     backgroundColor: "rgba(27,68,205,0.06)",
-    borderRadius: scale(12),
+    borderRadius: scale(14),
+    borderWidth: 1,
+    borderColor: "rgba(27,68,205,0.12)",
+    gap: scale(12),
+  },
+  infoIconCircle: {
+    width: scale(32),
+    height: scale(32),
+    borderRadius: scale(16),
+    backgroundColor: "rgba(27,68,205,0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: verticalScale(2),
   },
   infoNoteText: {
     flex: 1,
-    fontSize: scale(13),
+    fontSize: moderateScale(13),
     fontFamily: Fonts.primary,
     color: "rgba(10,14,26,0.6)",
     lineHeight: verticalScale(18),

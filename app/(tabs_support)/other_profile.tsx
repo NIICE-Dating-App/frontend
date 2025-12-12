@@ -399,6 +399,7 @@ export default function OtherProfileScreen() {
   const [modes, setModes] = useState<{ looking: string[]; values: string[] }>({ looking: [], values: [] });
   const [hobbies, setHobbies] = useState<string[]>([]);
   const [languages, setLanguages] = useState<{ id: number; code: string; label: string }[]>([]);
+  const [accessLevel, setAccessLevel] = useState<'full' | 'limited'>('full');
 
   // Frames
   const [activeFrames, setActiveFrames] = useState<any[]>([]);
@@ -518,6 +519,9 @@ export default function OtherProfileScreen() {
 
       const p = profileData;
 
+      // Set access level
+      setAccessLevel(p.access_level === 'limited' ? 'limited' : 'full');
+
       // Process active frames from response (only in full access)
       if (p.active_frames && Array.isArray(p.active_frames) && p.active_frames.length > 0) {
         const processedFrames = await Promise.all(
@@ -581,9 +585,9 @@ export default function OtherProfileScreen() {
 
       // Communities (only in full access)
       const COMMUNITY_OPTIONS = [
-        "🌿 Environmentalism", "✊ Social justice", "🏳️‍🌈 LGBTQIA+", "♀️ Feminism", "🧠 Mental health awareness",
-        "✊🏾 Black community", "🧧 Asian community", "🪅 Latino/Hispanic community", "✡️ Jewish community",
-        "☪️ Muslim community", "♿ Disability awareness", "💖 Body positivity", "🐾 Animal rights", "🌍 Climate action",
+        "ðŸŒ¿ Environmentalism", "âœŠ Social justice", "ðŸ³ï¸â€ðŸŒˆ LGBTQIA+", "â™€ï¸ Feminism", "ðŸ§  Mental health awareness",
+        "âœŠðŸ¾ Black community", "ðŸ§§ Asian community", "ðŸª… Latino/Hispanic community", "âœ¡ï¸ Jewish community",
+        "â˜ªï¸ Muslim community", "â™¿ Disability awareness", "ðŸ’– Body positivity", "ðŸ¾ Animal rights", "ðŸŒ Climate action",
       ];
       const stripEmoji = (s: string) => s.replace(/^[^\w\s]+\s*/, '').trim();
       const normalizeLabel = (s: string) => stripEmoji(s).toLowerCase().trim();
@@ -999,12 +1003,20 @@ export default function OtherProfileScreen() {
               </View>
               <View style={styles.cardContent}>
                 <View style={styles.chipsGrid}>
-                  {modes.looking.map((tag, i) => (
+                  {(accessLevel === 'limited' ? modes.looking.slice(0, 2) : modes.looking).map((tag, i) => (
                     <View key={`looking-${i}`} style={styles.customChip}>
                       <Text style={styles.chipLabel}>{tag}</Text>
                     </View>
                   ))}
                 </View>
+                {accessLevel === 'limited' && modes.looking.length > 2 && (
+                  <View style={styles.privateLimitedHint}>
+                    <Ionicons name="lock-closed-outline" size={14} color="rgba(27,68,205,0.6)" />
+                    <Text style={styles.privateLimitedHintText}>
+                      Connect to see all {modes.looking.length} preferences
+                    </Text>
+                  </View>
+                )}
               </View>
             </View>
           </View>
@@ -1333,7 +1345,7 @@ export default function OtherProfileScreen() {
             onPress={() => setModalVisible(false)} 
             activeOpacity={0.8}
           >
-            <Text style={styles.closeButtonText}>✕</Text>
+            <Text style={styles.closeButtonText}>âœ•</Text>
           </TouchableOpacity>
           {!!selectedModalUri && (
             <Image 
@@ -1671,6 +1683,19 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.bold,
     color: "#FFFFFF",
     letterSpacing: 0.2,
+  },
+  privateLimitedHint: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: verticalScale(12),
+    gap: scale(6),
+  },
+  privateLimitedHintText: {
+    fontSize: scale(12),
+    fontFamily: Fonts.primary,
+    color: "rgba(27,68,205,0.6)",
+    fontStyle: "italic",
   },
   photoContainer: { 
     paddingHorizontal: scale(20), 

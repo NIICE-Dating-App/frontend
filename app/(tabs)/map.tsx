@@ -1,2323 +1,63 @@
 // app/(tabs)/map.tsx
-import { Fonts } from "@/constants/theme";
+// OPTION A FIX: Stabilized callbacks, removed duplicate triggers, fixed retry logic
 import { supabase } from "@/lib/supabase";
 import { scale, verticalScale } from "@/utils/responsive";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { BlurView } from "expo-blur";
-import * as Font from "expo-font";
-import { LinearGradient } from "expo-linear-gradient";
 import * as Location from "expo-location";
 import { useFocusEffect, useRouter } from "expo-router";
-import React, { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert,
-  Dimensions,
   Easing,
-  Image,
-  Keyboard,
-  Linking,
-  Modal,
   Platform,
-  Pressable,
   Animated as RNAnimated,
   ScrollView,
-  StyleSheet, Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+  StyleSheet,
+  View
 } from "react-native";
 import MapView, { Camera, Marker, PROVIDER_GOOGLE } from "react-native-maps";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Svg, { Defs, Path, Stop, Circle as SvgCircle, LinearGradient as SvgLinearGradient } from "react-native-svg";
 import ActiveFramesModal from "../(frames)/active_frames";
 
-/* ===================== CONSTANTS ===================== */
-const BG = "#EEF7FF";
-const BLUES = {
-  b00: "#0B1C60", b10: "#0D236F", b20: "#0F2C8A", b30: "#1437A4", b40: "#1840B8",
-  b50: "#1B44CD", b60: "#2D58D6", b70: "#3E6BE0", b80: "#4E7DE9", b90: "#6B95F0",
-  b100: "#86A9F5", b110: "#A5BFF9", b120: "#C4D5FC", b130: "#E6EFFF",
-} as const;
+// Import all components from map_components
+import {
+  CreateEventButton,
+  DEFAULT_PROFILE_PHOTO,
+  EventData,
+  EventDetailsModal,
+  EventMarker,
+  FALLBACK,
+  FilterButton,
+  FilterModal,
+  FilterState,
+  googleBlueStyle,
+  haversineMeters,
+  IiLoader,
+  LocateFab,
+  // Components
+  ProfileMarker,
+  QuickFilterChip,
+  SCREEN_H,
+  SCREEN_W,
+  signPath,
+  smoothPoint,
+  // Styles
+  styles,
+  TAB_HEIGHT,
+  // Utilities
+  toStoragePath,
+  updateUserLocationInDB,
+  // Types
+  UserMapCard,
+  UserMarker,
+  UserPreferences,
+  UserProfileModal
+} from "@/components/map_components";
+import { useNotification } from "@/components/NotificationContext";
 
-const BLUE = BLUES.b50;
-const PLACEHOLDER_COLOR = "rgba(11,16,32,0.38)";
-const GRADIENTS = { chipActive: [BLUES.b60, BLUES.b80] } as const;
-const TAB_HEIGHT = 90;
-const SEARCH_HEIGHT = verticalScale(52);
-const MARKER_BOX = 124;
-const PHOTO_SIZE = 56;
-const RING_SIZE = 60;
-const RING_MAX_SCALE = 2;
-const RING_OFFSET = (MARKER_BOX - RING_SIZE) / 2;
-const DEFAULT_PROFILE_PHOTO: string | null = null;
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
-const FALLBACK = { lat: 41.9028, lng: 12.4964 };
-const toRad = (d: number) => (d * Math.PI) / 180;
 
-// Helper functions from profile.tsx
-const toStoragePath = (urlOrPath: string | null): string | null => {
-  if (!urlOrPath) return null;
-  if (!urlOrPath.startsWith("http")) return urlOrPath.replace(/^\/+/, "");
-  const markers = ["/object/sign/user_photos/","/object/public/user_photos/","/user_photos/"];
-  for (const m of markers) {
-    const i = urlOrPath.indexOf(m);
-    if (i !== -1) return decodeURIComponent(urlOrPath.substring(i + m.length).split("?")[0]);
-  }
-  return null;
-};
-
-const signPath = async (path: string | null): Promise<string | null> => {
-  if (!path) return null;
-  const { data, error } = await supabase.storage.from("user_photos").createSignedUrl(path, 3600);
-  if (error) console.warn("signPath error:", error.message);
-  return data?.signedUrl ?? null;
-};
-
-// Capitalize first letter of each word in a name
-const capitalizeWords = (str: string | null | undefined): string => {
-  if (!str) return '';
-  return str
-    .toLowerCase()
-    .split(' ')
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
-};
-
-/* ===================== USER & EVENT TYPES ===================== */
-interface UserMapCard {
-  user_id: string;
-  full_name: string;
-  age: number;
-  bio: string;
-  frame_id: string | null;
-  approx_lat: number;
-  approx_lng: number;
-  main_photo_url: string | null;
-  last_seen?: string; // Track when user was last active
-  gender?: string; // For gender filtering (needs backend RPC update)
-  looking_for?: string[] | null; // What they're looking for
-  access_level?: string; // 'full', 'limited', or 'none' - based on profile visibility
-}
-
-interface FilterState {
-  ageMin: number;
-  ageMax: number;
-  distanceKm: number;
-  genders: ('man' | 'woman' | 'nonbinary')[];
-}
-
-interface UserPreferences {
-  ageMin: number;
-  ageMax: number;
-  distanceKm: number;
-  interestedIn: string[];
-}
-
-interface MatchStatus {
-  status: "pending" | "accepted" | "denied" | "rejected" | null;
-  is_requester: boolean;
-  match_id: string | null;
-  sender_message?: string | null;
-}
-
-type EventCategory = 
-  | "food_drinks"
-  | "nightlife_party"
-  | "outdoors_nature"
-  | "sports_fitness"
-  | "games_hobbies"
-  | "arts_culture_entertainment"
-  | "learning_career"
-  | "community_volunteering"
-  | "romantic_dating"
-  | "travel_adventure"
-  | "online_virtual"
-  | "other";
-
-type EventType = 'public' | 'public_application' | 'private' | 'invite_only' | 'group_event' | 'community_event';
-
-interface EventData {
-  id: string;
-  event_name: string;
-  category: EventCategory;
-  latitude: number;
-  longitude: number;
-  location_name: string;
-  time_start: string;
-  time_end: string;
-  capacity: number;
-  event_description?: string;
-  host_id: string;
-  age_min: number;
-  age_max: number;
-  gender_allowed: string;
-  status: string;
-  event_type?: EventType;
-  accepted_count?: number;
-  fuzzy_radius_meters?: number;
-  user_application_status?: 'none' | 'pending' | 'approved' | 'rejected' | 'cancelled';
-}
-
-const eventTypeDisplayNames: Record<EventType, { label: string; icon: string; color: string }> = {
-  public: { label: "Public", icon: "earth", color: "#22C55E" },
-  public_application: { label: "Apply to Join", icon: "clipboard-check-outline", color: "#3B82F6" },
-  private: { label: "Private", icon: "lock-outline", color: "#8B5CF6" },
-  invite_only: { label: "Invite Only", icon: "email-outline", color: "#F59E0B" },
-  group_event: { label: "Group Event", icon: "account-group", color: "#EC4899" },
-  community_event: { label: "Community", icon: "home-group", color: "#06B6D4" },
-};
-
-const categoryDisplayNames: Record<EventCategory, { label: string; icon: string }> = {
-  food_drinks: { label: "Food & Drinks", icon: "silverware-fork-knife" },
-  nightlife_party: { label: "Nightlife & Party", icon: "weather-night" },
-  outdoors_nature: { label: "Outdoors & Nature", icon: "pine-tree" },
-  sports_fitness: { label: "Sports & Fitness", icon: "dumbbell" },
-  games_hobbies: { label: "Games & Hobbies", icon: "gamepad-variant" },
-  arts_culture_entertainment: { label: "Arts & Culture", icon: "palette" },
-  learning_career: { label: "Learning & Career", icon: "school" },
-  community_volunteering: { label: "Community", icon: "account-group" },
-  romantic_dating: { label: "Romantic & Dating", icon: "heart" },
-  travel_adventure: { label: "Travel & Adventure", icon: "airplane" },
-  online_virtual: { label: "Online / Virtual", icon: "laptop" },
-  other: { label: "Other", icon: "dots-horizontal" },
-};
-
-/* ===================== HOOKS ===================== */
-const useKadwaBold = () => {
-  const [ready, setReady] = useState(false);
-  useEffect(() => {
-    let mounted = true;
-    Font.loadAsync({ KadwaBold: require("@/assets/fonts/Kadwa-Bold.ttf") })
-      .then(() => mounted && setReady(true))
-      .catch(() => {});
-    return () => { mounted = false; };
-  }, []);
-  return ready;
-};
-
-/* ===================== UTILITIES ===================== */
-const updateUserLocationInDB = async (userId: string, lat: number, lng: number): Promise<boolean> => {
-  try {
-    const { error } = await supabase
-      .from('profiles')
-      .update({
-        lat: lat,
-        lng: lng,
-        distance_meters: 4000, // 4km default radius
-        discoverable: true, // Ensure user is discoverable
-        last_seen: new Date().toISOString(),
-      })
-      .eq('id', userId);
-    
-    if (error) {
-      console.error("[ERROR] Error updating user location in DB:", error);
-      return false;
-    } else {
-      console.log("User location & last_seen updated in DB:", lat.toFixed(6), lng.toFixed(6));
-      return true;
-    }
-  } catch (error) {
-    console.error("[ERROR] Exception updating location:", error);
-    return false;
-  }
-};
-
-const googleBlueStyle: any[] = [
-  // Hide POI icons and labels (restaurants, stores, etc.)
-  { featureType: "poi", elementType: "labels.icon", stylers: [{ visibility: "off" }] },
-  { featureType: "poi.business", elementType: "labels", stylers: [{ visibility: "off" }] },
-  { featureType: "poi.medical", elementType: "labels", stylers: [{ visibility: "off" }] },
-  { featureType: "poi.place_of_worship", elementType: "labels", stylers: [{ visibility: "off" }] },
-  { featureType: "poi.school", elementType: "labels", stylers: [{ visibility: "off" }] },
-  { featureType: "poi.sports_complex", elementType: "labels", stylers: [{ visibility: "off" }] },
-  
-  // Keep park labels but hide icons
-  { featureType: "poi.park", elementType: "labels.icon", stylers: [{ visibility: "off" }] },
-  
-  // Hide transit stations
-  { featureType: "transit", elementType: "labels", stylers: [{ visibility: "off" }] },
-  
-  // Style the remaining labels (street names, area names)
-  { elementType: "labels.text.fill", stylers: [{ color: BLUES.b20 }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#FFFFFF" }, { width: 3 }] },
-  
-  { featureType: "landscape.man_made", elementType: "geometry", stylers: [{ color: BLUES.b120 }] },
-  { elementType: "geometry", stylers: [{ color: BLUES.b130 }] },
-  { featureType: "road", elementType: "geometry", stylers: [{ color: BLUES.b120 }] },
-  { featureType: "road.arterial", elementType: "geometry", stylers: [{ color: BLUES.b110 }] },
-  { featureType: "road.local", elementType: "geometry", stylers: [{ color: BLUES.b120 }] },
-  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: BLUES.b90 }] },
-  { featureType: "road.highway.controlled_access", elementType: "geometry", stylers: [{ color: BLUES.b80 }] },
-  
-  // Parks and green spaces - blueish green
-  { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#B8E6D5" }] },
-  { featureType: "landscape.natural", elementType: "geometry", stylers: [{ color: "#C4E8DB" }] },
-  { featureType: "landscape.natural.landcover", elementType: "geometry", stylers: [{ color: "#B8E6D5" }] },
-  { featureType: "landscape.natural.terrain", elementType: "geometry", stylers: [{ color: "#C4E8DB" }] },
-  
-  { featureType: "water", elementType: "geometry", stylers: [{ color: BLUES.b100 }] },
-];
-
-/* ===================== COMPONENTS ===================== */
-const GlassSurface: React.FC<{
-  children?: React.ReactNode; style?: any; thickness?: "ultraThin" | "thin" | "regular" | "thick";
-  blueTint?: boolean; radius?: number;
-}> = memo(({ children, style, thickness = "regular", blueTint = false, radius = scale(24) }) => {
-  const conf = useMemo(() => ({
-    ultraThin: { blur: 20, bg: "rgba(255,255,255,0.18)", strokeIn: "rgba(255,255,255,0.65)" },
-    thin: { blur: 30, bg: "rgba(255,255,255,0.22)", strokeIn: "rgba(255,255,255,0.66)" },
-    regular: { blur: 40, bg: "rgba(255,255,255,0.32)", strokeIn: "rgba(255,255,255,0.72)" },
-    thick: { blur: 55, bg: "rgba(255,255,255,0.42)", strokeIn: "rgba(255,255,255,0.78)" },
-  }[thickness]), [thickness]);
-
-  const blurIntensity = Platform.select({ ios: conf.blur, android: Math.round(conf.blur * 0.6), default: conf.blur });
-  const bgColor = blueTint ? "rgba(27,68,205,0.20)" : conf.bg;
-
-  return (
-    <View style={[styles.glassBase, { borderRadius: radius }, style]}>
-      <BlurView intensity={blurIntensity} tint="light" style={[StyleSheet.absoluteFillObject, { borderRadius: radius }]} />
-      <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { borderRadius: radius, backgroundColor: bgColor }]} />
-      <LinearGradient
-        colors={["rgba(255,255,255,0.28)", "rgba(255,255,255,0.10)", "transparent"]}
-        start={{ x: 0.1, y: 0 }} end={{ x: 1, y: 1 }}
-        style={[StyleSheet.absoluteFillObject, { borderRadius: radius }]} pointerEvents="none"
-      />
-      <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { borderRadius: radius, borderWidth: StyleSheet.hairlineWidth, borderColor: "rgba(255,255,255,0.7)" }]} />
-      <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { borderRadius: radius, borderWidth: StyleSheet.hairlineWidth, borderColor: "rgba(0,0,0,0.08)" }]} />
-      {children}
-    </View>
-  );
-});
-
-const SearchIcon: React.FC<{ size?: number }> = memo(({ size = 20 }) => {
-  const s = scale(size);
-  return (
-    <Svg width={s} height={s} viewBox="0 0 24 24">
-      <Defs>
-        <SvgLinearGradient id="search-grad" x1="0" y1="0" x2="1" y2="1">
-          <Stop offset="0" stopColor={BLUE} />
-          <Stop offset="1" stopColor={BLUES.b90} />
-        </SvgLinearGradient>
-      </Defs>
-      <SvgCircle cx="11" cy="11" r="7" stroke="url(#search-grad)" strokeWidth={2.3} fill="none" />
-      <Path d="M21 21 L16.8 16.8" stroke="url(#search-grad)" strokeWidth={2.3} strokeLinecap="round" />
-    </Svg>
-  );
-});
-
-const LocationIcon: React.FC<{ size?: number }> = memo(({ size = 24 }) => {
-  const s = scale(size);
-  return (
-    <Svg width={s} height={s} viewBox="0 0 24 24">
-      <SvgCircle cx="12" cy="12" r="3" fill="white" />
-      <Path d="M12 2v6m0 8v6m10-10h-6m-8 0H2" stroke="white" strokeWidth={2} strokeLinecap="round" />
-      <SvgCircle cx="12" cy="12" r="8" stroke="white" strokeWidth={1.5} fill="none" opacity={0.5} />
-    </Svg>
-  );
-});
-
-const PulseRing: React.FC<{ size: number; delay: number; ringColor?: string; ringWidth?: number; left: number; top: number }> = memo(({
-  size, delay, ringColor = "rgba(27,68,205,0.28)", ringWidth = 2, left, top,
-}) => {
-  const scaleAnim = useRef(new RNAnimated.Value(1)).current;
-  const opacityAnim = useRef(new RNAnimated.Value(0.75)).current;
-
-  useEffect(() => {
-    const loop = RNAnimated.loop(
-      RNAnimated.parallel([
-        RNAnimated.sequence([
-          RNAnimated.delay(delay),
-          RNAnimated.timing(scaleAnim, { toValue: RING_MAX_SCALE, duration: 2200, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-          RNAnimated.timing(scaleAnim, { toValue: 1, duration: 0, useNativeDriver: true }),
-        ]),
-        RNAnimated.sequence([
-          RNAnimated.delay(delay),
-          RNAnimated.timing(opacityAnim, { toValue: 0, duration: 2200, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-          RNAnimated.timing(opacityAnim, { toValue: 0.75, duration: 0, useNativeDriver: true }),
-        ]),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [delay, opacityAnim, scaleAnim]);
-
-  return (
-    <RNAnimated.View
-      pointerEvents="none"
-      style={{
-        position: "absolute", left, top, width: size, height: size, borderRadius: size / 2,
-        backgroundColor: "transparent", borderWidth: ringWidth, borderColor: ringColor,
-        transform: [{ scale: scaleAnim }], opacity: opacityAnim,
-        ...(Platform.OS === "android" ? { elevation: 0 } : {}),
-      }}
-    />
-  );
-});
-
-const DirectionCone: React.FC<{ degrees: number }> = memo(({ degrees }) => (
-  <View style={{ position: "absolute", width: MARKER_BOX, height: MARKER_BOX, alignItems: "center", justifyContent: "center" }} pointerEvents="none">
-    <View style={{ transform: [{ rotate: `${degrees}deg` }], alignItems: "center", justifyContent: "center" }}>
-      <Svg width={96} height={96} viewBox="0 0 96 96">
-        <Defs>
-          <SvgLinearGradient id="cone" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor="rgba(27,68,205,0.26)" />
-            <Stop offset="1" stopColor="rgba(27,68,205,0.02)" />
-          </SvgLinearGradient>
-        </Defs>
-        <Path d="M48 5 L64 42 L32 42 Z" fill="url(#cone)" />
-      </Svg>
-    </View>
-  </View>
-));
-
-const ProfileMarker: React.FC<{ photoUrl: string | null; headingDeg?: number }> = memo(({ photoUrl, headingDeg = 0 }) => (
-  <View
-    style={{
-      width: MARKER_BOX, height: MARKER_BOX, alignItems: "center", justifyContent: "center",
-    }}
-    collapsable={false} pointerEvents="none"
-  >
-    <DirectionCone degrees={headingDeg} />
-    <PulseRing size={RING_SIZE} delay={0} left={RING_OFFSET} top={RING_OFFSET} />
-    <PulseRing size={RING_SIZE} delay={800} ringColor="rgba(27,68,205,0.18)" left={RING_OFFSET} top={RING_OFFSET} />
-    <PulseRing size={RING_SIZE} delay={1600} ringColor="rgba(27,68,205,0.12)" left={RING_OFFSET} top={RING_OFFSET} />
-
-    <View style={{ 
-      width: PHOTO_SIZE, 
-      height: PHOTO_SIZE, 
-      borderRadius: PHOTO_SIZE / 2, 
-      borderWidth: 2.5, 
-      borderColor: BLUE,
-      backgroundColor: "#fff",
-      alignItems: "center",
-      justifyContent: "center",
-      overflow: "hidden"
-    }}>
-      {photoUrl ? (
-        <Image
-          source={{ uri: photoUrl }} 
-          resizeMode="cover"
-          style={{ 
-            width: PHOTO_SIZE - 5, 
-            height: PHOTO_SIZE - 5, 
-            borderRadius: (PHOTO_SIZE - 5) / 2 
-          }}
-        />
-      ) : (
-        <View style={{ 
-          width: PHOTO_SIZE - 5, 
-          height: PHOTO_SIZE - 5, 
-          borderRadius: (PHOTO_SIZE - 5) / 2, 
-          backgroundColor: BLUES.b100,
-          alignItems: "center",
-          justifyContent: "center"
-        }}>
-          <Ionicons name="person" size={24} color="#FFFFFF" />
-        </View>
-      )}
-    </View>
-  </View>
-));
-
-const UserMarker: React.FC<{ user: UserMapCard; hasFrame: boolean }> = memo(({ user, hasFrame }) => {
-  const USER_MARKER_SIZE = 48;
-  const USER_RING_SIZE = 52;
-  
-  // Check if user is currently online (active in last 2 minutes)
-  const isOnline = user.last_seen && 
-    (Date.now() - new Date(user.last_seen).getTime()) < 2 * 60 * 1000;
-  
-  return (
-    <View style={{ alignItems: "center", justifyContent: "center", width: 64, height: 64 }}>
-      {/* Frame indicator ring */}
-      {hasFrame && (
-        <View style={{
-          position: "absolute",
-          width: USER_RING_SIZE,
-          height: USER_RING_SIZE,
-          borderRadius: USER_RING_SIZE / 2,
-          borderWidth: 2.5,
-          borderColor: BLUES.b60,
-          backgroundColor: "transparent",
-        }} />
-      )}
-      
-      {/* Online indicator dot */}
-      {isOnline && (
-        <View style={{
-          position: "absolute",
-          top: 0,
-          right: 8,
-          width: 12,
-          height: 12,
-          borderRadius: 6,
-          backgroundColor: "#4CAF50",
-          borderWidth: 2,
-          borderColor: "#FFFFFF",
-          zIndex: 10,
-        }} />
-      )}
-      
-      {/* User photo */}
-      {user.main_photo_url ? (
-        <Image
-          source={{ uri: user.main_photo_url }}
-          resizeMode="cover"
-          style={{
-            width: USER_MARKER_SIZE,
-            height: USER_MARKER_SIZE,
-            borderRadius: USER_MARKER_SIZE / 2,
-            backgroundColor: "#fff",
-            borderWidth: 2,
-            borderColor: BLUES.b50,
-            opacity: isOnline ? 1 : 0.7, // Dim offline users
-          }}
-        />
-      ) : (
-        <View style={{
-          width: USER_MARKER_SIZE,
-          height: USER_MARKER_SIZE,
-          borderRadius: USER_MARKER_SIZE / 2,
-          backgroundColor: BLUES.b120,
-          borderWidth: 2,
-          borderColor: BLUES.b50,
-          alignItems: "center",
-          justifyContent: "center",
-          opacity: isOnline ? 1 : 0.7, // Dim offline users
-        }}>
-          <Text style={{
-            fontSize: 16,
-            fontFamily: Fonts.bold,
-            color: BLUES.b50,
-          }}>
-            {user.full_name?.charAt(0)?.toUpperCase() || "?"}
-          </Text>
-        </View>
-      )}
-      
-      {/* Age badge */}
-      <View style={{
-        position: "absolute",
-        bottom: -2,
-        backgroundColor: "#FFFFFF",
-        paddingHorizontal: 6,
-        paddingVertical: 2,
-        borderRadius: 10,
-        borderWidth: 1,
-        borderColor: BLUES.b50,
-      }}>
-        <Text style={{
-          fontSize: 10,
-          fontFamily: Fonts.bold,
-          color: "#0A0E1A",
-        }}>
-          {user.age}
-        </Text>
-      </View>
-    </View>
-  );
-});
-
-const ChipGlowHalo: React.FC<{ opacity: RNAnimated.AnimatedInterpolation<number> | RNAnimated.Value }> = memo(({ opacity }) => (
-  <RNAnimated.View
-    pointerEvents="none"
-    style={{
-      position: "absolute", left: -6, right: -6, top: -6, bottom: -6, borderRadius: scale(26) + 6,
-      shadowColor: BLUE, shadowOpacity: 0.35, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 0, opacity,
-    }}
-  />
-));
-
-const FilterChip: React.FC<{ label: string; active?: boolean; onPress?: () => void }> = memo(({ label, active, onPress }) => {
-  const scaleAnim = useRef(new RNAnimated.Value(1)).current;
-  const glowAnim = useRef(new RNAnimated.Value(0)).current;
-
-  const pressIn = useCallback(() => 
-    RNAnimated.timing(scaleAnim, { toValue: 0.94, duration: 70, useNativeDriver: true, easing: Easing.out(Easing.cubic) }).start(),
-    [scaleAnim]
-  );
-  
-  const pressOut = useCallback(() => {
-    RNAnimated.spring(scaleAnim, { toValue: 1, friction: 4, tension: 300, useNativeDriver: true }).start();
-    if (active) {
-      RNAnimated.sequence([
-        RNAnimated.timing(glowAnim, { toValue: 1, duration: 140, useNativeDriver: false }),
-        RNAnimated.timing(glowAnim, { toValue: 0, duration: 280, useNativeDriver: false }),
-      ]).start();
-    }
-  }, [scaleAnim, glowAnim, active]);
-
-  const haloOpacity = glowAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
-
-  return (
-    <Pressable onPress={onPress} onPressIn={pressIn} onPressOut={pressOut} style={{ overflow: "visible" }}>
-      <RNAnimated.View style={{ transform: [{ scale: scaleAnim }], position: "relative" }}>
-        {active && <ChipGlowHalo opacity={haloOpacity} />}
-        <GlassSurface
-          thickness="thick" blueTint={!!active} radius={scale(26)}
-          style={[styles.chipGlass, { shadowColor: active ? BLUE : "#000", shadowOpacity: active ? 0.16 : 0.08, shadowRadius: active ? 14 : 8, shadowOffset: { width: 0, height: active ? 6 : 4 } }]}
-        >
-          <LinearGradient
-            colors={active ? GRADIENTS.chipActive : ["rgba(255,255,255,0.35)", "rgba(255,255,255,0.15)"]}
-            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-            style={[StyleSheet.absoluteFillObject, { borderRadius: scale(26), opacity: active ? 0.92 : 1 }]}
-          />
-          <Text style={[styles.chipText, { color: active ? "#FFFFFF" : BLUES.b20 }]}>{label}</Text>
-        </GlassSurface>
-      </RNAnimated.View>
-    </Pressable>
-  );
-});
-
-const PlusChipDiamondGlass = memo(forwardRef<View, { onPress: () => void }>(({ onPress }, ref) => {
-  const pressScale = useRef(new RNAnimated.Value(1)).current;
-  const onIn = useCallback(() => RNAnimated.timing(pressScale, { toValue: 0.94, duration: 70, useNativeDriver: true }).start(), [pressScale]);
-  const onOut = useCallback(() => RNAnimated.spring(pressScale, { toValue: 1, friction: 4, tension: 300, useNativeDriver: true }).start(), [pressScale]);
-
-  const SIDE = scale(42);
-  const R = scale(12);
-
-  return (
-    <View ref={ref} collapsable={false}>
-      <Pressable onPress={onPress} onPressIn={onIn} onPressOut={onOut} style={{ overflow: "visible" }}>
-        <RNAnimated.View style={{ transform: [{ scale: pressScale }] }}>
-          <GlassSurface
-            thickness="thick" blueTint radius={R}
-            style={{
-              width: SIDE, height: SIDE, transform: [{ rotate: "45deg" }], alignItems: "center", justifyContent: "center",
-              borderWidth: 1, borderColor: "rgba(27,68,205,0.28)", shadowColor: "#0F172A", shadowOpacity: 0.16, shadowRadius: 14, shadowOffset: { width: 0, height: 6 },
-            }}
-          >
-            <LinearGradient colors={[BLUES.b60, BLUES.b80]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ position: "absolute", left: 5, right: 5, top: 5, bottom: 5, borderRadius: R - 4, opacity: 0.95 }} />
-            <View style={{ transform: [{ rotate: "-45deg" }], alignItems: "center", justifyContent: "center" }}>
-              <Svg width={20} height={20} viewBox="0 0 20 20">
-                <Path d="M10 3 L10 17 M3 10 L17 10" stroke="#FFFFFF" strokeWidth={2.2} strokeLinecap="round" />
-              </Svg>
-            </View>
-          </GlassSurface>
-        </RNAnimated.View>
-      </Pressable>
-    </View>
-  );
-}));
-
-const GlassFab: React.FC<{ onPress: () => void; spin: RNAnimated.AnimatedInterpolation<string>; bottom: number; right: number }> = memo(({ onPress, spin, bottom, right }) => {
-  const pressScale = useRef(new RNAnimated.Value(1)).current;
-  const onIn = useCallback(() => RNAnimated.timing(pressScale, { toValue: 0.96, duration: 70, useNativeDriver: true }).start(), [pressScale]);
-  const onOut = useCallback(() => RNAnimated.spring(pressScale, { toValue: 1, friction: 4, tension: 300, useNativeDriver: true }).start(), [pressScale]);
-  const R = scale(28);
-
-  return (
-    <Pressable onPress={onPress} onPressIn={onIn} onPressOut={onOut} android_ripple={{ color: "rgba(255,255,255,0.15)" }} style={{ position: "absolute", bottom, right }}>
-      <RNAnimated.View style={{ transform: [{ scale: pressScale }] }}>
-        <GlassSurface thickness="thick" blueTint radius={R} style={{ width: R * 2, height: R * 2, alignItems: "center", justifyContent: "center", shadowColor: "#0F172A", shadowOpacity: 0.18, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, borderWidth: 1, borderColor: "rgba(27,68,205,0.28)" }}>
-          <LinearGradient colors={[BLUES.b60, BLUES.b80]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ position: "absolute", left: 6, right: 6, top: 6, bottom: 6, borderRadius: R - 6, opacity: 0.95 }} />
-          <RNAnimated.View style={{ transform: [{ rotate: spin }] }}>
-            <LocationIcon size={24} />
-          </RNAnimated.View>
-        </GlassSurface>
-      </RNAnimated.View>
-    </Pressable>
-  );
-});
-
-const IiLoader: React.FC = () => {
-  const kadwaReady = useKadwaBold();
-  const look = useRef(new RNAnimated.Value(0)).current;
-  const runner = useRef(new RNAnimated.Value(0)).current;
-  const [barW, setBarW] = useState(0);
-
-  useEffect(() => {
-    const lookLoop = RNAnimated.loop(
-      RNAnimated.sequence([
-        RNAnimated.timing(look, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        RNAnimated.timing(look, { toValue: 0, duration: 900, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-      ])
-    );
-    lookLoop.start();
-    return () => lookLoop.stop();
-  }, [look]);
-
-  useEffect(() => {
-    const runLoop = RNAnimated.loop(RNAnimated.timing(runner, { toValue: 1, duration: 1400, easing: Easing.linear, useNativeDriver: true }));
-    runLoop.start();
-    return () => runLoop.stop();
-  }, [runner]);
-
-  const lRot = look.interpolate({ inputRange: [0, 1], outputRange: ["-10deg", "-3deg"] });
-  const rRot = look.interpolate({ inputRange: [0, 1], outputRange: ["10deg", "3deg"] });
-  const lDotTx = look.interpolate({ inputRange: [0, 1], outputRange: [-4, 8] });
-  const rDotTx = look.interpolate({ inputRange: [0, 1], outputRange: [4, -8] });
-  const runnerTx = barW === 0 ? 0 : runner.interpolate({ inputRange: [0, 1], outputRange: [-barW * 0.3, barW] });
-  const iStyle = [styles.iLetter, { color: BLUES.b80, fontFamily: kadwaReady ? "KadwaBold" : Fonts.bold }];
-
-  return (
-    <View style={styles.loading}>
-      <View style={styles.iiRow}>
-        <RNAnimated.View style={{ alignItems: "center", transform: [{ rotate: lRot }] }}>
-          <RNAnimated.View style={[styles.iDot2, { transform: [{ translateX: lDotTx }] }]} />
-          <Text style={iStyle}>I</Text>
-        </RNAnimated.View>
-        <RNAnimated.View style={{ alignItems: "center", transform: [{ rotate: rRot }] }}>
-          <RNAnimated.View style={[styles.iDot2, { transform: [{ translateX: rDotTx }] }]} />
-          <Text style={iStyle}>I</Text>
-        </RNAnimated.View>
-      </View>
-      <Text style={styles.loadingText}>Locating you...</Text>
-      <View style={styles.progressOuter} onLayout={(e) => setBarW(e.nativeEvent.layout.width)}>
-        <View style={styles.progressTrack}>
-          <LinearGradient colors={["rgba(255,255,255,0.55)", "rgba(255,255,255,0.25)"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill} />
-        </View>
-        <RNAnimated.View style={[styles.progressRunner, { transform: [{ translateX: runnerTx }] }]}>
-          <LinearGradient colors={[BLUES.b60, BLUES.b80]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill} />
-        </RNAnimated.View>
-      </View>
-    </View>
-  );
-};
-
-/* ===================== EVENT MARKER COMPONENT ===================== */
-const EventMarker: React.FC<{ event: EventData }> = ({ event }) => {
-  const categoryInfo = categoryDisplayNames[event.category] || categoryDisplayNames.other;
-  const eventTypeInfo = eventTypeDisplayNames[event.event_type || 'public'];
-  const isPrivate = event.event_type === 'private';
-  
-  return (
-    <View style={styles.eventMarkerContainer}>
-      <View style={[
-        styles.eventMarkerBubble,
-        isPrivate && { borderWidth: 2, borderColor: eventTypeInfo.color }
-      ]}>
-        {/* Gradient wrapper with overflow hidden */}
-        <View style={StyleSheet.absoluteFillObject}>
-          <LinearGradient 
-            colors={isPrivate ? ["#F3E8FF", "#FFFFFF"] : ["#FFFFFF", "#F8FAFF"]} 
-            style={{ flex: 1, borderRadius: scale(18) - 2 }}
-          />
-        </View>
-        <MaterialCommunityIcons 
-          name={categoryInfo.icon as any} 
-          size={20} 
-          color={isPrivate ? eventTypeInfo.color : BLUE}
-        />
-      </View>
-      {/* Lock badge positioned outside the bubble */}
-      {isPrivate && (
-        <View style={{
-          position: 'absolute',
-          top: -2,
-          right: scale(36) / 2 - 14,
-          backgroundColor: eventTypeInfo.color,
-          borderRadius: 7,
-          width: 14,
-          height: 14,
-          alignItems: 'center',
-          justifyContent: 'center',
-          borderWidth: 1.5,
-          borderColor: '#FFFFFF',
-          zIndex: 10,
-        }}>
-          <MaterialCommunityIcons name="lock" size={8} color="#FFFFFF" />
-        </View>
-      )}
-      <View style={[
-        styles.eventMarkerPin,
-        isPrivate && { borderTopColor: eventTypeInfo.color }
-      ]} />
-    </View>
-  );
-};
-
-/* ===================== USER PROFILE MODAL ===================== */
-const UserProfileModal: React.FC<{
-  visible: boolean;
-  user: UserMapCard | null;
-  onClose: () => void;
-  currentUserId: string | null;
-  onOpenFrames: (frames: any[]) => void;
-  userPosition: { lat: number; lng: number } | null;
-}> = ({ visible, user, onClose, currentUserId, onOpenFrames, userPosition }) => {
-  const router = useRouter();
-  const insets = useSafeAreaInsets();
-  const slideAnim = useRef(new RNAnimated.Value(SCREEN_H)).current;
-  const [matchStatus, setMatchStatus] = useState<MatchStatus | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
-  const [userFrames, setUserFrames] = useState<any[]>([]);
-  
-  // Match request message state
-  const [requestMessage, setRequestMessage] = useState('');
-  const [showMessageInput, setShowMessageInput] = useState(false);
-  
-  // Looking for detail view state
-  const [showLookingForDetail, setShowLookingForDetail] = useState(false);
-  
-  // Check if profile is public (has full access)
-  const isPublicProfile = user?.access_level === 'full';
-  
-  // Calculate distance
-  const calculateDistance = useCallback((lat1: number, lng1: number, lat2: number, lng2: number): number => {
-    const R = 6371; // Earth's radius in km
-    const dLat = toRad(lat2 - lat1);
-    const dLon = toRad(lng2 - lng1);
-    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-    return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  }, []);
-  
-  const distanceKm = useMemo(() => {
-    if (!userPosition || !user) return null;
-    return calculateDistance(userPosition.lat, userPosition.lng, user.approx_lat, user.approx_lng);
-  }, [userPosition, user, calculateDistance]);
-  
-  useEffect(() => {
-    if (visible && user) {
-      fetchMatchStatus();
-      // Only fetch frames if profile is public (has full access)
-      if (user.access_level === 'full' && user.frame_id) {
-        fetchUserFrames();
-      } else {
-        setUserFrames([]);
-      }
-      setProfilePhoto(user.main_photo_url);
-      setRequestMessage('');
-      setShowMessageInput(false);
-      
-      RNAnimated.spring(slideAnim, { 
-        toValue: 0, 
-        useNativeDriver: true, 
-        tension: 65, 
-        friction: 11 
-      }).start();
-    } else {
-      RNAnimated.timing(slideAnim, { 
-        toValue: SCREEN_H, 
-        duration: 250, 
-        useNativeDriver: true 
-      }).start();
-      setShowMessageInput(false);
-      setShowLookingForDetail(false);
-    }
-  }, [visible, user]);
-  
-  const fetchMatchStatus = async () => {
-    if (!user || !currentUserId) return;
-    
-    try {
-      // Direct query - simple and reliable
-      const { data, error } = await supabase
-        .from('match_requests')
-        .select('id, status, requester_id, target_id, sender_message')
-        .or(`and(requester_id.eq.${currentUserId},target_id.eq.${user.user_id}),and(requester_id.eq.${user.user_id},target_id.eq.${currentUserId})`)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      
-      if (data && !error) {
-        setMatchStatus({
-          status: data.status,
-          is_requester: data.requester_id === currentUserId,
-          match_id: data.id,
-          sender_message: data.sender_message,
-        });
-      } else {
-        setMatchStatus({
-          status: null,
-          is_requester: false,
-          match_id: null
-        });
-      }
-    } catch (error) {
-      console.error("Error fetching match status:", error);
-    }
-  };
-  
-  const fetchUserFrames = async () => {
-    if (!user || !user.frame_id) return;
-    
-    try {
-      const { data, error } = await supabase.rpc('get_user_active_frames', {
-        target_user_id: user.user_id
-      });
-      
-      if (error) {
-        console.error("Error fetching frames:", error);
-        return;
-      }
-      
-      if (data && data.length > 0) {
-        const processedFrames = await Promise.all(
-          data.map(async (frame: any) => {
-            if (frame.media_url && !frame.media_url.startsWith('http')) {
-              const { data: signedData } = await supabase.storage
-                .from("frames")
-                .createSignedUrl(frame.media_url, 3600);
-              return { ...frame, media_url: signedData?.signedUrl || frame.media_url };
-            }
-            return frame;
-          })
-        );
-        setUserFrames(processedFrames);
-      }
-    } catch (error) {
-      console.error("Error fetching frames:", error);
-    }
-  };
-  
-  const handleLike = async () => {
-    if (!user || !currentUserId || loading) return;
-    
-    setLoading(true);
-    try {
-      // Use the new RPC for match requests
-      const { error: rpcError } = await supabase.rpc('send_match_request_with_context', {
-        p_target_id: user.user_id,
-        p_message: requestMessage || null
-      });
-      
-      if (rpcError) {
-        if (rpcError.code === '23505') {
-          Alert.alert("Already sent", "You've already sent a request to this Niice");
-        } else {
-          console.error("RPC error:", rpcError);
-          Alert.alert("Error", "Failed to send request");
-        }
-      } else {
-        Alert.alert("Success", "Niice request sent!");
-        await fetchMatchStatus();
-        setRequestMessage('');
-        setShowMessageInput(false);
-      }
-    } catch (error) {
-      console.error("Error sending like:", error);
-      Alert.alert("Error", "Failed to send request");
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  const handlePass = async () => {
-    if (!user || !currentUserId || loading) return;
-    
-    setLoading(true);
-    try {
-      await supabase
-        .from('match_requests')
-        .insert({
-          requester_id: currentUserId,
-          target_id: user.user_id,
-          status: 'denied'
-        });
-      
-      onClose();
-    } catch (error) {
-      console.error("Error passing:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  const handleAcceptRequest = async () => {
-    if (!matchStatus?.match_id || !currentUserId || loading) return;
-    
-    setLoading(true);
-    try {
-      const { error } = await supabase
-        .from('match_requests')
-        .update({
-          status: 'accepted',
-          responded_at: new Date().toISOString(),
-        })
-        .eq('id', matchStatus.match_id)
-        .eq('target_id', currentUserId);
-      
-      if (!error) {
-        Alert.alert("Success", "Request accepted!");
-        await fetchMatchStatus();
-      }
-    } catch (error) {
-      console.error("Error accepting request:", error);
-      Alert.alert("Error", "Failed to accept request");
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  const handleViewProfile = () => {
-    if (!user) return;
-    // Only allow viewing full profile if access_level is 'full' (public profile)
-    if (user.access_level !== 'full') {
-      Alert.alert(
-        "Private Profile",
-        "This user has a private profile. Connect with them first to see their full profile."
-      );
-      return;
-    }
-    onClose();
-    router.push({
-      pathname: "/(tabs_support)/other_profile",
-      params: { userId: user.user_id, matchId: matchStatus?.match_id || "" }
-    });
-  };
-  
-  const handleStartChat = () => {
-  if (!matchStatus?.match_id) return;
-  onClose();
-  router.push({
-    pathname: "/(tabs_support)/chat_talk",
-    params: { matchId: matchStatus.match_id }
-  });
-};
-  
-  const handleBlock = async () => {
-    if (!user || !currentUserId) return;
-    
-    Alert.alert(
-      "Block User",
-      `Are you sure you want to block ${capitalizeWords(user.full_name)}?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Block",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await supabase.from('blocks').insert({
-                blocker_id: currentUserId,
-                blocked_id: user.user_id
-              });
-              Alert.alert("Blocked", "User has been blocked");
-              onClose();
-            } catch (error) {
-              console.error("Error blocking:", error);
-              Alert.alert("Error", "Failed to block user");
-            }
-          }
-        }
-      ]
-    );
-  };
-  
-  if (!user) return null;
-  
-  const isMatched = matchStatus?.status === 'accepted';
-  const isPending = matchStatus?.status === 'pending';
-  const isDenied = matchStatus?.status === 'denied';
-  const isRequester = matchStatus?.is_requester;
-  const hasFrames = userFrames.length > 0;
-
-  
-  // Format looking for display
-
-  
-  // Format looking for friend display
-  const formatLookingForFriend = (values: string[] | null) => {
-    if (!values || values.length === 0) return null;
-    
-    // Enum to display label mapping
-    const displayMap: Record<string, string> = {
-      'new_friends_nearby': 'New friends nearby',
-      'workout_fitness_buddy': 'Workout/fitness buddy',
-      'travel_companions': 'Travel companions',
-      'activity_hobby_partners': 'Activity/hobby partners',
-      'casual_hangouts': 'Casual hangouts',
-      'professional_networking': 'Professional networking',
-      'close_friendships': 'Close friendships',
-    };
-    
-    // Convert enum values to display labels
-    const displayLabels = values.map(v => displayMap[v] || v.replace(/_/g, ' ')).filter(Boolean);
-    
-    if (displayLabels.length === 0) return null;
-    if (displayLabels.length === 1) return displayLabels[0];
-    
-    // Combination display names (same as edit_main.tsx)
-    const combinations: Record<string, string> = {
-      // Activity / hobby partners combos
-      "Activity/hobby partners|||Casual hangouts": "Hobby partners & casual hangouts",
-      "Activity/hobby partners|||Close friendships": "Close friends for hobbies",
-      "Activity/hobby partners|||New friends nearby": "New local hobby friends",
-      "Activity/hobby partners|||Professional networking": "Networking through shared hobbies",
-      "Activity/hobby partners|||Travel companions": "Travel & hobby buddies",
-      "Activity/hobby partners|||Workout/fitness buddy": "Active hobby & workout buddies",
-
-      // Casual hangouts combos
-      "Casual hangouts|||Close friendships": "Close friends & casual hangouts",
-      "Casual hangouts|||New friends nearby": "New friends for casual hangouts",
-      "Casual hangouts|||Professional networking": "Networking & hangouts",
-      "Casual hangouts|||Travel companions": "Travel & casual hangouts",
-      "Casual hangouts|||Workout/fitness buddy": "Workout & casual hangouts",
-
-      // Close friendships combos
-      "Close friendships|||New friends nearby": "Close local friends",
-      "Close friendships|||Professional networking": "Close friends & networking",
-      "Close friendships|||Travel companions": "Close friends to travel with",
-      "Close friendships|||Workout/fitness buddy": "Close friends & workout buddies",
-
-      // New friends nearby combos
-      "New friends nearby|||Professional networking": "Local friends & networking",
-      "New friends nearby|||Travel companions": "Local travel buddies",
-      "New friends nearby|||Workout/fitness buddy": "Local workout friends",
-
-      // Travel / networking / workout combos
-      "Professional networking|||Travel companions": "Network & travel buddies",
-      "Professional networking|||Workout/fitness buddy": "Workout & networking",
-      "Travel companions|||Workout/fitness buddy": "Active travel & workout buddies",
-    };
-    
-    // For 2 values, try to find combination
-    if (displayLabels.length === 2) {
-      const sorted = [...displayLabels].sort();
-      const key = sorted.join("|||");
-      return combinations[key] || displayLabels.join(" - ");
-    }
-    
-    // For more than 2, use first two for combination
-    const firstTwo = displayLabels.slice(0, 2).sort();
-    const key = firstTwo.join("|||");
-    return combinations[key] || displayLabels.slice(0, 2).join(" - ");
-  };
-  
-  // Get all looking_for items as display labels for detail view
-  const getAllLookingForLabels = (values: string[] | null): string[] => {
-    if (!values || values.length === 0) return [];
-    
-    const displayMap: Record<string, string> = {
-      'new_friends_nearby': 'New friends nearby',
-      'workout_fitness_buddy': 'Workout/fitness buddy',
-      'travel_companions': 'Travel companions',
-      'activity_hobby_partners': 'Activity/hobby partners',
-      'casual_hangouts': 'Casual hangouts',
-      'professional_networking': 'Professional networking',
-      'close_friendships': 'Close friendships',
-    };
-    
-    return values.map(v => displayMap[v] || v.replace(/_/g, ' ')).filter(Boolean);
-  };
-  
-  // Format friend values display
-  const formatFriendValues = (values: string[] | null) => {
-    if (!values || values.length === 0) return null;
-    return values.slice(0, 3).map(v => {
-      const words = v.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1));
-      return words.join(' ');
-    }).join(', ');
-  };
-  
-  // Format orientation display
-  const formatOrientation = (value: string | null) => {
-    if (!value) return null;
-    const displayMap: Record<string, string> = {
-      'straight': 'Straight',
-      'gay': 'Gay',
-      'lesbian': 'Lesbian',
-      'bisexual': 'Bisexual',
-      'pansexual': 'Pansexual',
-      'queer': 'Queer',
-      'asexual': 'Asexual',
-      'demisexual': 'Demisexual',
-      'questioning': 'Questioning',
-      'other': 'Other',
-      'not_listed': 'Prefer not to say',
-    };
-    return displayMap[value] || value.replace(/_/g, ' ');
-  };
-  
-  // Format distance - approximated for security
-  const formatDistance = () => {
-    if (distanceKm === null) return null;
-    // Approximate distance for security - don't reveal exact location
-    if (distanceKm < 0.5) {
-      return "< 1km away";
-    } else if (distanceKm < 1) {
-      return "< 1km away";
-    } else if (distanceKm < 10) {
-      // Round to nearest km
-      return `~${Math.round(distanceKm)}km away`;
-    } else {
-      // Round to nearest 5km for larger distances
-      const rounded = Math.round(distanceKm / 5) * 5;
-      return `~${rounded}km away`;
-    }
-  };
-  
-  // Format looking_for display (using the user's looking_for data directly)
-  const lookingForDisplay = formatLookingForFriend(user?.looking_for || null);
-  const allLookingForLabels = getAllLookingForLabels(user?.looking_for || null);
-  
-  return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
-      <Pressable style={styles.modalBackdrop} onPress={onClose}>
-        <RNAnimated.View 
-          style={[
-            styles.userModalSheet,
-            { 
-              transform: [{ translateY: slideAnim }],
-              paddingBottom: Math.max(insets.bottom, 24) 
-            }
-          ]}
-        >
-          <Pressable onPress={(e) => e.stopPropagation()}>
-            {/* Grab Handle */}
-            <View style={styles.modalHandle} />
-            
-            <ScrollView 
-              showsVerticalScrollIndicator={false}
-              bounces={false}
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={{ paddingBottom: 16 }}
-            >
-            {/* Looking For Detail View */}
-            {showLookingForDetail ? (
-              <View>
-                {/* Back Button Header */}
-                <View style={styles.lookingForDetailHeader}>
-                  <TouchableOpacity 
-                    style={styles.lookingForBackBtn}
-                    onPress={() => setShowLookingForDetail(false)}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="arrow-back" size={22} color={BLUE} />
-                  </TouchableOpacity>
-                  <Text style={styles.lookingForDetailTitle}>What they're looking for</Text>
-                  <View style={{ width: 36 }} />
-                </View>
-                
-                {/* All Looking For Items */}
-                <View style={styles.lookingForDetailList}>
-                  {allLookingForLabels.map((label, index) => (
-                    <View key={index} style={styles.lookingForDetailItem}>
-                      <View style={styles.lookingForDetailIcon}>
-                        <Ionicons name="checkmark" size={16} color={BLUE} />
-                      </View>
-                      <Text style={styles.lookingForDetailText}>{label}</Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            ) : (
-            <>
-            {/* Header Row */}
-            <View style={styles.userSheetHeader}>
-              {/* Profile Photo with Frame Ring */}
-              <TouchableOpacity
-                activeOpacity={(hasFrames || isPublicProfile) ? 0.8 : 1}
-                onPress={() => {
-                  if (hasFrames) {
-                    onClose();
-                    setTimeout(() => onOpenFrames(userFrames), 300);
-                  } else if (isPublicProfile) {
-                    handleViewProfile();
-                  }
-                }}
-                disabled={!hasFrames && !isPublicProfile}
-                style={styles.userSheetAvatarWrap}
-              >
-                {hasFrames && (
-                  <View style={styles.userSheetFrameRing}>
-                    <LinearGradient
-                      colors={[BLUE, "#678CFF", "#A8C4FF", BLUE]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={StyleSheet.absoluteFillObject}
-                    />
-                  </View>
-                )}
-                <View style={[styles.userSheetAvatar, hasFrames && styles.userSheetAvatarWithRing]}>
-                  {profilePhoto ? (
-                    <Image source={{ uri: profilePhoto }} style={styles.userSheetAvatarImg} resizeMode="cover" />
-                  ) : (
-                    <View style={[styles.userSheetAvatarImg, styles.userSheetAvatarPlaceholder]}>
-                      <Ionicons name="person" size={28} color="#FFFFFF" />
-                    </View>
-                  )}
-                </View>
-              </TouchableOpacity>
-              
-              {/* Name, Age, Distance - Clickable to view profile if public */}
-              <TouchableOpacity 
-                style={styles.userSheetInfo}
-                onPress={isPublicProfile ? handleViewProfile : undefined}
-                activeOpacity={isPublicProfile ? 0.7 : 1}
-                disabled={!isPublicProfile}
-              >
-                <View style={styles.userSheetNameRow}>
-                  <Text style={styles.userSheetName}>{capitalizeWords(user.full_name)}, {user.age}</Text>
-                  {/* Public/Private Badge */}
-                  <View style={[
-                    styles.userSheetVisibilityBadge,
-                    { backgroundColor: isPublicProfile ? "rgba(34, 197, 94, 0.1)" : "rgba(139, 92, 246, 0.1)" }
-                  ]}>
-                    <Ionicons 
-                      name={isPublicProfile ? "globe-outline" : "lock-closed-outline"} 
-                      size={12} 
-                      color={isPublicProfile ? "#22C55E" : "#8B5CF6"} 
-                    />
-                    <Text style={[
-                      styles.userSheetVisibilityText,
-                      { color: isPublicProfile ? "#22C55E" : "#8B5CF6" }
-                    ]}>
-                      {isPublicProfile ? "Public" : "Private"}
-                    </Text>
-                  </View>
-                </View>
-                {formatDistance() && (
-                  <View style={styles.userSheetDistanceRow}>
-                    <Ionicons name="location-outline" size={14} color="rgba(10, 14, 26, 0.5)" />
-                    <Text style={styles.userSheetDistance}>{formatDistance()}</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            </View>
-            
-            {/* Looking For Section - Button to open detail view */}
-            {allLookingForLabels.length > 0 && (
-              <View style={styles.userSheetChips}>
-                <TouchableOpacity 
-                  style={styles.userSheetChip}
-                  onPress={() => setShowLookingForDetail(true)}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="people-outline" size={14} color={BLUE} />
-                  <Text style={styles.userSheetChipText}>What they're looking for</Text>
-                  <Ionicons name="chevron-forward" size={14} color={BLUE} />
-                </TouchableOpacity>
-              </View>
-            )}
-            
-            {/* Bio Section */}
-            {user.bio && (
-              <View style={styles.userSheetBioSection}>
-                <Text style={styles.userSheetBioLabel}>About</Text>
-                <Text style={styles.userSheetBio} numberOfLines={3}>{user.bio}</Text>
-              </View>
-            )}
-            
-            {/* Status Badge (if applicable) */}
-            {isMatched && (
-              <View style={[styles.userSheetStatusBadge, { backgroundColor: "#E8F5E9" }]}>
-                <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
-                <Text style={[styles.userSheetStatusText, { color: "#4CAF50" }]}>
-                  You're connected!
-                </Text>
-              </View>
-            )}
-            {isPending && isRequester && (
-              <View style={[styles.userSheetStatusBadge, { backgroundColor: "#FFF3E0" }]}>
-                <Ionicons name="time-outline" size={16} color="#FF9800" />
-                <Text style={[styles.userSheetStatusText, { color: "#FF9800" }]}>Request sent</Text>
-              </View>
-            )}
-            {isPending && !isRequester && (
-              <View style={[styles.userSheetStatusBadge, { backgroundColor: "rgba(27, 68, 205, 0.08)" }]}>
-                <Ionicons name="mail-outline" size={16} color={BLUE} />
-                <Text style={[styles.userSheetStatusText, { color: BLUE }]}>
-                  Sent you a match request
-                </Text>
-              </View>
-            )}
-            {/* Show sender's message if exists */}
-            {isPending && !isRequester && matchStatus?.sender_message && (
-              <View style={styles.senderMessageBubble}>
-                <Ionicons name="chatbubble" size={14} color={BLUE} />
-                <Text style={styles.senderMessageText}>"{matchStatus.sender_message}"</Text>
-              </View>
-            )}
-            
-            {/* Action Buttons */}
-            <View style={styles.userSheetActions}>
-              {!isMatched && !isPending && !isDenied && (
-                <>
-                  {/* Message Input (optional) */}
-                  {showMessageInput ? (
-                    <View style={styles.messageInputContainer}>
-                      <View style={styles.messageInputWrap}>
-                        <Ionicons name="chatbubble-outline" size={20} color={BLUE} style={{ marginRight: 10 }} />
-                        <TextInput
-                          style={styles.messageInput}
-                          placeholder="Add a message (optional)"
-                          placeholderTextColor="rgba(10, 14, 26, 0.4)"
-                          value={requestMessage}
-                          onChangeText={setRequestMessage}
-                          maxLength={200}
-                          multiline
-                        />
-                      </View>
-                      <View style={styles.messageInputActions}>
-                        <TouchableOpacity 
-                          style={styles.messageInputCancelBtn}
-                          onPress={() => {
-                            setShowMessageInput(false);
-                            setRequestMessage('');
-                          }}
-                        >
-                          <Text style={styles.messageInputCancelText}>Cancel</Text>
-                        </TouchableOpacity>
-                        
-                        <TouchableOpacity 
-                          style={styles.userSheetPrimaryBtn}
-                          onPress={handleLike}
-                          disabled={loading}
-                          activeOpacity={0.8}
-                        >
-                          <LinearGradient 
-                            colors={[BLUES.b50, BLUES.b70]}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
-                            style={styles.userSheetPrimaryBtnGradient}
-                          >
-                            <Ionicons name="paper-plane-outline" size={20} color="#FFF" />
-                            <Text style={styles.userSheetPrimaryBtnText}>
-                              {loading ? 'Sending...' : 'Send Request'}
-                            </Text>
-                          </LinearGradient>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  ) : (
-                    <TouchableOpacity 
-                      style={styles.userSheetPrimaryBtn}
-                      onPress={() => setShowMessageInput(true)}
-                      disabled={loading}
-                      activeOpacity={0.8}
-                    >
-                      <LinearGradient 
-                        colors={[BLUES.b50, BLUES.b70]}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={styles.userSheetPrimaryBtnGradient}
-                      >
-                        <Ionicons name="heart-outline" size={20} color="#FFF" />
-                        <Text style={styles.userSheetPrimaryBtnText}>Connect</Text>
-                      </LinearGradient>
-                    </TouchableOpacity>
-                  )}
-                </>
-              )}
-              
-              
-              {/* Matched Actions */}
-              {isMatched && (
-                <View style={styles.userSheetMatchedActions}>
-                  <TouchableOpacity 
-                    style={styles.userSheetSecondaryBtn}
-                    onPress={handleViewProfile}
-                  >
-                    <Ionicons name="person-outline" size={20} color={BLUE} />
-                    <Text style={styles.userSheetSecondaryBtnText}>View Profile</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={styles.userSheetPrimaryBtn}
-                    onPress={handleStartChat}
-                  >
-                    <LinearGradient 
-                      colors={[BLUES.b50, BLUES.b70]}
-                      style={styles.userSheetPrimaryBtnGradient}
-                    >
-                      <Ionicons name="chatbubbles-outline" size={20} color="#FFF" />
-                      <Text style={styles.userSheetPrimaryBtnText}>Start Chat</Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                </View>
-              )}
-              
-              {/* Incoming Request Actions */}
-              {isPending && !isRequester && (
-                <View style={styles.userSheetIncomingActions}>
-                  <View style={styles.userSheetIncomingBtns}>
-                    <TouchableOpacity 
-                      style={styles.userSheetDeclineBtn}
-                      onPress={handlePass}
-                      disabled={loading}
-                    >
-                      <Ionicons name="close" size={24} color="#9E9E9E" />
-                    </TouchableOpacity>
-                    
-                    <TouchableOpacity 
-                      style={styles.userSheetAcceptBtn}
-                      onPress={handleAcceptRequest}
-                      disabled={loading}
-                    >
-                      <LinearGradient 
-                        colors={["#4CAF50", "#66BB6A"]}
-                        style={styles.userSheetAcceptBtnGradient}
-                      >
-                        <Ionicons name="checkmark" size={24} color="#FFF" />
-                        <Text style={styles.userSheetAcceptBtnText}>Accept Request</Text>
-                      </LinearGradient>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
-            </View>
-            </>
-            )}
-            </ScrollView>
-            
-            {/* Footer Links */}
-            <View style={styles.userSheetFooter}>
-              <TouchableOpacity onPress={handleBlock}>
-                <Text style={styles.userSheetFooterLink}>Block</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity onPress={() => Alert.alert("Report", "Report feature coming soon")}>
-                <Text style={styles.userSheetFooterLink}>Report</Text>
-              </TouchableOpacity>
-            </View>
-          </Pressable>
-        </RNAnimated.View>
-      </Pressable>
-    </Modal>
-  );
-};
-
-/* ===================== EVENT DETAILS MODAL ===================== */
-const EventDetailsModal: React.FC<{
-  visible: boolean;
-  event: EventData | null;
-  onClose: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-  isOwnEvent: boolean;
-  currentUserId: string | null;
-  currentUserAge: number | null;
-  currentUserGender: string | null;
-  onApplySuccess?: () => void;
-  onEventUpdate?: (updatedEvent: EventData) => void;
-}> = ({ visible, event, onClose, onEdit, onDelete, isOwnEvent, currentUserId, currentUserAge, currentUserGender, onApplySuccess, onEventUpdate }) => {
-  const router = useRouter();
-  const insets = useSafeAreaInsets();
-  const slideAnim = useRef(new RNAnimated.Value(SCREEN_H)).current;
-  const panY = useRef(new RNAnimated.Value(0)).current;
-  const startY = useRef(0);
-  const isClosing = useRef(false);
-  
-  // Apply modal state
-  const [showApplyModal, setShowApplyModal] = useState(false);
-  const [applyMessage, setApplyMessage] = useState('');
-  const [applyLoading, setApplyLoading] = useState(false);
-  const [applicationStatus, setApplicationStatus] = useState<'none' | 'pending' | 'approved' | 'rejected'>('none');
-
-  // Debug: Track apply modal visibility
-  useEffect(() => {
-    console.log(`Apply Modal visibility changed: ${showApplyModal}`);
-  }, [showApplyModal]);
-
-  useEffect(() => {
-    if (visible) {
-      isClosing.current = false;
-      setApplyMessage('');
-      // Initialize application status from event data if available
-      const initialStatus = event?.user_application_status;
-      console.log(`EventDetailsModal opened for "${event?.event_name}": user_application_status=${initialStatus}`);
-      
-      if (initialStatus && initialStatus !== 'none' && initialStatus !== 'cancelled') {
-        console.log(`Setting applicationStatus to: ${initialStatus}`);
-        setApplicationStatus(initialStatus as 'pending' | 'approved' | 'rejected');
-      } else {
-        console.log(`Setting applicationStatus to: none`);
-        setApplicationStatus('none');
-      }
-      RNAnimated.spring(slideAnim, { toValue: 0, useNativeDriver: true, tension: 65, friction: 11 }).start();
-      
-      // Double-check with fresh data if user has already applied
-      if (event && currentUserId && !isOwnEvent) {
-        checkExistingApplication();
-      }
-    } else if (!isClosing.current) {
-      RNAnimated.timing(slideAnim, { toValue: SCREEN_H, duration: 250, useNativeDriver: true }).start();
-    }
-  }, [visible, event, currentUserId]);
-  
-  const checkExistingApplication = async () => {
-    if (!event || !currentUserId) return;
-    
-    try {
-      const { data, error } = await supabase
-        .from('event_applications')
-        .select('status')
-        .eq('event_id', event.id)
-        .eq('applicant_id', currentUserId)
-        .maybeSingle();
-      
-      if (error) {
-        console.warn("Could not check existing application:", error.message);
-        return;
-      }
-      
-      if (data) {
-        console.log(`Found existing application for event ${event.id}: status=${data.status}`);
-        setApplicationStatus(data.status as any);
-      }
-    } catch (err: any) {
-      console.warn("Exception checking application:", err?.message);
-    }
-  };
-
-  if (!event) return null;
-
-  const categoryInfo = categoryDisplayNames[event.category] || categoryDisplayNames.other;
-  const eventTypeInfo = eventTypeDisplayNames[event.event_type || 'public'];
-  
-  // Debug: Log the event type when modal opens
-  console.log(`EventDetailsModal: "${event.event_name}" - type=${event.event_type || 'undefined'}, badge=${eventTypeInfo.label}, isOwn=${isOwnEvent}`);
-  
-  const formatTime = (dateString: string) => {
-    const date = new Date(dateString);
-    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    return `${days[date.getDay()]}, ${date.getDate()} ${months[date.getMonth()]} - ${date.getHours().toString().padStart(2, "0")}:${date.getMinutes().toString().padStart(2, "0")}`;
-  };
-
-  // Check if user can see exact location
-  // For private events: only host or approved users can see exact location
-  const canSeeExactLocation = () => {
-    if (isOwnEvent) return true; // Host always sees exact location
-    if (event.event_type !== 'private') return true; // Non-private events show exact location
-    // For private events, only approved users can see exact location
-    return applicationStatus === 'approved';
-  };
-
-  // Get display location for private events (fuzzy for non-approved)
-  const getDisplayLocation = () => {
-    if (canSeeExactLocation()) {
-      return event.location_name;
-    }
-    // For private events without approval, show approximate location
-    return `Near ${event.location_name.split(',')[0] || 'this area'}`;
-  };
-
-  const openInGoogleMaps = () => {
-    // For private events, non-approved users shouldn't be able to navigate
-    if (!canSeeExactLocation()) {
-      Alert.alert(
-        "Location Hidden",
-        "The exact location will be revealed once your application is approved by the host.",
-        [{ text: "OK" }]
-      );
-      return;
-    }
-    
-    Alert.alert(
-      "Open in Maps",
-      `Navigate to ${event.location_name}?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Open",
-          onPress: () => {
-            const url = Platform.select({
-              ios: `maps://app?daddr=${event.latitude},${event.longitude}`,
-              android: `google.navigation:q=${event.latitude},${event.longitude}`,
-            });
-            const fallbackUrl = `https://www.google.com/maps/dir/?api=1&destination=${event.latitude},${event.longitude}`;
-            
-            Linking.canOpenURL(url!)
-              .then((supported) => {
-                if (supported) {
-                  return Linking.openURL(url!);
-                } else {
-                  return Linking.openURL(fallbackUrl);
-                }
-              })
-              .catch(() => Linking.openURL(fallbackUrl));
-          }
-        }
-      ]
-    );
-  };
-
-  const handleTouchStart = (e: any) => {
-    startY.current = e.nativeEvent.pageY;
-  };
-
-  const handleTouchMove = (e: any) => {
-    const deltaY = e.nativeEvent.pageY - startY.current;
-    if (deltaY > 0) {
-      panY.setValue(deltaY);
-    }
-  };
-
-  const handleTouchEnd = (e: any) => {
-    const deltaY = e.nativeEvent.pageY - startY.current;
-    if (deltaY > 100) {
-      isClosing.current = true;
-      panY.setValue(0);
-      RNAnimated.timing(slideAnim, {
-        toValue: SCREEN_H,
-        duration: 200,
-        useNativeDriver: true,
-      }).start(() => {
-        onClose();
-      });
-    } else {
-      RNAnimated.spring(panY, {
-        toValue: 0,
-        useNativeDriver: true,
-        tension: 80,
-        friction: 12,
-      }).start();
-    }
-  };
-  
-  // Handle apply to event
-  const handleApply = async () => {
-    if (!event || !currentUserId) return;
-    
-    console.log(`Attempting to join event: "${event.event_name}" (${event.id})`);
-    setApplyLoading(true);
-    try {
-      // Call the 2-parameter RPC function (returns JSON)
-      const { data: rpcResult, error: rpcError } = await supabase.rpc('apply_to_event', {
-        p_event_id: event.id,
-        p_message: applyMessage.trim() || null,
-      });
-      
-      if (rpcError) {
-        console.error("RPC error:", rpcError);
-        Alert.alert("Error", rpcError.message || "Failed to apply");
-        return;
-      }
-      
-      // Handle JSON response from the 2-parameter function
-      if (rpcResult) {
-        if (rpcResult.success) {
-          const newStatus = rpcResult.status as 'approved' | 'pending';
-          console.log(`Join successful! New status: ${newStatus}`);
-          Alert.alert("Success!", rpcResult.message);
-          setApplicationStatus(newStatus);
-          setShowApplyModal(false);
-          setApplyMessage('');
-          
-          // Update the event in parent state
-          if (onEventUpdate) {
-            const updatedEvent: EventData = {
-              ...event,
-              user_application_status: newStatus,
-              accepted_count: newStatus === 'approved' ? (event.accepted_count || 0) + 1 : event.accepted_count,
-            };
-            console.log(`Calling onEventUpdate with status=${newStatus}, accepted_count=${updatedEvent.accepted_count}`);
-            onEventUpdate(updatedEvent);
-          }
-          
-          onApplySuccess?.();
-        } else {
-          // Check if it's "already applied" - update status accordingly
-          console.log(`[WARN] Join failed: ${rpcResult.error}, current status: ${rpcResult.status}`);
-          if (rpcResult.status) {
-            setApplicationStatus(rpcResult.status as 'approved' | 'pending' | 'rejected');
-          }
-          Alert.alert("Cannot Join", rpcResult.error || "Failed to apply");
-        }
-      }
-    } catch (error: any) {
-      console.error("Apply exception:", error);
-      Alert.alert("Error", error.message || "Failed to apply");
-    } finally {
-      setApplyLoading(false);
-    }
-  };
-  
-  // Navigate to applications/participants page (for hosts)
-  const handleViewApplications = () => {
-    onClose();
-    // For public events (no application required), route to participants page
-    if (event.event_type === 'public') {
-      router.push({
-        pathname: "/(tabs_support)/host_applications_public",
-        params: { eventId: event.id }
-      });
-    } else {
-      // For public_application, private, etc., route to applications page
-      router.push({
-        pathname: "/(tabs_support)/host_applications",
-        params: { eventId: event.id }
-      });
-    }
-  };
-  
-  // Determine if event requires application
-  const requiresApplication = event.event_type === 'public_application' || event.event_type === 'private';
-  const isDirectJoin = event.event_type === 'public' || event.event_type === 'group_event' || event.event_type === 'community_event';
-  
-  // Get action button text
-  const getActionButtonText = () => {
-    if (applicationStatus === 'approved') return 'Joined ' ;
-    if (applicationStatus === 'pending') return 'Pending...';
-    if (applicationStatus === 'rejected') return 'Rejected';
-    if (!isEligible) return ineligibilityReason || 'Not Eligible';
-    if (isDirectJoin) return 'Join Event';
-    return 'Apply to Join';
-  };
-  
-  // Check eligibility based on age and gender
-  const checkEligibility = (): { eligible: boolean; reason: string | null } => {
-    if (!event) return { eligible: true, reason: null };
-    
-    // Check age eligibility
-    if (currentUserAge !== null) {
-      if (currentUserAge < event.age_min) {
-        return { eligible: false, reason: `Min age: ${event.age_min}` };
-      }
-      if (currentUserAge > event.age_max) {
-        return { eligible: false, reason: `Max age: ${event.age_max}` };
-      }
-    }
-    
-    // Check gender eligibility
-    if (currentUserGender && event.gender_allowed && event.gender_allowed !== 'Everyone') {
-      const userGenderLower = currentUserGender.toLowerCase();
-      const allowedGender = event.gender_allowed.toLowerCase();
-      
-      // Map gender_allowed values to gender values
-      const genderMatch = 
-        (allowedGender === 'man' && userGenderLower === 'man') ||
-        (allowedGender === 'woman' && userGenderLower === 'woman') ||
-        (allowedGender === 'beyond binary' && userGenderLower === 'nonbinary');
-      
-      if (!genderMatch) {
-        return { eligible: false, reason: `${event.gender_allowed} only` };
-      }
-    }
-    
-    return { eligible: true, reason: null };
-  };
-  
-  const { eligible: isEligible, reason: ineligibilityReason } = checkEligibility();
-  
-  const canApply = applicationStatus === 'none' && !isOwnEvent && isEligible;
-
-  return (
-    <>
-      <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
-        <Pressable style={styles.modalBackdrop} onPress={onClose}>
-          <RNAnimated.View 
-            style={[
-              styles.modalContainer, 
-              { 
-                transform: [
-                  { translateY: RNAnimated.add(slideAnim, panY) }
-                ], 
-                paddingBottom: Math.max(insets.bottom, 20) 
-              }
-            ]}
-          >
-            <Pressable onPress={(e) => e.stopPropagation()}>
-              {/* Swipeable handle area */}
-              <View
-                onTouchStart={handleTouchStart}
-                onTouchMove={handleTouchMove}
-                onTouchEnd={handleTouchEnd}
-                style={{ paddingVertical: 8 }}
-              >
-                <View style={styles.modalHandle} />
-              </View>
-
-              {/* Header */}
-              <View style={styles.modalHeader}>
-                <View style={{ flex: 1 }}>
-                  <View style={{ flexDirection: 'row', gap: 6, marginBottom: 8 }}>
-                    {/* Category badge */}
-                    <View style={styles.categoryBadge}>
-                      <MaterialCommunityIcons name={categoryInfo.icon as any} size={14} color={BLUE} />
-                      <Text style={styles.categoryBadgeText}>{categoryInfo.label}</Text>
-                    </View>
-                    {/* Event Type badge */}
-                    <View style={[styles.categoryBadge, { backgroundColor: `${eventTypeInfo.color}15` }]}>
-                      <MaterialCommunityIcons name={eventTypeInfo.icon as any} size={14} color={eventTypeInfo.color} />
-                      <Text style={[styles.categoryBadgeText, { color: eventTypeInfo.color }]}>{eventTypeInfo.label}</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.eventTitle} numberOfLines={2}>{event.event_name}</Text>
-                </View>
-                <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-                  <Ionicons name="close" size={26} color="#0A0E1A" />
-                </TouchableOpacity>
-              </View>
-
-              {/* Content */}
-              <ScrollView style={{ maxHeight: SCREEN_H * 0.5 }} showsVerticalScrollIndicator={false}>
-                <View style={{ padding: 20, gap: 20 }}>
-                  {/* Attendees Count - Always show */}
-                  <View style={styles.attendeesCard}>
-                    <Ionicons 
-                      name={(event.accepted_count || 0) > 0 ? "checkmark-circle" : "people-outline"} 
-                      size={18} 
-                      color={(event.accepted_count || 0) > 0 ? "#22C55E" : BLUE} 
-                    />
-                    <Text style={[
-                      styles.attendeesText,
-                      { color: (event.accepted_count || 0) > 0 ? "#22C55E" : BLUE }
-                    ]}>
-                      {event.accepted_count || 0} {(event.accepted_count || 0) === 1 ? 'person' : 'people'} joining
-                    </Text>
-                    <Text style={styles.capacityText}>/ {event.capacity} spots</Text>
-                  </View>
-                  
-                  {/* Time */}
-                  <View style={styles.infoCard}>
-                    <View style={styles.infoRow}>
-                      <Ionicons name="calendar-outline" size={20} color={BLUE} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.infoLabel}>Starts</Text>
-                        <Text style={styles.infoValue}>{formatTime(event.time_start)}</Text>
-                      </View>
-                    </View>
-                    <View style={styles.infoRow}>
-                      <Ionicons name="time-outline" size={20} color={BLUE} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.infoLabel}>Ends</Text>
-                        <Text style={styles.infoValue}>{formatTime(event.time_end)}</Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  {/* Location - Tappable */}
-                  <TouchableOpacity onPress={openInGoogleMaps} activeOpacity={0.7}>
-                    <View style={styles.infoCard}>
-                      <View style={styles.infoRow}>
-                        <Ionicons 
-                          name={canSeeExactLocation() ? "location-outline" : "locate-outline"} 
-                          size={20} 
-                          color={canSeeExactLocation() ? BLUE : "#8B5CF6"} 
-                        />
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.infoLabel}>
-                            {canSeeExactLocation() ? "Location" : "Approximate Location"}
-                          </Text>
-                          <Text style={styles.infoValue}>{getDisplayLocation()}</Text>
-                          {!canSeeExactLocation() && event.event_type === 'private' && (
-                            <Text style={{ fontSize: 12, color: '#8B5CF6', marginTop: 4, fontStyle: 'italic' }}>
-                              Exact location revealed after approval
-                            </Text>
-                          )}
-                        </View>
-                        {canSeeExactLocation() && (
-                          <Ionicons name="chevron-forward" size={20} color="rgba(10, 14, 26, 0.3)" />
-                        )}
-                        {!canSeeExactLocation() && (
-                          <Ionicons name="lock-closed" size={16} color="#8B5CF6" />
-                        )}
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-
-                  {/* Description */}
-                  {event.event_description && (
-                    <View style={styles.infoCard}>
-                      <Text style={styles.sectionLabel}>Description</Text>
-                      <Text style={styles.descText}>{event.event_description}</Text>
-                    </View>
-                  )}
-
-                  {/* Details Grid */}
-                  <View style={styles.detailsGrid}>
-                    <View style={styles.detailBox}>
-                      <Ionicons name="people-outline" size={18} color={BLUE} />
-                      <Text style={styles.detailBoxText}>{event.capacity} spots</Text>
-                    </View>
-                    <View style={styles.detailBox}>
-                      <Ionicons name="person-outline" size={18} color={BLUE} />
-                      <Text style={styles.detailBoxText}>{event.age_min}-{event.age_max} y/o</Text>
-                    </View>
-                  </View>
-                  
-                  {/* Gender Preference */}
-                  {event.gender_allowed && (
-                    <View style={[styles.detailsGrid, { marginTop: 10 }]}>
-                      <View style={[styles.detailBox, { flex: 1 }]}>
-                        <MaterialCommunityIcons 
-                          name={
-                            event.gender_allowed === 'Man' ? 'gender-male' :
-                            event.gender_allowed === 'Woman' ? 'gender-female' :
-                            event.gender_allowed === 'Beyond Binary' ? 'gender-non-binary' :
-                            'gender-male-female'
-                          } 
-                          size={18} 
-                          color={BLUE} 
-                        />
-                        <Text style={styles.detailBoxText}>
-                          {event.gender_allowed === 'Everyone' ? 'Open to Everyone' : `${event.gender_allowed} Only`}
-                        </Text>
-                      </View>
-                    </View>
-                  )}
-                </View>
-              </ScrollView>
-
-              {/* Action Buttons */}
-              <View style={styles.modalFooter}>
-                {isOwnEvent ? (
-                  // Host actions - two rows
-                  <View style={{ flex: 1, gap: 10 }}>
-                    {/* First row: Applications/Participants button (full width) */}
-                    <TouchableOpacity onPress={handleViewApplications} style={styles.applicationsBtnFull}>
-                      <Ionicons name="people" size={20} color={BLUE} />
-                      <Text style={styles.applicationsBtnText}>
-                        {event.event_type === 'public' ? 'See Participants' : 'View Applications'}
-                      </Text>
-                      <Ionicons name="chevron-forward" size={18} color="rgba(27, 68, 205, 0.5)" />
-                    </TouchableOpacity>
-                    
-                    {/* Second row: Delete + Edit */}
-                    <View style={{ flexDirection: 'row', gap: 10 }}>
-                      <TouchableOpacity onPress={onDelete} style={styles.deleteBtnSmall}>
-                        <Ionicons name="trash-outline" size={20} color="#D5222B" />
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={onEdit} style={styles.editBtnFull}>
-                        <LinearGradient colors={GRADIENTS.chipActive} style={styles.editBtnGradient}>
-                          <Ionicons name="create-outline" size={20} color="#FFF" />
-                          <Text style={styles.editBtnText}>Edit Event</Text>
-                        </LinearGradient>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                ) : (
-                  // Non-host actions
-                  <TouchableOpacity 
-                    onPress={() => {
-                  console.log(`Apply button pressed - canApply=${canApply}, isEligible=${isEligible}, requiresApplication=${requiresApplication}, eventType=${event.event_type}`);
-                  if (canApply) {
-                    if (requiresApplication) {
-                      console.log('Navigating to application page for', event.event_type, 'event');
-                      onClose();
-                      router.push({
-                        pathname: "/(tabs_support)/event_application_user",
-                        params: { eventId: event.id }
-                      });
-                    } else {
-                      console.log('Direct join for', event.event_type, 'event');
-                      handleApply();
-                    }
-                  }
-                }}
-                    style={[
-                      styles.applyBtn,
-                      !canApply && styles.applyBtnDisabled,
-                      applicationStatus === 'approved' && styles.applyBtnJoined,
-                      !isEligible && styles.applyBtnIneligible,
-                    ]}
-                    disabled={!canApply || applyLoading}
-                  >
-                    {applyLoading ? (
-                      <LinearGradient colors={GRADIENTS.chipActive} style={styles.applyBtnContent}>
-                        <Text style={styles.applyBtnText}>Sending...</Text>
-                      </LinearGradient>
-                    ) : (
-                      <LinearGradient 
-                        colors={
-                          applicationStatus === 'approved' ? ['#22C55E', '#16A34A'] :
-                          applicationStatus === 'pending' ? ['#F59E0B', '#D97706'] :
-                          applicationStatus === 'rejected' ? ['#9CA3AF', '#6B7280'] :
-                          !isEligible ? ['#EF4444', '#DC2626'] :
-                          GRADIENTS.chipActive
-                        } 
-                        style={styles.applyBtnContent}
-                      >
-                        <Ionicons 
-                          name={
-                            applicationStatus === 'approved' ? 'checkmark-circle' :
-                            applicationStatus === 'pending' ? 'hourglass-outline' :
-                            applicationStatus === 'rejected' ? 'close-circle' :
-                            !isEligible ? 'ban' :
-                            requiresApplication ? 'paper-plane' : 'enter-outline'
-                          } 
-                          size={20} 
-                          color="#FFF" 
-                        />
-                        <Text style={styles.applyBtnText}>{getActionButtonText()}</Text>
-                      </LinearGradient>
-                    )}
-                  </TouchableOpacity>
-                )}
-              </View>
-            </Pressable>
-          </RNAnimated.View>
-        </Pressable>
-      </Modal>
-      
-    </>
-  );
-};
-
-/* ===================== FILTER MODAL ===================== */
-const FilterModal: React.FC<{
-  visible: boolean;
-  onClose: () => void;
-  filters: FilterState;
-  onApply: (filters: FilterState) => void;
-  defaults: UserPreferences;
-}> = memo(({ visible, onClose, filters, onApply, defaults }) => {
-  const [tempFilters, setTempFilters] = useState<FilterState>(filters);
-  // Separate string state for age inputs to allow free typing
-  const [ageMinText, setAgeMinText] = useState(String(filters.ageMin));
-  const [ageMaxText, setAgeMaxText] = useState(String(filters.ageMax));
-  const scaleAnim = useRef(new RNAnimated.Value(0)).current;
-  const opacityAnim = useRef(new RNAnimated.Value(0)).current;
-
-  useEffect(() => {
-    if (visible) {
-      setTempFilters(filters);
-      setAgeMinText(String(filters.ageMin));
-      setAgeMaxText(String(filters.ageMax));
-      RNAnimated.parallel([
-        RNAnimated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, tension: 65, friction: 10 }),
-        RNAnimated.timing(opacityAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
-      ]).start();
-    } else {
-      RNAnimated.parallel([
-        RNAnimated.timing(scaleAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
-        RNAnimated.timing(opacityAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
-      ]).start();
-    }
-  }, [visible, filters]);
-
-  const handleReset = useCallback(() => {
-    Keyboard.dismiss();
-    const newFilters = {
-      ageMin: defaults.ageMin,
-      ageMax: defaults.ageMax,
-      distanceKm: defaults.distanceKm,
-      genders: defaults.interestedIn as ('man' | 'woman' | 'nonbinary')[],
-    };
-    setTempFilters(newFilters);
-    setAgeMinText(String(defaults.ageMin));
-    setAgeMaxText(String(defaults.ageMax));
-  }, [defaults]);
-
-  const handleApply = useCallback(() => {
-    Keyboard.dismiss();
-    // Validate and clamp age values on apply
-    let finalAgeMin = parseInt(ageMinText) || 18;
-    let finalAgeMax = parseInt(ageMaxText) || 99;
-    
-    // Ensure valid range
-    finalAgeMin = Math.max(18, Math.min(99, finalAgeMin));
-    finalAgeMax = Math.max(18, Math.min(99, finalAgeMax));
-    
-    // Swap if min > max
-    if (finalAgeMin > finalAgeMax) {
-      [finalAgeMin, finalAgeMax] = [finalAgeMax, finalAgeMin];
-    }
-    
-    const finalFilters = {
-      ...tempFilters,
-      ageMin: finalAgeMin,
-      ageMax: finalAgeMax,
-    };
-    
-    onApply(finalFilters);
-    onClose();
-  }, [tempFilters, ageMinText, ageMaxText, onApply, onClose]);
-
-  const toggleGender = useCallback((g: 'man' | 'woman' | 'nonbinary') => {
-    Keyboard.dismiss();
-    setTempFilters(prev => {
-      const has = prev.genders.includes(g);
-      const newGenders = has ? prev.genders.filter(x => x !== g) : [...prev.genders, g];
-      // Don't allow deselecting all genders
-      if (newGenders.length === 0) return prev;
-      return { ...prev, genders: newGenders };
-    });
-  }, []);
-
-  const setDistance = useCallback((d: number) => {
-    Keyboard.dismiss();
-    setTempFilters(prev => ({ ...prev, distanceKm: d }));
-  }, []);
-
-  const handleClose = useCallback(() => {
-    Keyboard.dismiss();
-    onClose();
-  }, [onClose]);
-
-  // Handle age min input - allow free typing, validate on blur
-  const handleAgeMinChange = useCallback((text: string) => {
-    // Only allow numeric input
-    const numericText = text.replace(/[^0-9]/g, '');
-    setAgeMinText(numericText);
-  }, []);
-
-  const handleAgeMinBlur = useCallback(() => {
-    let value = parseInt(ageMinText) || 18;
-    value = Math.max(18, Math.min(99, value));
-    setAgeMinText(String(value));
-    setTempFilters(prev => ({ ...prev, ageMin: value }));
-  }, [ageMinText]);
-
-  // Handle age max input - allow free typing, validate on blur
-  const handleAgeMaxChange = useCallback((text: string) => {
-    // Only allow numeric input
-    const numericText = text.replace(/[^0-9]/g, '');
-    setAgeMaxText(numericText);
-  }, []);
-
-  const handleAgeMaxBlur = useCallback(() => {
-    let value = parseInt(ageMaxText) || 99;
-    value = Math.max(18, Math.min(99, value));
-    setAgeMaxText(String(value));
-    setTempFilters(prev => ({ ...prev, ageMax: value }));
-  }, [ageMaxText]);
-
-  const GENDER_LABELS: Record<string, string> = { man: 'Men', woman: 'Women', nonbinary: 'Non-binary' };
-
-  // Calculate display values for header
-  const displayAgeMin = parseInt(ageMinText) || tempFilters.ageMin;
-  const displayAgeMax = parseInt(ageMaxText) || tempFilters.ageMax;
-
-  if (!visible) return null;
-
-  return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={handleClose}>
-      <Pressable style={styles.filterBackdrop} onPress={handleClose}>
-        <RNAnimated.View style={{ opacity: opacityAnim, flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <Pressable onPress={() => Keyboard.dismiss()}>
-            <RNAnimated.View style={[styles.filterContainer, { transform: [{ scale: scaleAnim }] }]}>
-              <BlurView intensity={80} tint="light" style={StyleSheet.absoluteFillObject} />
-              <LinearGradient colors={["rgba(255,255,255,0.95)", "rgba(248,250,255,0.98)"]} style={StyleSheet.absoluteFillObject} />
-              
-              <View style={styles.filterHeader}>
-                <View style={styles.filterHeaderIcon}>
-                  <Ionicons name="options-outline" size={20} color={BLUE} />
-                </View>
-                <Text style={styles.filterTitle}>Filters</Text>
-                <Pressable onPress={handleClose} style={styles.filterCloseBtn} hitSlop={8}>
-                  <Ionicons name="close" size={22} color="rgba(10,14,26,0.5)" />
-                </Pressable>
-              </View>
-
-              <View style={styles.filterSection}>
-                <Text style={styles.filterSectionLabel}>Show me</Text>
-                <View style={styles.filterGenderRow}>
-                  {(['woman', 'man', 'nonbinary'] as const).map(g => {
-                    const active = tempFilters.genders.includes(g);
-                    return (
-                      <Pressable 
-                        key={g} 
-                        onPress={() => toggleGender(g)}
-                        style={({ pressed }) => [
-                          styles.filterGenderChip, 
-                          active && styles.filterGenderChipActive,
-                          pressed && { opacity: 0.8 }
-                        ]}
-                      >
-                        {active && <LinearGradient colors={[BLUES.b60, BLUES.b80]} style={StyleSheet.absoluteFillObject} />}
-                        <Text style={[styles.filterGenderText, active && styles.filterGenderTextActive]}>{GENDER_LABELS[g]}</Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </View>
-
-              <View style={styles.filterSection}>
-                <View style={styles.filterSectionHeader}>
-                  <Text style={styles.filterSectionLabel}>Age</Text>
-                  <Text style={styles.filterSectionValue}>{displayAgeMin} - {displayAgeMax}</Text>
-                </View>
-                <View style={styles.filterAgeRow}>
-                  <View style={styles.filterAgeInputWrap}>
-                    <TextInput 
-                      style={styles.filterAgeInput} 
-                      value={ageMinText} 
-                      keyboardType="number-pad" 
-                      maxLength={2}
-                      selectTextOnFocus
-                      onChangeText={handleAgeMinChange}
-                      onBlur={handleAgeMinBlur}
-                      returnKeyType="done"
-                      onSubmitEditing={Keyboard.dismiss}
-                    />
-                    <Text style={styles.filterAgeLabel}>min</Text>
-                  </View>
-                  <View style={styles.filterAgeDash} />
-                  <View style={styles.filterAgeInputWrap}>
-                    <TextInput 
-                      style={styles.filterAgeInput} 
-                      value={ageMaxText} 
-                      keyboardType="number-pad" 
-                      maxLength={2}
-                      selectTextOnFocus
-                      onChangeText={handleAgeMaxChange}
-                      onBlur={handleAgeMaxBlur}
-                      returnKeyType="done"
-                      onSubmitEditing={Keyboard.dismiss}
-                    />
-                    <Text style={styles.filterAgeLabel}>max</Text>
-                  </View>
-                </View>
-              </View>
-
-              <View style={styles.filterSection}>
-                <View style={styles.filterSectionHeader}>
-                  <Text style={styles.filterSectionLabel}>Distance</Text>
-                  <Text style={styles.filterSectionValue}>{tempFilters.distanceKm < 1 ? `${Math.round(tempFilters.distanceKm * 1000)}m` : `${tempFilters.distanceKm}km`}</Text>
-                </View>
-                <View style={styles.filterDistanceRow}>
-                  {[0.5, 1, 2, 3, 4].map(d => {
-                    const active = tempFilters.distanceKm === d;
-                    return (
-                      <Pressable 
-                        key={d} 
-                        onPress={() => setDistance(d)}
-                        style={({ pressed }) => [
-                          styles.filterDistanceChip, 
-                          active && styles.filterDistanceChipActive,
-                          pressed && { opacity: 0.8 }
-                        ]}
-                      >
-                        {active && <LinearGradient colors={[BLUES.b60, BLUES.b80]} style={StyleSheet.absoluteFillObject} />}
-                        <Text style={[styles.filterDistanceText, active && styles.filterDistanceTextActive]}>{d < 1 ? `${d * 1000}m` : `${d}km`}</Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </View>
-
-              <View style={styles.filterActions}>
-                <Pressable 
-                  onPress={handleReset} 
-                  style={({ pressed }) => [styles.filterResetBtn, pressed && { opacity: 0.7 }]}
-                >
-                  <Text style={styles.filterResetText}>Reset</Text>
-                </Pressable>
-                <Pressable 
-                  onPress={handleApply} 
-                  style={({ pressed }) => [styles.filterApplyBtn, pressed && { opacity: 0.9 }]}
-                >
-                  <LinearGradient colors={[BLUES.b50, BLUES.b70]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.filterApplyGradient}>
-                    <Text style={styles.filterApplyText}>Apply</Text>
-                  </LinearGradient>
-                </Pressable>
-              </View>
-            </RNAnimated.View>
-          </Pressable>
-        </RNAnimated.View>
-      </Pressable>
-    </Modal>
-  );
-});
-
-const FilterButton: React.FC<{ onPress: () => void; hasActiveFilters: boolean }> = memo(({ onPress, hasActiveFilters }) => {
-  const pressScale = useRef(new RNAnimated.Value(1)).current;
-  const onIn = useCallback(() => RNAnimated.timing(pressScale, { toValue: 0.94, duration: 70, useNativeDriver: true }).start(), [pressScale]);
-  const onOut = useCallback(() => RNAnimated.spring(pressScale, { toValue: 1, friction: 4, tension: 300, useNativeDriver: true }).start(), [pressScale]);
-
-  return (
-    <Pressable onPress={onPress} onPressIn={onIn} onPressOut={onOut}>
-      <RNAnimated.View style={{ transform: [{ scale: pressScale }] }}>
-        <GlassSurface thickness="thick" blueTint={hasActiveFilters} radius={scale(22)}
-          style={[styles.filterBtn, hasActiveFilters && styles.filterBtnActive]}>
-          {hasActiveFilters && <LinearGradient colors={[BLUES.b60, BLUES.b80]} style={[StyleSheet.absoluteFillObject, { borderRadius: scale(22) }]} />}
-          <Ionicons name="options-outline" size={20} color={hasActiveFilters ? "#FFFFFF" : BLUES.b40} />
-          {hasActiveFilters && <View style={styles.filterBtnDot} />}
-        </GlassSurface>
-      </RNAnimated.View>
-    </Pressable>
-  );
-});
 
 /* ===================== MAIN SCREEN ===================== */
 export default function MapScreen() {
+  const { showNotification, showConfirmation } = useNotification();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const mapRef = useRef<MapView>(null);
@@ -2349,36 +89,30 @@ export default function MapScreen() {
   });
   const [filters, setFilters] = useState<FilterState>({
     ageMin: 18, ageMax: 99, distanceKm: 4, genders: ['man', 'woman', 'nonbinary'],
+    intentions: undefined,
+    activeToday: false,
   });
   
-  // Events have a fixed 30km radius (separate from dating radius)
-  const EVENT_RADIUS_METERS = 30000; // 30km
+  const EVENT_RADIUS_METERS = 30000;
 
   const lastRawPosRef = useRef<{ lat: number; lng: number } | null>(null);
   const smoothPosRef = useRef<{ lat: number; lng: number } | null>(null);
   const lastCameraAtRef = useRef<number>(0);
   const lastSetPosRef = useRef<{ lat: number; lng: number } | null>(null);
   const cameraPositionRef = useRef<{ lat: number; lng: number } | null>(null);
-
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchActive, setSearchActive] = useState(false);
-  const searchAnim = useRef(new RNAnimated.Value(0)).current;
-  const searchScale = searchAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.02] });
-  const backdropOpacity = searchAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 0.26] });
-
-  const openSearch = useCallback(() => {
-    setSearchActive(true);
-    RNAnimated.timing(searchAnim, { toValue: 1, duration: 180, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
-  }, [searchAnim]);
-
-  const closeSearch = useCallback(() => {
-    RNAnimated.timing(searchAnim, { toValue: 0, duration: 160, easing: Easing.in(Easing.cubic), useNativeDriver: true }).start(() => setSearchActive(false));
-  }, [searchAnim]);
-
-  const closeKeyboard = useCallback(() => {
-    Keyboard.dismiss();
-    closeSearch();
-  }, [closeSearch]);
+  
+  // âœ… NEW: Refs to access latest values without recreating functions
+  const posRef = useRef(pos);
+  const currentUserIdRef = useRef(currentUserId);
+  
+  // Keep refs in sync with state
+  useEffect(() => {
+    posRef.current = pos;
+  }, [pos]);
+  
+  useEffect(() => {
+    currentUserIdRef.current = currentUserId;
+  }, [currentUserId]);
 
   const plusRef = useRef<View>(null);
   const [revealVisible, setRevealVisible] = useState(false);
@@ -2409,20 +143,19 @@ export default function MapScreen() {
     });
   }, [revealAnim, router]);
 
+  // Auth setup
   useEffect(() => {
     let mounted = true;
     let authSubscription: any = null;
     
     (async () => {
       try {
-        // Get current session (more reliable than getUser)
         const { data: { session } } = await supabase.auth.getSession();
         
         if (session?.user && mounted) {
           console.log("User authenticated:", session.user.id);
           setCurrentUserId(session.user.id);
           
-          // Fetch user profile photo - same approach as profile.tsx
           const userId = session.user.id;
           const { data: mainPhoto } = await supabase
             .from("user_photos")
@@ -2439,7 +172,6 @@ export default function MapScreen() {
             setUserProfilePhoto(null);
           }
           
-          // Fetch user preferences for filters
           const { data: profilePrefs } = await supabase
             .from('profiles')
             .select('age_pref_min, age_pref_max, distance_km, interested_in, age, gender')
@@ -2447,7 +179,6 @@ export default function MapScreen() {
             .single();
           
           if (profilePrefs) {
-            // Store user's own age and gender for eligibility checks
             setCurrentUserAge(profilePrefs.age ?? null);
             setCurrentUserGender(profilePrefs.gender ?? null);
             
@@ -2463,13 +194,14 @@ export default function MapScreen() {
               ageMax: prefs.ageMax,
               distanceKm: prefs.distanceKm,
               genders: prefs.interestedIn as ('man' | 'woman' | 'nonbinary')[],
+              intentions: undefined,
+              activeToday: false,
             });
           }
         } else {
           console.log("[ERROR] No session found");
         }
         
-        // Listen for auth changes
         const { data } = supabase.auth.onAuthStateChange((_event, session) => {
           if (session?.user && mounted) {
             console.log("Auth state changed, user:", session.user.id);
@@ -2491,15 +223,18 @@ export default function MapScreen() {
     };
   }, []);
 
-  // Fetch events from Supabase
+  // âœ… FIX #1: Stable fetchEvents - uses refs to always get current values
   const fetchEvents = useCallback(async () => {
-    if (!pos || !currentUserId) return;
+    // Access current values from refs (always up-to-date)
+    const currentPos = posRef.current;
+    const userId = currentUserIdRef.current;
+    
+    if (!currentPos || !userId) return;
     
     try {
-      // Use the SECURITY DEFINER RPC function to bypass RLS
       const { data, error } = await supabase.rpc('get_nearby_events_with_coordinates', {
-        p_user_lat: pos.lat,
-        p_user_lng: pos.lng,
+        p_user_lat: currentPos.lat,
+        p_user_lng: currentPos.lng,
         p_radius_meters: EVENT_RADIUS_METERS,
         p_status: 'active'
       });
@@ -2512,7 +247,6 @@ export default function MapScreen() {
       if (data && data.length > 0) {
         console.log(`RPC returned ${data.length} events`);
         
-        // Filter events based on time and coordinates
         const validEvents = data.filter((event: any) => {
           if (!event.latitude || !event.longitude) {
             console.log(`   [WARN] Skipping ${event.event_name}: missing lat/lng`);
@@ -2532,14 +266,13 @@ export default function MapScreen() {
         let userApplicationMap = new Map<string, string>();
         let userInviteSet = new Set<string>();
         
-        // Try to get current user's application status
-        if (currentUserId && eventIds.length > 0) {
+        if (userId && eventIds.length > 0) {
           try {
             const { data: userAppData } = await supabase
               .from('event_applications')
               .select('event_id, status')
               .in('event_id', eventIds)
-              .eq('applicant_id', currentUserId);
+              .eq('applicant_id', userId);
             
             if (userAppData) {
               userAppData.forEach((a: any) => {
@@ -2551,13 +284,12 @@ export default function MapScreen() {
             console.warn("Could not fetch user applications");
           }
           
-          // Try to get invites
           try {
             const { data: inviteData } = await supabase
               .from('event_invites')
               .select('event_id')
               .in('event_id', eventIds)
-              .eq('invited_user_id', currentUserId);
+              .eq('invited_user_id', userId);
             
             if (inviteData) {
               inviteData.forEach((inv: any) => {
@@ -2569,11 +301,9 @@ export default function MapScreen() {
           }
         }
         
-        // Map events - use accepted_count from RPC (parse in case it's a string from BIGINT)
         const enrichedEvents = validEvents.map((event: any) => {
           const eventType = event.event_type || 'public';
           const fuzzyRadius = event.fuzzy_radius_meters || 500;
-          // Parse accepted_count - BIGINT from PostgreSQL might be string
           const acceptedCount = typeof event.accepted_count === 'string' 
             ? parseInt(event.accepted_count, 10) 
             : (event.accepted_count || 0);
@@ -2589,24 +319,19 @@ export default function MapScreen() {
           };
         });
         
-        // Filter by visibility rules
         const visibleEvents = enrichedEvents.filter((event: any) => {
           const eventType = event.event_type;
           
-          // Host's own events - always visible
-          if (event.host_id === currentUserId) return true;
+          if (event.host_id === userId) return true;
           
-          // Public, public_application, private - visible to everyone in radius
           if (eventType === 'public' || eventType === 'public_application' || eventType === 'private') {
             return true;
           }
           
-          // invite_only - visible if user is invited
           if (eventType === 'invite_only' && userInviteSet.has(event.id)) {
             return true;
           }
           
-          // group_event, community_event - hide for now unless host
           return false;
         });
         
@@ -2623,51 +348,45 @@ export default function MapScreen() {
     } catch (error) {
       console.error("Exception in fetchEvents:", error);
     }
-  }, [pos, currentUserId]);
+  }, []); // âœ… Empty dependencies - stable function
 
-  // Fetch users from Supabase
-  const fetchUsers = useCallback(async (retryCount: number = 0) => {
-    if (!currentUserId) {
-      console.log("[WARN] Ãƒâ€šÃ‚Â No currentUserId, can't fetch users");
-      return;
+  // âœ… FIX #2: Stable fetchUsers - uses refs to always get current values
+  const fetchUsers = useCallback(async () => {
+    const userId = currentUserIdRef.current;
+    
+    if (!userId) {
+      console.log("[WARN] No currentUserId, can't fetch users");
+      return false; // Return success status
     }
     
     try {
-      console.log(`Fetching users (attempt ${retryCount + 1})`);
-      console.log("Current user ID:", currentUserId);
+      console.log(`Fetching users...`);
       
-      // Use regular get_map_cards (works without time filter)
-      const { data, error } = await supabase.rpc('get_map_cards', {
-        
-      });
+      const { data, error } = await supabase.rpc('get_map_cards', {});
 
       if (error) {
         console.error("[ERROR] Error fetching users:", error);
-        return;
+        return false;
       }
       
       if (data && data.length > 0) {
         console.log(`Loaded ${data.length} user(s) on map`);
         
-        // Fetch gender data for all users (since get_map_cards doesn't return it)
         const userIds = data.map((u: any) => u.user_id);
         const { data: genderData } = await supabase
           .from('profiles')
           .select('id, gender')
           .in('id', userIds);
         
-        // Create a map of userId -> gender
         const genderMap: Record<string, string> = {};
         genderData?.forEach((p: any) => {
           genderMap[p.id] = p.gender?.toLowerCase() || '';
         });
         
-        // Debug: Log each user found
         data.forEach((u: any) => {
           console.log(`   ${u.full_name}, age ${u.age}, gender: ${genderMap[u.user_id] || 'unknown'}, access: ${u.access_level || 'unknown'}`);
         });
         
-        // Process photo URLs with signed URLs and add gender
         const usersWithPhotosAndGender = await Promise.all(
           data.map(async (user: any) => {
             let photoUrl = user.main_photo_url;
@@ -2686,76 +405,80 @@ export default function MapScreen() {
         );
         
         setUsers(usersWithPhotosAndGender as UserMapCard[]);
+        return true; // Success
       } else if (data) {
         console.log("No users found on map");
         setUsers([]);
+        return true; // Success (empty result)
       }
+      return false;
     } catch (error) {
       console.error("Exception in fetchUsers:", error);
+      return false;
     }
-  }, [currentUserId]);
+  }, []); // âœ… Empty dependencies - stable function
 
-  const fetchEventsRef = useRef(fetchEvents);
-  useEffect(() => {
-    fetchEventsRef.current = fetchEvents;
-  }, [fetchEvents]);
+  // âœ… FIX #3: REMOVED duplicate initial fetch effect
+  // This was causing unnecessary fetches on every pos/currentUserId change
 
-  // Add fetchUsersRef for real-time subscription
-  const fetchUsersRef = useRef(fetchUsers);
-  useEffect(() => {
-    fetchUsersRef.current = fetchUsers;
-  }, [fetchUsers]);
-
-  // Initial fetch when position and user are available
-  useEffect(() => {
-    if (pos && currentUserId) {
+  // âœ… FIX #4: Fixed retry logic - fetches BOTH users and events on initial load
+useEffect(() => {
+  if (!currentUserId || !pos) return;
+  
+  let isMounted = true;
+  
+  const fetchInitialData = async () => {
+    // âœ… FETCH EVENTS IMMEDIATELY
+    if (posRef.current && currentUserIdRef.current) {
+      console.log("Fetching initial events...");
       fetchEvents();
     }
-  }, [pos, currentUserId, fetchEvents]);
-
-  // Fetch users when currentUserId is available
-  // Use multiple retries with exponential backoff to handle race conditions
-  useEffect(() => {
-    if (!currentUserId || !pos) return;
     
-    let isMounted = true;
-    const retryDelays = [0, 1000, 2000, 4000]; // Initial + 3 retries at 1s, 2s, 4s
-    
-    const fetchWithRetries = async () => {
-      for (let i = 0; i < retryDelays.length; i++) {
-        if (!isMounted) return;
-        
-        if (retryDelays[i] > 0) {
-          console.log(`Retry ${i}: waiting ${retryDelays[i]}ms before fetching users...`);
-          await new Promise(resolve => setTimeout(resolve, retryDelays[i]));
-        }
-        
-        if (!isMounted) return;
-        await fetchUsers(i);
+    // âœ… FETCH USERS WITH RETRY LOGIC
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (!isMounted) return;
+      
+      if (attempt > 0) {
+        const delay = attempt * 1000; // 1s, 2s
+        console.log(`Retry ${attempt}: waiting ${delay}ms before fetching users...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
-    };
+      
+      if (!isMounted) return;
+      
+      const success = await fetchUsers();
+      
+      if (success) {
+        console.log(`âœ… Users fetch succeeded on attempt ${attempt + 1}`);
+        return; // âœ… SUCCESS - STOP RETRYING
+      }
+      
+      console.log(`âŒ Users fetch failed on attempt ${attempt + 1}`);
+    }
     
-    fetchWithRetries();
-    
-    return () => {
-      isMounted = false;
-    };
-  }, [currentUserId, pos, fetchUsers]);
+    console.warn("All retry attempts failed");
+  };
+  
+  fetchInitialData();
+  
+  return () => {
+    isMounted = false;
+  };
+}, [currentUserId, pos, fetchEvents, fetchUsers]); // âœ… Add fetch functions to deps
 
-  // Refresh events and users when screen comes into focus (e.g., returning from add_event)
+  // âœ… FIX #5: Refresh on screen focus - stable functions access latest values via refs
   useFocusEffect(
     useCallback(() => {
       console.log("Map screen focused - refreshing events and users");
-      if (pos) {
+      // Functions are stable but access latest values via refs
+      if (posRef.current && currentUserIdRef.current) {
         fetchEvents();
-        if (currentUserId) {
-          fetchUsers(0); // Pass 0 as retry count for focus refresh
-        }
+        fetchUsers();
       }
-    }, [pos, currentUserId, fetchEvents, fetchUsers])
+    }, []) // âœ… Empty array - only triggers on focus, not on every state change
   );
 
-  // Set up real-time subscription ONCE on mount
+  // Set up real-time subscription
   useEffect(() => {
     console.log("Setting up real-time subscriptions...");
 
@@ -2763,17 +486,13 @@ export default function MapScreen() {
       .channel("events_updates")
       .on(
         "postgres_changes",
-        { 
-          event: "*", 
-          schema: "public", 
-          table: "events"
-        },
+        { event: "*", schema: "public", table: "events" },
         (payload) => {
           console.log("Real-time event:", payload.eventType);
           
           if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
             console.log("Refetching events");
-            fetchEventsRef.current();
+            fetchEvents();
           } else if (payload.eventType === "DELETE") {
             const eventId = (payload.old as any)?.id;
             if (eventId) {
@@ -2788,20 +507,14 @@ export default function MapScreen() {
         }
       });
 
-    // Subscribe to event_applications to update counts when people join/leave events
     const applicationsChannel = supabase
       .channel("event_applications_updates")
       .on(
         "postgres_changes",
-        { 
-          event: "*", 
-          schema: "public", 
-          table: "event_applications"
-        },
+        { event: "*", schema: "public", table: "event_applications" },
         (payload) => {
           console.log("Event application changed:", payload.eventType, payload.new || payload.old);
           
-          // Get the event_id from the payload
           const eventId = (payload.new as any)?.event_id || (payload.old as any)?.event_id;
           const newStatus = (payload.new as any)?.status;
           const oldStatus = (payload.old as any)?.status;
@@ -2809,13 +522,11 @@ export default function MapScreen() {
           if (eventId) {
             let countDelta = 0;
             
-            // Calculate count change based on status transition
             if (payload.eventType === "INSERT" && newStatus === 'approved') {
               countDelta = 1;
             } else if (payload.eventType === "DELETE" && oldStatus === 'approved') {
               countDelta = -1;
             } else if (payload.eventType === "UPDATE") {
-              // Status changed
               if (oldStatus !== 'approved' && newStatus === 'approved') {
                 countDelta = 1;
               } else if (oldStatus === 'approved' && newStatus !== 'approved') {
@@ -2824,29 +535,21 @@ export default function MapScreen() {
             }
             
             if (countDelta !== 0) {
-              // Update the accepted count in events array
               setEvents(prev => {
                 return prev.map(event => {
                   if (event.id !== eventId) return event;
                   
                   const newCount = Math.max(0, (event.accepted_count || 0) + countDelta);
-                  console.log(`   Updating ${event.event_name} count: ${event.accepted_count} ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ ${newCount}`);
-                  return {
-                    ...event,
-                    accepted_count: newCount,
-                  };
+                  console.log(`   Updating ${event.event_name} count: ${event.accepted_count} â†’ ${newCount}`);
+                  return { ...event, accepted_count: newCount };
                 });
               });
               
-              // Also update selectedEvent if it's the same event (modal is open)
               setSelectedEvent(prev => {
                 if (!prev || prev.id !== eventId) return prev;
                 const newCount = Math.max(0, (prev.accepted_count || 0) + countDelta);
-                console.log(`   Updating selected event count: ${prev.accepted_count} ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ ${newCount}`);
-                return {
-                  ...prev,
-                  accepted_count: newCount,
-                };
+                console.log(`   Updating selected event count: ${prev.accepted_count} â†’ ${newCount}`);
+                return { ...prev, accepted_count: newCount };
               });
             }
           }
@@ -2858,22 +561,15 @@ export default function MapScreen() {
         }
       });
 
-    // Also subscribe to profile updates to detect when other users come online
     const profilesChannel = supabase
       .channel("profiles_updates")
       .on(
         "postgres_changes",
-        { 
-          event: "UPDATE", 
-          schema: "public", 
-          table: "profiles"
-        },
+        { event: "UPDATE", schema: "public", table: "profiles" },
         (payload) => {
-          // When any profile updates (like location/last_seen), refresh users
           console.log("Profile updated, refreshing users...");
-          // Use a small delay to avoid hammering the API
           setTimeout(() => {
-            fetchUsersRef.current?.();
+            fetchUsers();
           }, 500);
         }
       )
@@ -2888,7 +584,7 @@ export default function MapScreen() {
       applicationsChannel.unsubscribe();
       profilesChannel.unsubscribe();
     };
-  }, []); // Empty deps - set up once
+  }, []); // âœ… Empty dependencies - stable subscriptions, use stable fetch functions
 
   // Periodic cleanup for expired events
   useEffect(() => {
@@ -2906,23 +602,7 @@ export default function MapScreen() {
     return () => clearInterval(interval);
   }, []);
 
-  const haversineMeters = useCallback((a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
-    const R = 6371000;
-    const dLat = toRad(b.lat - a.lat);
-    const dLon = toRad(b.lng - a.lng);
-    const la1 = toRad(a.lat);
-    const la2 = toRad(b.lat);
-    const h = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLon / 2) ** 2;
-    return 2 * R * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
-  }, []);
-
-  const smoothPoint = useCallback((prev: { lat: number; lng: number }, next: { lat: number; lng: number }, accuracy?: number) => {
-    const dist = haversineMeters(prev, next);
-    let alpha = dist > 25 ? 0.7 : dist > 10 ? 0.5 : 0.25;
-    if ((accuracy ?? 0) > 50 && dist < 15) alpha = Math.min(alpha, 0.15);
-    return { lat: prev.lat + alpha * (next.lat - prev.lat), lng: prev.lng + alpha * (next.lng - prev.lng) };
-  }, [haversineMeters]);
-
+  // Location tracking
   useEffect(() => {
     let subPos: Location.LocationSubscription | null = null;
     let subHeading: Location.LocationSubscription | null = null;
@@ -2940,7 +620,6 @@ export default function MapScreen() {
           cameraPositionRef.current = { lat: fallback.lat, lng: fallback.lng };
           setLoading(false);
           
-          // Animate to fallback location
           setTimeout(() => {
             mapRef.current?.animateCamera(
               { center: { latitude: fallback.lat, longitude: fallback.lng }, zoom: 16, pitch: 0, heading: 0 },
@@ -2951,7 +630,6 @@ export default function MapScreen() {
           return;
         }
 
-        // Try to get current position with error handling
         let initial;
         try {
           initial = await Location.getCurrentPositionAsync({ 
@@ -2984,18 +662,16 @@ export default function MapScreen() {
         smoothPosRef.current = { lat: init.lat, lng: init.lng };
         cameraPositionRef.current = { lat: init.lat, lng: init.lng };
 
-        // Save location to database - AWAIT to ensure it's saved before fetching users
         if (currentUserId) {
           console.log("Saving initial location to database...");
           const saved = await updateUserLocationInDB(currentUserId, init.lat, init.lng);
           if (saved) {
             console.log("Location saved successfully, users can now discover this user");
           } else {
-            console.warn("[WARN] Ãƒâ€šÃ‚Â Failed to save location, other users may not see this user");
+            console.warn("[WARN] Failed to save location, other users may not see this user");
           }
         }
 
-        // Set up periodic location updates to database (every 30 seconds)
         locationUpdateTimer = setInterval(() => {
           if (currentUserId && smoothPosRef.current) {
             updateUserLocationInDB(currentUserId, smoothPosRef.current.lat, smoothPosRef.current.lng);
@@ -3010,7 +686,6 @@ export default function MapScreen() {
           lastCameraAtRef.current = Date.now();
         }, 0);
 
-        // Watch position updates
         try {
           subPos = await Location.watchPositionAsync(
             { accuracy: Location.Accuracy.Balanced, timeInterval: 1500, distanceInterval: 8 },
@@ -3019,16 +694,13 @@ export default function MapScreen() {
               const locAcc: number | undefined = loc.coords.accuracy ?? undefined;
               const raw = { lat: latitude, lng: longitude };
 
-              // Reject obvious GPS jumps
               const prevRaw = lastRawPosRef.current;
               if (prevRaw) {
                 const jump = haversineMeters(prevRaw, raw);
-                // More aggressive filtering: reject large jumps when accuracy is poor
                 if ((locAcc ?? 999) > 80 && jump > 50) {
                   console.log("Rejected GPS jump:", jump.toFixed(1), "m, accuracy:", locAcc);
                   return;
                 }
-                // Even with good accuracy, reject unrealistic jumps
                 if (jump > 200) {
                   console.log("Rejected unrealistic jump:", jump.toFixed(1), "m");
                   return;
@@ -3043,30 +715,22 @@ export default function MapScreen() {
               const lastSet = lastSetPosRef.current ?? smoothed;
               const movedSinceSet = haversineMeters(lastSet, smoothed);
 
-              // Only update position state if moved significantly
               if (movedSinceSet >= 5) {
                 setPos({ lat: smoothed.lat, lng: smoothed.lng, acc: locAcc ?? 25 });
                 lastSetPosRef.current = { lat: smoothed.lat, lng: smoothed.lng };
                 
-                // Update database if moved >50 meters
                 if (currentUserId && movedSinceSet > 50) {
                   updateUserLocationInDB(currentUserId, smoothed.lat, smoothed.lng);
                 }
               }
 
-              // Camera follow logic - only if following mode is enabled
               if (isFollowing) {
                 const now = Date.now();
                 const lastCam = lastCameraAtRef.current;
                 
-                // Calculate distance from ACTUAL camera position (not previous smoothed position)
                 const camPos = cameraPositionRef.current ?? smoothed;
                 const distFromCamera = haversineMeters(camPos, smoothed);
 
-                // More conservative thresholds:
-                // - Only move camera if user has moved at least 15 meters from camera center
-                // - Rate limit to max once per 1.2 seconds
-                // - Require decent accuracy
                 if (distFromCamera > 15 && now - lastCam >= 1200 && (locAcc ?? 999) < 100) {
                   console.log("Following user - moved", distFromCamera.toFixed(1), "m from camera");
                   mapRef.current?.animateCamera(
@@ -3083,7 +747,6 @@ export default function MapScreen() {
           console.log("Could not watch position, using static location:", watchError);
         }
 
-        // Watch heading updates
         try {
           subHeading = await Location.watchHeadingAsync((h) => {
             const deg = Number.isFinite(h?.trueHeading) && h.trueHeading >= 0 ? h.trueHeading : h.magHeading ?? 0;
@@ -3094,7 +757,6 @@ export default function MapScreen() {
         }
       } catch (error) {
         console.error("Location setup error:", error);
-        // Final fallback
         const fallback = { lat: FALLBACK.lat, lng: FALLBACK.lng, acc: 100 };
         setPos(fallback);
         smoothPosRef.current = { lat: fallback.lat, lng: fallback.lng };
@@ -3111,7 +773,7 @@ export default function MapScreen() {
         clearInterval(locationUpdateTimer);
       }
     };
-  }, [isFollowing, haversineMeters, smoothPoint, currentUserId]);
+  }, [isFollowing, currentUserId]);
 
   const initialCamera: Camera = useMemo(() => ({
     center: { latitude: pos?.lat ?? FALLBACK.lat, longitude: pos?.lng ?? FALLBACK.lng },
@@ -3129,25 +791,56 @@ export default function MapScreen() {
     ]).start();
   }, [pos, fabRotation]);
 
+
+  // Quick filter chip handlers
+  const handleQuickAgeFilter = useCallback(() => {
+    setShowFilterModal(true);
+  }, []);
   
-  // Auto-refresh live users every 30 seconds
+  const handleQuickHeightFilter = useCallback(() => {
+    showNotification({
+      type: "info",
+      title: "Coming Soon",
+      message: "Height filter will be available soon",
+      duration: 3000,
+    });
+  }, [showNotification]);
+  
+  const handleQuickIntentionsFilter = useCallback(() => {
+    setShowFilterModal(true);
+  }, []);
+  
+  const handleQuickActiveTodayToggle = useCallback(() => {
+    setFilters(prev => ({
+      ...prev,
+      activeToday: !prev.activeToday,
+    }));
+  }, []);
+  
+  const handleQuickMoreFilters = useCallback(() => {
+    setShowFilterModal(true);
+  }, []);
+
+  // âœ… FIX #6: Auto-refresh every 30 seconds - stable function with ref access
   useEffect(() => {
     if (!currentUserId || !pos) return;
     
     const refreshInterval = setInterval(() => {
-      console.log("Refreshing live users...");
-      fetchUsers(0); // Pass 0 as retry count for periodic refresh
-    }, 30000); // Every 30 seconds
+      // Only refresh if we still have valid data
+      if (currentUserIdRef.current && posRef.current) {
+        console.log("Auto-refreshing users (30s interval)...");
+        fetchUsers();
+      }
+    }, 30000);
     
     return () => clearInterval(refreshInterval);
-  }, [currentUserId, pos, fetchUsers]);
+  }, [currentUserId, pos]); // âœ… Set up interval when userId/pos become available
 
   // Filter users based on current filter state
   const filteredUsers = useMemo(() => {
     if (!pos) return users;
     
     const filtered = users.filter(user => {
-      
       // Age filter
       if (user.age < filters.ageMin || user.age > filters.ageMax) return false;
       
@@ -3155,7 +848,7 @@ export default function MapScreen() {
       const distanceMeters = haversineMeters(pos, { lat: user.approx_lat, lng: user.approx_lng });
       if (distanceMeters > filters.distanceKm * 1000) return false;
       
-      // Gender filter (if user has gender data from backend)
+      // Gender filter
       if (user.gender && filters.genders.length > 0) {
         const userGender = user.gender.toLowerCase();
         if (!filters.genders.includes(userGender as 'man' | 'woman' | 'nonbinary')) {
@@ -3163,18 +856,41 @@ export default function MapScreen() {
         }
       }
       
+      // Intentions filter (looking_for)
+      if (filters.intentions && filters.intentions.length > 0) {
+        if (!user.looking_for || user.looking_for.length === 0) return false;
+        const hasMatchingIntention = filters.intentions.some(intention => 
+          user.looking_for?.includes(intention)
+        );
+        if (!hasMatchingIntention) return false;
+      }
+      
+      // Active today filter (last 24 hours)
+      if (filters.activeToday) {
+        if (!user.last_seen) return false;
+        const lastSeenTime = new Date(user.last_seen).getTime();
+        const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000);
+        if (lastSeenTime < oneDayAgo) return false;
+      }
+      
       return true;
     });
     
-    
-    console.log(`Filter applied: ${filtered.length}/${users.length} users shown (age: ${filters.ageMin}-${filters.ageMax}, dist: ${filters.distanceKm}km, genders: ${filters.genders.join(',')})`);
+    console.log(`Filter applied: ${filtered.length}/${users.length} users shown (age: ${filters.ageMin}-${filters.ageMax}, dist: ${filters.distanceKm}km, genders: ${filters.genders.join(',')}, intentions: ${filters.intentions?.length || 0}, activeToday: ${filters.activeToday || false})`);
     return filtered;
-  }, [users, filters, pos, haversineMeters]);
+  }, [users, filters, pos]);
   
   const hasActiveFilters = useMemo(() => {
-    return filters.ageMin !== userPrefs.ageMin || filters.ageMax !== userPrefs.ageMax ||
-      filters.distanceKm !== userPrefs.distanceKm || filters.genders.length !== userPrefs.interestedIn.length ||
+    const hasBasicFilters = filters.ageMin !== userPrefs.ageMin || 
+      filters.ageMax !== userPrefs.ageMax ||
+      filters.distanceKm !== userPrefs.distanceKm || 
+      filters.genders.length !== userPrefs.interestedIn.length ||
       !filters.genders.every(g => userPrefs.interestedIn.includes(g));
+    
+    const hasIntentionsFilter = filters.intentions && filters.intentions.length > 0;
+    const hasActiveTodayFilter = filters.activeToday === true;
+    
+    return hasBasicFilters || hasIntentionsFilter || hasActiveTodayFilter;
   }, [filters, userPrefs]);
 
   if (loading) return <IiLoader />;
@@ -3186,16 +902,35 @@ export default function MapScreen() {
   return (
     <View style={styles.root}>
       <MapView
-        ref={mapRef} style={styles.map} provider={PROVIDER_GOOGLE} initialCamera={initialCamera} customMapStyle={googleBlueStyle}
-        showsCompass={false} showsPointsOfInterest={false} showsMyLocationButton={false} toolbarEnabled={false}
-        showsScale={false} showsIndoors={false} showsIndoorLevelPicker={false} showsBuildings pitchEnabled={false}
-        rotateEnabled={false} scrollEnabled zoomEnabled moveOnMarkerPress={false} onPanDrag={() => setIsFollowing(false)}
-        minZoomLevel={10} maxZoomLevel={20}
+        ref={mapRef} 
+        style={styles.map} 
+        provider={PROVIDER_GOOGLE} 
+        initialCamera={initialCamera} 
+        customMapStyle={googleBlueStyle}
+        showsCompass={false} 
+        showsPointsOfInterest={false} 
+        showsMyLocationButton={false} 
+        toolbarEnabled={false}
+        showsScale={false} 
+        showsIndoors={false} 
+        showsIndoorLevelPicker={false} 
+        showsBuildings 
+        pitchEnabled={false}
+        rotateEnabled={false} 
+        scrollEnabled 
+        zoomEnabled 
+        moveOnMarkerPress={false} 
+        onPanDrag={() => setIsFollowing(false)}
+        minZoomLevel={10} 
+        maxZoomLevel={20}
       >
         {pos && (
           <Marker
-            key={userProfilePhoto || "placeholder"} tracksViewChanges={true}
-            coordinate={{ latitude: pos.lat, longitude: pos.lng }} anchor={{ x: 0.5, y: 0.5 }} stopPropagation
+            key={userProfilePhoto || "placeholder"} 
+            tracksViewChanges={true}
+            coordinate={{ latitude: pos.lat, longitude: pos.lng }} 
+            anchor={{ x: 0.5, y: 0.5 }} 
+            stopPropagation
             zIndex={1000}
           >
             <ProfileMarker photoUrl={userProfilePhoto} headingDeg={headingDeg} />
@@ -3221,22 +956,18 @@ export default function MapScreen() {
 
         {/* Event markers */}
         {events.map((event) => {
-          // For private events where user is not approved, show fuzzy location
           const isPrivateNotApproved = event.event_type === 'private' && 
             event.host_id !== currentUserId && 
             event.user_application_status !== 'approved';
           
-          // Calculate fuzzy offset if needed (consistent per event using event id as seed)
           let displayLat = event.latitude;
           let displayLng = event.longitude;
           
           if (isPrivateNotApproved) {
-            // Use a deterministic offset based on event id so it's consistent
-            const fuzzyRadius = (event.fuzzy_radius_meters || 500) / 111000; // Convert meters to degrees (approx)
-            // Create pseudo-random but consistent offset using event id characters
+            const fuzzyRadius = (event.fuzzy_radius_meters || 500) / 111000;
             const seedValue = event.id.split('').reduce((acc, char, i) => acc + char.charCodeAt(0) * (i + 1), 0);
             const angle = (seedValue % 360) * (Math.PI / 180);
-            const offsetMultiplier = 0.3 + (seedValue % 70) / 100; // 0.3 to 1.0
+            const offsetMultiplier = 0.3 + (seedValue % 70) / 100;
             displayLat = event.latitude + Math.cos(angle) * fuzzyRadius * offsetMultiplier;
             displayLng = event.longitude + Math.sin(angle) * fuzzyRadius * offsetMultiplier;
           }
@@ -3257,52 +988,80 @@ export default function MapScreen() {
             </Marker>
           );
         })}
-
       </MapView>
 
-      <RNAnimated.View
-        pointerEvents={searchActive ? "auto" : "none"}
-        style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(0,0,0,0.4)", opacity: backdropOpacity, zIndex: 9 }]}
-      >
-        <Pressable style={{ flex: 1 }} onPress={closeKeyboard} />
-      </RNAnimated.View>
-
-      <View style={[styles.overlayTop, { paddingTop: Math.max(insets.top, verticalScale(12)) }]}>
-        <RNAnimated.View style={{ transform: [{ scale: searchScale }] }}>
-          <GlassSurface thickness="thick" radius={scale(24)} style={[styles.searchWrap, { height: SEARCH_HEIGHT }]}>
-            <View style={styles.searchInner}>
-              <View style={styles.searchIconWrap}>
-                <SearchIcon size={18} />
-              </View>
-              <TextInput
-                value={searchQuery} onChangeText={setSearchQuery} placeholder="Search for events"
-                placeholderTextColor={PLACEHOLDER_COLOR} style={styles.searchInput} returnKeyType="search"
-                selectionColor="rgba(27,68,205,0.5)" onFocus={openSearch} onBlur={closeSearch} onSubmitEditing={closeKeyboard}
-              />
-              {searchQuery.length > 0 && (
-                <Pressable onPress={() => setSearchQuery("")} style={styles.clearBtn}>
-                  <Text style={styles.clearTxt}>X</Text>
-                </Pressable>
-              )}
-            </View>
-          </GlassSurface>
-        </RNAnimated.View>
-
-        <View style={styles.chipsRow}>
-          <View style={styles.chipsLeft}>
+      {/* Top Overlay - Filter row with action buttons below */}
+      <View style={{ paddingTop: Math.max(insets.top, verticalScale(12)), left: 0, right: 0, position: 'absolute', zIndex: 10 }}>
+        {/* Filter Row - Edge to Edge Scrolling */}
+        <View style={{ marginBottom: verticalScale(12) }}>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ 
+              paddingHorizontal: scale(16),
+              gap: scale(8),
+              alignItems: 'center',
+            }}
+          >
+            {/* Filter Icon - FIRST item in scroll */}
             <FilterButton onPress={() => setShowFilterModal(true)} hasActiveFilters={hasActiveFilters} />
-          </View>
-          <PlusChipDiamondGlass ref={plusRef} onPress={startPlusReveal} />
+            
+            <QuickFilterChip
+              label={filters.ageMin !== userPrefs.ageMin || filters.ageMax !== userPrefs.ageMax 
+                ? `Age ${filters.ageMin}-${filters.ageMax}` 
+                : "Age"}
+              active={filters.ageMin !== userPrefs.ageMin || filters.ageMax !== userPrefs.ageMax}
+              onPress={handleQuickAgeFilter}
+            />
+            <QuickFilterChip
+              label="Height"
+              active={false}
+              onPress={handleQuickHeightFilter}
+            />
+            <QuickFilterChip
+              label={filters.intentions && filters.intentions.length > 0 
+                ? `${filters.intentions.length} selected` 
+                : "Intentions"}
+              active={!!(filters.intentions && filters.intentions.length > 0)}
+              onPress={handleQuickIntentionsFilter}
+            />
+            <QuickFilterChip
+              label="Active today"
+              active={filters.activeToday === true}
+              onPress={handleQuickActiveTodayToggle}
+            />
+            <QuickFilterChip
+              label="More"
+              active={false}
+              onPress={handleQuickMoreFilters}
+            />
+          </ScrollView>
+        </View>
+        
+        {/* Action Buttons Row - Below Filter Row */}
+        <View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'flex-end',
+          gap: scale(12),
+          paddingHorizontal: scale(16),
+        }}>
+          <CreateEventButton ref={plusRef} onPress={startPlusReveal} />
         </View>
       </View>
 
-
+      {/* Reveal animation */}
       {revealVisible && (
         <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { zIndex: 999, backgroundColor: "transparent" }]}>
           <RNAnimated.View
             style={{
-              position: "absolute", left: revealOrigin.x - BASE_DIAM / 2, top: revealOrigin.y - BASE_DIAM / 2,
-              width: BASE_DIAM, height: BASE_DIAM, borderRadius: BASE_DIAM / 2, backgroundColor: "#FFFFFF",
+              position: "absolute", 
+              left: revealOrigin.x - BASE_DIAM / 2, 
+              top: revealOrigin.y - BASE_DIAM / 2,
+              width: BASE_DIAM, 
+              height: BASE_DIAM, 
+              borderRadius: BASE_DIAM / 2, 
+              backgroundColor: "#FFFFFF",
               transform: [{ scale: revealScale }],
               ...(Platform.OS === "android" ? { elevation: 1001, renderToHardwareTextureAndroid: true } : {}),
             }}
@@ -3310,7 +1069,13 @@ export default function MapScreen() {
         </View>
       )}
 
-      <GlassFab onPress={recenter} spin={fabSpin} bottom={Math.max(insets.bottom + TAB_HEIGHT, TAB_HEIGHT) - FAB_LOWERING} right={scale(18)} />
+      {/* Locate FAB */}
+      <LocateFab 
+        onPress={recenter} 
+        spin={fabSpin} 
+        bottom={Math.max(insets.bottom + TAB_HEIGHT, TAB_HEIGHT) - FAB_LOWERING} 
+        right={scale(18)} 
+      />
 
       {/* User Profile Modal */}
       <UserProfileModal
@@ -3328,13 +1093,13 @@ export default function MapScreen() {
         userPosition={pos}
       />
 
-{/* Frames viewer - at root level, not nested */}
-<ActiveFramesModal
-  visible={showFrameViewerMain}
-  onClose={() => setShowFrameViewerMain(false)}
-  frames={frameViewerFrames}
-  isOwnProfile={false}
-/>
+      {/* Frames viewer */}
+      <ActiveFramesModal
+        visible={showFrameViewerMain}
+        onClose={() => setShowFrameViewerMain(false)}
+        frames={frameViewerFrames}
+        isOwnProfile={false}
+      />
 
       {/* Event Details Modal */}
       <EventDetailsModal
@@ -3346,75 +1111,97 @@ export default function MapScreen() {
         }}
         onEdit={() => {
           setShowEventModal(false);
-          // TODO: Navigate to edit event page with event ID
           router.push({
             pathname: "/(events)/edit_event",
             params: { eventId: selectedEvent?.id }
           });
         }}
         onDelete={() => {
-          Alert.alert(
-            "Delete Event",
-            "Are you sure you want to delete this event? This action cannot be undone.",
-            [
-              {
-                text: "Cancel",
-                style: "cancel"
-              },
-              {
-                text: "Delete",
-                style: "destructive",
-                onPress: async () => {
-                  if (!selectedEvent) return;
-                  
-                  try {
-                    // Delete from database
-                    const { error } = await supabase
-                      .from("events")
-                      .delete()
-                      .eq("id", selectedEvent.id);
-                    
-                    if (error) {
-                      console.error("Delete error:", error);
-                      Alert.alert("Error", "Failed to delete event. Please try again.");
-                    } else {
-                      console.log("Event deleted:", selectedEvent.id);
-                      // Remove from local state immediately
-                      setEvents(prev => prev.filter(e => e.id !== selectedEvent.id));
-                      // Close modal
-                      setShowEventModal(false);
-                      setSelectedEvent(null);
-                      Alert.alert("Success", "Event deleted successfully");
-                    }
-                  } catch (error) {
-                    console.error("Delete exception:", error);
-                    Alert.alert("Error", "An unexpected error occurred");
-                  }
-                }
-              }
-            ]
-          );
-        }}
+  const eventToDelete = selectedEvent;
+  
+  if (!eventToDelete) return; // âœ… Safety check
+  
+  // Close event modal first
+  setShowEventModal(false);
+  setSelectedEvent(null);
+  
+  // Show confirmation after a delay
+  setTimeout(() => {
+    showConfirmation({
+      title: "Delete Event",
+      message: "Are you sure you want to delete this event? This action cannot be undone.",
+      confirmText: "Delete",
+      cancelText: "Cancel",
+      confirmColor: "#EF4444",
+      onConfirm: async () => {
+        // âœ… REMOVE FROM MAP IMMEDIATELY (optimistic update)
+        setEvents(prev => {
+          const filtered = prev.filter(e => e.id !== eventToDelete.id);
+          console.log(`Removed event ${eventToDelete.id}, ${filtered.length} events remaining`);
+          return filtered;
+        });
+        
+        try {
+          const { error } = await supabase
+            .from("events")
+            .delete()
+            .eq("id", eventToDelete.id);
+          
+          if (error) {
+            console.error("Delete error:", error);
+            
+            // âœ… ROLLBACK - Add event back if deletion failed
+            setEvents(prev => [...prev, eventToDelete]);
+            
+            showNotification({
+              type: "error",
+              title: "Failed to delete event",
+              message: "Please try again.",
+            });
+          } else {
+            console.log("Event deleted from database:", eventToDelete.id);
+            showNotification({
+              type: "success",
+              title: "Event deleted successfully",
+            });
+          }
+        } catch (error) {
+          console.error("Delete exception:", error);
+          
+          // âœ… ROLLBACK - Add event back on error
+          setEvents(prev => [...prev, eventToDelete]);
+          
+          showNotification({
+            type: "error",
+            title: "An unexpected error occurred",
+          });
+        }
+      }
+    });
+  }, 100);
+}}
         isOwnEvent={selectedEvent?.host_id === currentUserId}
         currentUserId={currentUserId}
         currentUserAge={currentUserAge}
         currentUserGender={currentUserGender}
         onApplySuccess={() => {
-          // Note: We don't need to call fetchEvents here anymore
-          // onEventUpdate already updates the local state with the correct
-          // user_application_status and accepted_count
-          // Calling fetchEvents was causing a race condition where the async
-          // fetch would overwrite the local updates before they were reflected
           console.log("Event join successful - local state updated via onEventUpdate");
         }}
         onEventUpdate={(updatedEvent) => {
           console.log(`onEventUpdate: "${updatedEvent.event_name}", status=${updatedEvent.user_application_status}, count=${updatedEvent.accepted_count}`);
-          // Update selectedEvent
           setSelectedEvent(updatedEvent);
-          // Update the event in events array
           setEvents(prev => prev.map(e => 
             e.id === updatedEvent.id ? updatedEvent : e
           ));
+        }}
+        onEventSelect={(eventId) => {
+          // Find the event in the events array
+          const newEvent = events.find(e => e.id === eventId);
+          if (newEvent) {
+            console.log(`Opening similar event: "${newEvent.event_name}"`);
+            setSelectedEvent(newEvent);
+            setShowEventModal(true);
+          }
         }}
       />
 
@@ -3426,1316 +1213,10 @@ export default function MapScreen() {
         onApply={(newFilters) => {
           console.log("Applying new filters:", newFilters);
           setFilters(newFilters);
-          // Trigger immediate refresh to get fresh data
-          fetchUsers(0);
+          fetchUsers();
         }}
         defaults={userPrefs}
       />
     </View>
   );
 }
-
-/* ===================== STYLES ===================== */
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: BG },
-  map: { flex: 1 },
-  loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: BG, gap: verticalScale(12) },
-  loadingText: { fontFamily: Fonts.bold, fontSize: scale(14), color: BLUE, letterSpacing: 0.5 },
-  overlayTop: { position: "absolute", left: scale(14), right: scale(14), zIndex: 10, gap: verticalScale(12) },
-  glassBase: { overflow: "hidden", backgroundColor: "transparent", shadowColor: "#0F172A", shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.16, shadowRadius: 22, elevation: 12 },
-  searchWrap: { alignSelf: "stretch" },
-  searchInner: { flex: 1, flexDirection: "row", alignItems: "center", paddingHorizontal: scale(12), gap: scale(10) },
-  searchIconWrap: { width: SEARCH_HEIGHT - scale(18), height: SEARCH_HEIGHT - scale(18), borderRadius: (SEARCH_HEIGHT - scale(18)) / 2, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.98)", borderWidth: 1, borderColor: "rgba(27,68,205,0.28)" },
-  searchInput: { flex: 1, height: SEARCH_HEIGHT - scale(22), backgroundColor: "transparent", color: "#0B1020", fontFamily: Fonts.bold, fontSize: scale(15.5), includeFontPadding: false, paddingVertical: 0, textAlignVertical: "center" as any },
-  clearBtn: { width: SEARCH_HEIGHT - scale(22), height: SEARCH_HEIGHT - scale(22), borderRadius: (SEARCH_HEIGHT - scale(22)) / 2, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.98)", borderWidth: 1, borderColor: "rgba(27,68,205,0.28)" },
-  clearTxt: { fontSize: scale(20), lineHeight: scale(20), color: BLUES.b00, marginTop: -1 },
-  chipsRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  chipsLeft: { flexDirection: "row", alignItems: "center", gap: scale(11) },
-  chipGlass: { paddingVertical: verticalScale(10), paddingHorizontal: scale(18), alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(27,68,205,0.35)" },
-  chipText: { fontFamily: Fonts.bold, fontSize: scale(14.5), letterSpacing: 0.4, textTransform: "capitalize" },
-  iiRow: { flexDirection: "row", alignItems: "flex-end", justifyContent: "center", gap: scale(24), marginBottom: verticalScale(10) },
-  iLetter: { fontSize: scale(64), lineHeight: scale(64), includeFontPadding: false, textAlignVertical: "center" as any, textAlign: "center", shadowColor: "#0F172A", shadowOpacity: 0.12, shadowRadius: 6, shadowOffset: { width: 0, height: 3 } },
-  iDot2: { width: scale(12), height: scale(12), borderRadius: scale(6), backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "rgba(27,68,205,0.35)", shadowColor: BLUE, shadowOpacity: 0.25, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, marginBottom: verticalScale(6) },
-  progressOuter: { width: "68%", height: verticalScale(10), borderRadius: verticalScale(10) / 2, overflow: "hidden", marginTop: verticalScale(8), backgroundColor: "transparent" },
-  progressTrack: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(255,255,255,0.18)", borderWidth: 1, borderColor: "rgba(27,68,205,0.28)", borderRadius: verticalScale(10) / 2 },
-  progressRunner: { position: "absolute", top: 1.5, bottom: 1.5, left: 0, width: "26%", borderRadius: verticalScale(10) / 2, shadowColor: BLUE, shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } },
-  
-  // Event marker styles
-  eventMarkerContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  eventMarkerBubble: {
-    width: scale(36),
-    height: scale(36),
-    borderRadius: scale(18),
-    backgroundColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    borderColor: BLUE,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 5,
-    // Note: no overflow: hidden to allow lock badge to show outside
-  },
-  eventMarkerPin: {
-    width: 0,
-    height: 0,
-    borderLeftWidth: scale(8),
-    borderRightWidth: scale(8),
-    borderTopWidth: scale(10),
-    borderStyle: "solid",
-    borderLeftColor: "transparent",
-    borderRightColor: "transparent",
-    borderTopColor: BLUE,
-    marginTop: -2,
-  },
-
-  // Event Details Modal styles
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "flex-end",
-  },
-  modalContainer: {
-    backgroundColor: "#FFFFFF",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 8,
-  },
-  modalHandle: {
-    width: 40,
-    height: 4,
-    backgroundColor: "rgba(10, 14, 26, 0.2)",
-    borderRadius: 2,
-    alignSelf: "center",
-    marginBottom: 12,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(27, 68, 205, 0.08)",
-  },
-  categoryBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(27, 68, 205, 0.08)",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    gap: 4,
-    marginBottom: 8,
-    alignSelf: "flex-start",
-  },
-  categoryBadgeText: {
-    fontSize: 11,
-    fontFamily: Fonts.bold,
-    color: BLUE,
-  },
-  eventTitle: {
-    fontSize: 22,
-    fontFamily: Fonts.bold,
-    color: "#0A0E1A",
-  },
-  closeBtn: {
-    width: 36,
-    height: 36,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 18,
-    backgroundColor: "rgba(10, 14, 26, 0.05)",
-    marginLeft: 12,
-  },
-  infoCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: "rgba(27, 68, 205, 0.08)",
-    gap: 12,
-  },
-  infoRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 10,
-  },
-  infoLabel: {
-    fontSize: 12,
-    fontFamily: Fonts.primary,
-    color: "rgba(10, 14, 26, 0.5)",
-    marginBottom: 2,
-  },
-  infoValue: {
-    fontSize: 15,
-    fontFamily: Fonts.bold,
-    color: "#0A0E1A",
-  },
-  sectionLabel: {
-    fontSize: 14,
-    fontFamily: Fonts.bold,
-    color: "#0A0E1A",
-    marginBottom: 8,
-  },
-  descText: {
-    fontSize: 14,
-    fontFamily: Fonts.primary,
-    color: "#0A0E1A",
-    lineHeight: 20,
-  },
-  detailsGrid: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  detailBox: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(27, 68, 205, 0.05)",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
-    gap: 6,
-  },
-  detailBoxText: {
-    fontSize: 13,
-    fontFamily: Fonts.bold,
-    color: BLUE,
-  },
-  modalFooter: {
-    flexDirection: "row",
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 8,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(27, 68, 205, 0.08)",
-    gap: 10,
-  },
-  deleteBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 14,
-    borderRadius: 14,
-    backgroundColor: "rgba(213, 34, 43, 0.08)",
-    borderWidth: 1.5,
-    borderColor: "rgba(213, 34, 43, 0.2)",
-    gap: 6,
-  },
-  deleteBtnText: {
-    fontSize: 15,
-    fontFamily: Fonts.bold,
-    color: "#D5222B",
-  },
-  editBtn: {
-    flex: 1,
-    borderRadius: 14,
-    overflow: "hidden",
-  },
-  editBtnText: {
-    fontSize: 15,
-    fontFamily: Fonts.bold,
-    color: "#FFFFFF",
-  },
-  
-  // Attendees card
-  attendeesCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(27, 68, 205, 0.06)",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 12,
-    gap: 8,
-  },
-  attendeesText: {
-    fontSize: 14,
-    fontFamily: Fonts.bold,
-    color: BLUE,
-  },
-  capacityText: {
-    fontSize: 13,
-    fontFamily: Fonts.primary,
-    color: "rgba(10, 14, 26, 0.5)",
-  },
-  
-  // Applications button (for hosts) - full width version
-  applicationsBtnFull: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 14,
-    backgroundColor: "rgba(27, 68, 205, 0.08)",
-    borderWidth: 1.5,
-    borderColor: "rgba(27, 68, 205, 0.15)",
-    gap: 8,
-  },
-  applicationsBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 14,
-    borderRadius: 14,
-    backgroundColor: "rgba(27, 68, 205, 0.08)",
-    borderWidth: 1.5,
-    borderColor: "rgba(27, 68, 205, 0.2)",
-    gap: 6,
-  },
-  applicationsBtnText: {
-    flex: 1,
-    fontSize: 15,
-    fontFamily: Fonts.bold,
-    color: BLUE,
-  },
-  
-  // Delete button - small square version
-  deleteBtnSmall: {
-    width: 52,
-    height: 52,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 14,
-    backgroundColor: "rgba(213, 34, 43, 0.08)",
-    borderWidth: 1.5,
-    borderColor: "rgba(213, 34, 43, 0.2)",
-  },
-  
-  // Edit button - full width version
-  editBtnFull: {
-    flex: 1,
-    borderRadius: 14,
-    overflow: "hidden",
-  },
-  editBtnGradient: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 14,
-    gap: 8,
-    borderRadius: 14,
-  },
-  
-  // Apply button (for non-hosts)
-  applyBtn: {
-    flex: 1,
-    borderRadius: 14,
-    overflow: "hidden",
-  },
-  applyBtnDisabled: {
-    opacity: 0.6,
-  },
-  applyBtnJoined: {
-    opacity: 1,
-  },
-  applyBtnIneligible: {
-    opacity: 0.9,
-  },
-  applyBtnContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 14,
-    gap: 8,
-    borderRadius: 14,
-  },
-  applyBtnText: {
-    fontSize: 15,
-    fontFamily: Fonts.bold,
-    color: "#FFFFFF",
-  },
-  
-  // Apply Modal styles
-  applyModalBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  applyModalContainer: {
-    width: "100%",
-    maxWidth: 400,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 20,
-    padding: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.2,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  applyModalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  applyModalTitle: {
-    fontSize: 20,
-    fontFamily: Fonts.bold,
-    color: "#0A0E1A",
-  },
-  applyModalClose: {
-    width: 36,
-    height: 36,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 18,
-    backgroundColor: "rgba(10, 14, 26, 0.05)",
-  },
-  applyModalSubtitle: {
-    fontSize: 14,
-    fontFamily: Fonts.primary,
-    color: "rgba(10, 14, 26, 0.6)",
-    marginBottom: 16,
-    lineHeight: 20,
-  },
-  applyModalInput: {
-    height: 120,
-    backgroundColor: "rgba(27, 68, 205, 0.05)",
-    borderRadius: 14,
-    padding: 16,
-    fontSize: 15,
-    fontFamily: Fonts.primary,
-    color: "#0A0E1A",
-    borderWidth: 1,
-    borderColor: "rgba(27, 68, 205, 0.1)",
-    marginBottom: 16,
-  },
-  applyModalButton: {
-    borderRadius: 14,
-    overflow: "hidden",
-  },
-  applyModalButtonGradient: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 14,
-    gap: 8,
-  },
-  applyModalButtonText: {
-    fontSize: 15,
-    fontFamily: Fonts.bold,
-    color: "#FFFFFF",
-  },
-  
-  // User Sheet Styles (new design)
-  userSheetHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 16,
-    gap: 16,
-  },
-  userSheetAvatarWrap: {
-    position: "relative",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  userSheetFrameRing: {
-    position: "absolute",
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    overflow: "hidden",
-  },
-  userSheetAvatar: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    overflow: "hidden",
-    borderWidth: 3,
-    borderColor: "#FFFFFF",
-    backgroundColor: "#FFFFFF",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  userSheetAvatarWithRing: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-  },
-  userSheetAvatarImg: {
-    width: "100%",
-    height: "100%",
-    borderRadius: 36,
-  },
-  userSheetAvatarPlaceholder: {
-    backgroundColor: BLUES.b100,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  userSheetInfo: {
-    flex: 1,
-    gap: 4,
-  },
-  userSheetNameRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  userSheetName: {
-    fontSize: 24,
-    fontFamily: Fonts.bold,
-    color: "#0A0E1A",
-    letterSpacing: 0.3,
-  },
-  userSheetVisibilityBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    gap: 4,
-  },
-  userSheetVisibilityText: {
-    fontSize: 11,
-    fontFamily: Fonts.bold,
-    textTransform: "uppercase",
-    letterSpacing: 0.3,
-  },
-  userSheetDistanceRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  userSheetDistance: {
-    fontSize: 14,
-    fontFamily: Fonts.primary,
-    color: "rgba(10, 14, 26, 0.5)",
-  },
-  userSheetChips: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-    gap: 8,
-  },
-  userSheetChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(27, 68, 205, 0.06)",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    gap: 6,
-    borderWidth: 1,
-    borderColor: "rgba(27, 68, 205, 0.12)",
-  },
-  userSheetChipText: {
-    fontSize: 13,
-    fontFamily: Fonts.bold,
-    color: BLUE,
-    textTransform: "capitalize",
-  },
-  lookingForDetailHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(27, 68, 205, 0.08)",
-  },
-  lookingForBackBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "rgba(27, 68, 205, 0.06)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  lookingForDetailTitle: {
-    fontSize: 17,
-    fontFamily: Fonts.bold,
-    color: "#0A0E1A",
-  },
-  lookingForDetailList: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    gap: 12,
-  },
-  lookingForDetailItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(27, 68, 205, 0.04)",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 14,
-    gap: 12,
-    borderWidth: 1,
-    borderColor: "rgba(27, 68, 205, 0.08)",
-  },
-  lookingForDetailIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "rgba(27, 68, 205, 0.1)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  lookingForDetailText: {
-    flex: 1,
-    fontSize: 15,
-    fontFamily: Fonts.primary,
-    color: "#0A0E1A",
-  },
-  userSheetBioSection: {
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-  },
-  userSheetBioLabel: {
-    fontSize: 12,
-    fontFamily: Fonts.bold,
-    color: "rgba(10, 14, 26, 0.4)",
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-    marginBottom: 6,
-  },
-  userSheetBio: {
-    fontSize: 15,
-    fontFamily: Fonts.primary,
-    color: "#0A0E1A",
-    lineHeight: 22,
-  },
-  userSheetStatusBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    alignSelf: "flex-start",
-    marginHorizontal: 20,
-    marginBottom: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    gap: 6,
-  },
-  userSheetStatusText: {
-    fontSize: 13,
-    fontFamily: Fonts.bold,
-  },
-  userSheetActions: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 16,
-    gap: 12,
-  },
-  userSheetPrimaryBtn: {
-    borderRadius: 16,
-    overflow: "hidden",
-    shadowColor: BLUE,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  userSheetPrimaryBtnGradient: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 16,
-    gap: 10,
-  },
-  userSheetPrimaryBtnText: {
-    fontSize: 16,
-    fontFamily: Fonts.bold,
-    color: "#FFFFFF",
-    letterSpacing: 0.3,
-  },
-  userSheetSecondaryBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 16,
-    borderRadius: 16,
-    backgroundColor: "rgba(27, 68, 205, 0.06)",
-    borderWidth: 1.5,
-    borderColor: "rgba(27, 68, 205, 0.15)",
-    gap: 10,
-  },
-  userSheetSecondaryBtnText: {
-    fontSize: 16,
-    fontFamily: Fonts.bold,
-    color: BLUE,
-    letterSpacing: 0.3,
-  },
-  messageInputContainer: {
-    width: '100%',
-    gap: 12,
-  },
-  messageInputWrap: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: 'rgba(27, 68, 205, 0.04)',
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderWidth: 1.5,
-    borderColor: 'rgba(27, 68, 205, 0.12)',
-  },
-  messageInput: {
-    flex: 1,
-    fontSize: 15,
-    fontFamily: Fonts.primary,
-    color: '#0A0E1A',
-    minHeight: 60,
-    maxHeight: 100,
-    textAlignVertical: 'top',
-  },
-  messageInputActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  messageInputCancelBtn: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 14,
-    backgroundColor: 'rgba(10, 14, 26, 0.05)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  messageInputCancelText: {
-    fontSize: 15,
-    fontFamily: Fonts.bold,
-    color: 'rgba(10, 14, 26, 0.5)',
-  },
-  userSheetBlindConfirm: {
-    alignItems: "center",
-    paddingVertical: 8,
-    gap: 8,
-  },
-  userSheetBlindTitle: {
-    fontSize: 18,
-    fontFamily: Fonts.bold,
-    color: "#0A0E1A",
-  },
-  userSheetBlindDesc: {
-    fontSize: 14,
-    fontFamily: Fonts.primary,
-    color: "rgba(10, 14, 26, 0.6)",
-    textAlign: "center",
-  },
-  userSheetBlindBtns: {
-    flexDirection: "row",
-    gap: 12,
-    marginTop: 12,
-    width: "100%",
-  },
-  userSheetBlindCancel: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 14,
-    backgroundColor: "#F5F5F5",
-    alignItems: "center",
-  },
-  userSheetBlindCancelText: {
-    fontSize: 15,
-    fontFamily: Fonts.bold,
-    color: "#9E9E9E",
-  },
-  userSheetBlindSend: {
-    flex: 1,
-    borderRadius: 14,
-    overflow: "hidden",
-  },
-  userSheetBlindSendGradient: {
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  userSheetBlindSendText: {
-    fontSize: 15,
-    fontFamily: Fonts.bold,
-    color: "#FFFFFF",
-  },
-  userSheetMatchedActions: {
-    gap: 12,
-  },
-  userSheetIncomingActions: {
-    alignItems: "center",
-    gap: 12,
-  },
-  userSheetIncomingBtns: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 16,
-  },
-  targetPickHint: {
-    fontSize: 13,
-    fontFamily: Fonts.primary,
-    color: BLUE,
-    textAlign: "center",
-    marginBottom: 4,
-  },
-  userSheetDeclineBtn: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#F5F5F5",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    borderColor: "#E0E0E0",
-  },
-  userSheetAcceptBtn: {
-    flex: 1,
-    maxWidth: 200,
-    borderRadius: 28,
-    overflow: "hidden",
-  },
-  userSheetAcceptBtnGradient: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 16,
-    gap: 8,
-  },
-  userSheetAcceptBtnText: {
-    fontSize: 16,
-    fontFamily: Fonts.bold,
-    color: "#FFFFFF",
-  },
-  userSheetFooter: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    paddingVertical: 12,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(10, 14, 26, 0.06)",
-    gap: 16,
-  },
-  userSheetFooterLink: {
-    fontSize: 13,
-    fontFamily: Fonts.primary,
-    color: "rgba(10, 14, 26, 0.4)",
-  },
-  userSheetFooterDot: {
-    fontSize: 13,
-    color: "rgba(10, 14, 26, 0.2)",
-  },
-  userModalSheet: {
-    backgroundColor: "#FFFFFF",
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    maxHeight: SCREEN_H * 0.85,
-  },
-  // Blind Date Flow Styles
-  blindDateFlow: {
-    width: "100%",
-    alignItems: "center",
-    paddingVertical: 8,
-  },
-  blindDateFlowTitle: {
-    fontSize: 20,
-    fontFamily: Fonts.bold,
-    color: "#0A0E1A",
-    marginBottom: 4,
-  },
-  blindDateFlowDesc: {
-    fontSize: 14,
-    fontFamily: Fonts.primary,
-    color: "rgba(10, 14, 26, 0.6)",
-    textAlign: "center",
-    marginBottom: 20,
-  },
-  blindDateFlowOptions: {
-    flexDirection: "row",
-    gap: 16,
-    marginBottom: 16,
-  },
-  blindDateFlowOption: {
-    flex: 1,
-    alignItems: "center",
-    backgroundColor: "rgba(27, 68, 205, 0.04)",
-    borderRadius: 16,
-    paddingVertical: 20,
-    paddingHorizontal: 16,
-    borderWidth: 1.5,
-    borderColor: "rgba(27, 68, 205, 0.12)",
-  },
-  blindDateFlowOptionIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "rgba(27, 68, 205, 0.1)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 12,
-  },
-  blindDateFlowOptionText: {
-    fontSize: 16,
-    fontFamily: Fonts.bold,
-    color: "#0A0E1A",
-    marginBottom: 4,
-  },
-  blindDateFlowOptionHint: {
-    fontSize: 12,
-    fontFamily: Fonts.primary,
-    color: "rgba(10, 14, 26, 0.5)",
-  },
-  blindDateFlowCancel: {
-    paddingVertical: 12,
-  },
-  blindDateFlowCancelText: {
-    fontSize: 14,
-    fontFamily: Fonts.primary,
-    color: "rgba(10, 14, 26, 0.5)",
-  },
-  blindDateFlowInputs: {
-    width: "100%",
-    gap: 12,
-    marginBottom: 20,
-  },
-  blindDateFlowInputWrap: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(27, 68, 205, 0.04)",
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderWidth: 1,
-    borderColor: "rgba(27, 68, 205, 0.12)",
-  },
-  blindDateFlowInput: {
-    flex: 1,
-    fontSize: 15,
-    fontFamily: Fonts.primary,
-    color: "#0A0E1A",
-    padding: 0,
-  },
-  blindDateFlowInputText: {
-    flex: 1,
-    fontSize: 15,
-    fontFamily: Fonts.primary,
-    color: "#0A0E1A",
-  },
-  blindDateFlowActions: {
-    flexDirection: "row",
-    gap: 12,
-    width: "100%",
-  },
-  blindDateFlowBackBtn: {
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderRadius: 14,
-    backgroundColor: "#F5F5F5",
-  },
-  blindDateFlowBackText: {
-    fontSize: 15,
-    fontFamily: Fonts.bold,
-    color: "#9E9E9E",
-  },
-  blindDateFlowSendBtn: {
-    flex: 1,
-    borderRadius: 14,
-    overflow: "hidden",
-  },
-  blindDateFlowSendGradient: {
-    paddingVertical: 14,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  blindDateFlowSendText: {
-    fontSize: 15,
-    fontFamily: Fonts.bold,
-    color: "#FFFFFF",
-  },
-  senderMessageBubble: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    backgroundColor: "rgba(27, 68, 205, 0.08)",
-    borderRadius: 12,
-    padding: 12,
-    marginTop: 8,
-    gap: 8,
-  },
-  senderMessageText: {
-    flex: 1,
-    fontSize: 14,
-    fontFamily: Fonts.primary,
-    color: "#0A0E1A",
-    fontStyle: "italic",
-    lineHeight: 20,
-  },
-  blindDateInfoBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(27, 68, 205, 0.06)",
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 12,
-    gap: 8,
-  },
-  blindDateInfoText: {
-    flex: 1,
-    fontSize: 14,
-    fontFamily: Fonts.bold,
-    color: BLUE,
-  },
-  blindDateMatchedInfo: {
-    alignItems: "center",
-    padding: 16,
-    backgroundColor: "rgba(27, 68, 205, 0.06)",
-    borderRadius: 16,
-    gap: 8,
-    width: "100%",
-  },
-  blindDateMatchedText: {
-    fontSize: 14,
-    fontFamily: Fonts.bold,
-    color: BLUE,
-    textAlign: "center",
-  },
-  blindDateMatchedDetail: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  blindDateMatchedDetailText: {
-    fontSize: 13,
-    fontFamily: Fonts.primary,
-    color: "rgba(27, 68, 205, 0.7)",
-  },
-  // Location Picker Modal Styles
-  locationPickerContainer: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-  },
-  locationPickerHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 60 : 16,
-    paddingBottom: 16,
-    backgroundColor: "#FFFFFF",
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(10, 14, 26, 0.08)",
-  },
-  locationPickerCloseBtn: {
-    width: 40,
-    height: 40,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  locationPickerTitle: {
-    fontSize: 18,
-    fontFamily: Fonts.bold,
-    color: "#0A0E1A",
-  },
-  locationPickerConfirmBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: BLUE,
-    borderRadius: 20,
-  },
-  locationPickerConfirmText: {
-    fontSize: 14,
-    fontFamily: Fonts.bold,
-    color: "#FFFFFF",
-  },
-  locationPickerMapContainer: {
-    flex: 1,
-    position: "relative",
-  },
-  locationPickerMap: {
-    flex: 1,
-  },
-  locationPickerPinOverlay: {
-    position: "absolute",
-    top: "50%",
-    left: "50%",
-    marginLeft: -20,
-    marginTop: -40,
-  },
-  locationPickerFooter: {
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-    backgroundColor: "#FFFFFF",
-    borderTopWidth: 1,
-    borderTopColor: "rgba(10, 14, 26, 0.08)",
-    alignItems: "center",
-  },
-  locationPickerHint: {
-    fontSize: 14,
-    fontFamily: Fonts.primary,
-    color: "rgba(10, 14, 26, 0.6)",
-  },
-  locationPickerCoords: {
-    fontSize: 12,
-    fontFamily: Fonts.primary,
-    color: "rgba(10, 14, 26, 0.4)",
-    marginTop: 4,
-  },
-  // Date Picker Overlay Styles (iOS)
-  datePickerOverlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  datePickerBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0, 0, 0, 0.4)",
-  },
-  datePickerContainer: {
-    backgroundColor: "#FFFFFF",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingBottom: 34,
-  },
-  datePickerHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(0, 0, 0, 0.1)",
-  },
-  datePickerCancel: {
-    fontSize: 16,
-    fontFamily: Fonts.primary,
-    color: "#9E9E9E",
-  },
-  datePickerDone: {
-    fontSize: 16,
-    fontFamily: Fonts.bold,
-    color: BLUE,
-  },
-  
-  // Filter Modal Styles
-  filterBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  filterContainer: {
-    width: SCREEN_W - scale(48),
-    maxWidth: scale(380),
-    borderRadius: scale(24),
-    overflow: "hidden",
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.25,
-    shadowRadius: 32,
-    elevation: 20,
-  },
-  filterHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: scale(20),
-    paddingTop: verticalScale(20),
-    paddingBottom: verticalScale(16),
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(27, 68, 205, 0.08)",
-  },
-  filterHeaderIcon: {
-    width: scale(36),
-    height: scale(36),
-    borderRadius: scale(18),
-    backgroundColor: "rgba(27, 68, 205, 0.08)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: scale(12),
-  },
-  filterTitle: {
-    flex: 1,
-    fontSize: scale(20),
-    fontFamily: Fonts.bold,
-    color: "#0A0E1A",
-    letterSpacing: 0.3,
-  },
-  filterCloseBtn: {
-    width: scale(36),
-    height: scale(36),
-    borderRadius: scale(18),
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(10, 14, 26, 0.05)",
-  },
-  filterSection: {
-    paddingHorizontal: scale(20),
-    paddingTop: verticalScale(20),
-  },
-  filterSectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: verticalScale(12),
-  },
-  filterSectionLabel: {
-    fontSize: scale(14),
-    fontFamily: Fonts.bold,
-    color: "#0A0E1A",
-    letterSpacing: 0.3,
-    marginBottom: verticalScale(12),
-  },
-  filterSectionValue: {
-    fontSize: scale(14),
-    fontFamily: Fonts.bold,
-    color: BLUE,
-  },
-  filterGenderRow: {
-    flexDirection: "row",
-    gap: scale(10),
-  },
-  filterGenderChip: {
-    flex: 1,
-    paddingVertical: verticalScale(12),
-    borderRadius: scale(14),
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(27, 68, 205, 0.06)",
-    borderWidth: 1.5,
-    borderColor: "rgba(27, 68, 205, 0.15)",
-    overflow: "hidden",
-  },
-  filterGenderChipActive: {
-    borderColor: "transparent",
-  },
-  filterGenderText: {
-    fontSize: scale(14),
-    fontFamily: Fonts.bold,
-    color: BLUES.b40,
-  },
-  filterGenderTextActive: {
-    color: "#FFFFFF",
-  },
-  filterAgeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: scale(16),
-  },
-  filterAgeInputWrap: {
-    alignItems: "center",
-    gap: verticalScale(6),
-  },
-  filterAgeInput: {
-    width: scale(72),
-    height: verticalScale(48),
-    borderRadius: scale(14),
-    backgroundColor: "rgba(27, 68, 205, 0.06)",
-    borderWidth: 1.5,
-    borderColor: "rgba(27, 68, 205, 0.15)",
-    textAlign: "center",
-    fontSize: scale(18),
-    fontFamily: Fonts.bold,
-    color: "#0A0E1A",
-  },
-  filterAgeLabel: {
-    fontSize: scale(12),
-    fontFamily: Fonts.primary,
-    color: "rgba(10, 14, 26, 0.5)",
-  },
-  filterAgeDash: {
-    width: scale(20),
-    height: 2,
-    backgroundColor: "rgba(27, 68, 205, 0.2)",
-    borderRadius: 1,
-  },
-  filterDistanceRow: {
-    flexDirection: "row",
-    gap: scale(8),
-  },
-  filterDistanceChip: {
-    flex: 1,
-    paddingVertical: verticalScale(12),
-    borderRadius: scale(12),
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(27, 68, 205, 0.06)",
-    borderWidth: 1.5,
-    borderColor: "rgba(27, 68, 205, 0.15)",
-    overflow: "hidden",
-  },
-  filterDistanceChipActive: {
-    borderColor: "transparent",
-  },
-  filterDistanceText: {
-    fontSize: scale(13),
-    fontFamily: Fonts.bold,
-    color: BLUES.b40,
-  },
-  filterDistanceTextActive: {
-    color: "#FFFFFF",
-  },
-  filterActions: {
-    flexDirection: "row",
-    paddingHorizontal: scale(20),
-    paddingTop: verticalScale(24),
-    paddingBottom: verticalScale(20),
-    gap: scale(12),
-  },
-  filterResetBtn: {
-    flex: 1,
-    paddingVertical: verticalScale(14),
-    borderRadius: scale(14),
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(10, 14, 26, 0.05)",
-  },
-  filterResetText: {
-    fontSize: scale(15),
-    fontFamily: Fonts.bold,
-    color: "rgba(10, 14, 26, 0.5)",
-  },
-  filterApplyBtn: {
-    flex: 1,
-    borderRadius: scale(14),
-    overflow: "hidden",
-  },
-  filterApplyGradient: {
-    paddingVertical: verticalScale(14),
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  filterApplyText: {
-    fontSize: scale(15),
-    fontFamily: Fonts.bold,
-    color: "#FFFFFF",
-    letterSpacing: 0.3,
-  },
-  filterBtn: {
-    width: scale(44),
-    height: scale(44),
-    borderRadius: scale(22),
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(27, 68, 205, 0.28)",
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
-    elevation: 6,
-  },
-  filterBtnActive: {
-    borderColor: "transparent",
-  },
-  filterBtnDot: {
-    position: "absolute",
-    top: scale(6),
-    right: scale(6),
-    width: scale(10),
-    height: scale(10),
-    borderRadius: scale(5),
-    backgroundColor: "#FF4757",
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
-  },
-});

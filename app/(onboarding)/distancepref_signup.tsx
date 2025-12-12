@@ -1,12 +1,12 @@
-// app/(onboarding)/distancepref_signup.tsx
 import { Fonts } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
-import { scale, verticalScale } from "@/utils/responsive";
+import { moderateScale, scale, verticalScale } from "@/utils/responsive";
 import { Ionicons } from "@expo/vector-icons";
 import Slider from "@react-native-community/slider";
 import { router } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Animated,
   Easing,
@@ -34,11 +34,10 @@ const Colors = {
 type Unit = "km" | "m";
 
 export default function DistancePreferenceSignup() {
-  const [distance, setDistance] = useState(2.0); // km internally
+  const [distance, setDistance] = useState(2.0);
   const [unit, setUnit] = useState<Unit>("km");
   const [loading, setLoading] = useState(false);
 
-  // 🔵 Animated waves for 3 pins
   const wave1 = useRef(new Animated.Value(0)).current;
   const wave2 = useRef(new Animated.Value(0)).current;
   const wave3 = useRef(new Animated.Value(0)).current;
@@ -49,7 +48,6 @@ export default function DistancePreferenceSignup() {
   const wave8 = useRef(new Animated.Value(0)).current;
   const wave9 = useRef(new Animated.Value(0)).current;
 
-  // ✨ Slider card animation
   const slideAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
 
@@ -68,22 +66,18 @@ export default function DistancePreferenceSignup() {
         ])
       );
     
-    // Top pin waves
     createWaveAnimation(wave1, 0).start();
     createWaveAnimation(wave2, 800).start();
     createWaveAnimation(wave3, 1600).start();
     
-    // Bottom left pin waves
     createWaveAnimation(wave4, 400).start();
     createWaveAnimation(wave5, 1200).start();
     createWaveAnimation(wave6, 2000).start();
     
-    // Bottom right pin waves
     createWaveAnimation(wave7, 600).start();
     createWaveAnimation(wave8, 1400).start();
     createWaveAnimation(wave9, 2200).start();
 
-    // Slider card entrance animation
     Animated.parallel([
       Animated.spring(slideAnim, {
         toValue: 1,
@@ -102,13 +96,13 @@ export default function DistancePreferenceSignup() {
 
   const formatDistance = (valueKm: number, u: Unit) => {
     if (u === "m") return `${Math.round(valueKm * 1000)} m`;
-    // show floats when needed
     if (valueKm % 1 === 0) return `${valueKm.toFixed(0)} km`;
     return `${valueKm.toFixed(1)} km`;
   };
 
   const handleNext = async () => {
     try {
+      Keyboard.dismiss();
       setLoading(true);
       const { data: { session }, error } = await supabase.auth.getSession();
       if (error || !session?.user) {
@@ -136,7 +130,6 @@ export default function DistancePreferenceSignup() {
     }
   };
 
-  // ⚙️ tap-to-jump on slider
   const [sliderLayout, setSliderLayout] = useState({ x: 0, width: 1 });
   const handleSliderLayout = (e: LayoutChangeEvent) => {
     const { x, width } = e.nativeEvent.layout;
@@ -147,7 +140,7 @@ export default function DistancePreferenceSignup() {
     const ratio = pressX / sliderLayout.width;
     const min = 0.1, max = 4.0;
     const value = min + ratio * (max - min);
-    const stepped = Math.round(value * 10) / 10; // 0.1 step
+    const stepped = Math.round(value * 10) / 10;
     setDistance(Math.min(max, Math.max(min, stepped)));
   };
 
@@ -161,25 +154,23 @@ export default function DistancePreferenceSignup() {
       <SafeAreaView style={styles.container} edges={["top"]}>
         <StatusBar barStyle="dark-content" />
 
-        {/* Back Button */}
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => router.back()}
           activeOpacity={0.7}
+          disabled={loading}
         >
           <View style={styles.backButtonCircle}>
             <Ionicons name="arrow-back" size={24} color={Colors.INK} />
           </View>
         </TouchableOpacity>
 
-        {/* Progress Bar */}
         <View style={styles.progressWrapper}>
           <View style={styles.progressTrack}>
             <View style={styles.progressFill} />
           </View>
         </View>
 
-        {/* Main Content */}
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -192,9 +183,7 @@ export default function DistancePreferenceSignup() {
             <Text style={styles.title}>Your distance preference?</Text>
             <Text style={styles.subtitle}>Choose how far your Niice's can be.</Text>
 
-            {/* 📍 Triple Animated Pins in Triangle Formation */}
             <View style={styles.iconContainer}>
-              {/* Top Pin */}
               <View style={[styles.pinWrapper, styles.pinTop]}>
                 {[wave1, wave2, wave3].map((wave, i) => {
                   const scaleWave = wave.interpolate({ inputRange: [0, 1], outputRange: [1, 2.5] });
@@ -211,7 +200,6 @@ export default function DistancePreferenceSignup() {
                 </View>
               </View>
 
-              {/* Bottom Left Pin */}
               <View style={[styles.pinWrapper, styles.pinBottomLeft]}>
                 {[wave4, wave5, wave6].map((wave, i) => {
                   const scaleWave = wave.interpolate({ inputRange: [0, 1], outputRange: [1, 2.5] });
@@ -228,7 +216,6 @@ export default function DistancePreferenceSignup() {
                 </View>
               </View>
 
-              {/* Bottom Right Pin */}
               <View style={[styles.pinWrapper, styles.pinBottomRight]}>
                 {[wave7, wave8, wave9].map((wave, i) => {
                   const scaleWave = wave.interpolate({ inputRange: [0, 1], outputRange: [1, 2.5] });
@@ -246,7 +233,6 @@ export default function DistancePreferenceSignup() {
               </View>
             </View>
 
-            {/* ✨ Enhanced Slider Section with Animation */}
             <Animated.View
               style={[
                 styles.sliderWrapper,
@@ -282,7 +268,6 @@ export default function DistancePreferenceSignup() {
                 </View>
               </View>
 
-              {/* Tappable slider track */}
               <Pressable onPress={handleSliderPress} onLayout={handleSliderLayout}>
                 <Slider
                   style={styles.slider}
@@ -297,17 +282,29 @@ export default function DistancePreferenceSignup() {
                 />
               </Pressable>
             </Animated.View>
+
+            <View style={styles.infoNote}>
+              <View style={styles.infoIconCircle}>
+                <Ionicons name="information-circle" size={16} color={Colors.BLUE} />
+              </View>
+              <Text style={styles.infoNoteText}>
+                You can adjust this anytime in settings
+              </Text>
+            </View>
           </ScrollView>
         </KeyboardAvoidingView>
 
-        {/* Next Button */}
         <TouchableOpacity
-          style={styles.nextButton}
+          style={[styles.nextButton, loading && styles.nextButtonDisabled]}
           onPress={handleNext}
           disabled={loading}
           activeOpacity={0.8}
         >
-          <Ionicons name="arrow-forward" size={28} color="#FFFFFF" />
+          {loading ? (
+            <ActivityIndicator color="#FFFFFF" size="small" />
+          ) : (
+            <Ionicons name="arrow-forward" size={28} color="#FFFFFF" />
+          )}
         </TouchableOpacity>
       </SafeAreaView>
     </TouchableWithoutFeedback>
@@ -319,7 +316,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.BG,
   },
-
   backButton: {
     position: "absolute",
     top: verticalScale(16),
@@ -336,11 +332,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
   },
-
   progressWrapper: {
     marginTop: verticalScale(80),
     paddingHorizontal: scale(20),
@@ -353,35 +348,32 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: verticalScale(8),
-    width: "23.52%", // EXACT SAME PERCENTAGE - DO NOT CHANGE
+    width: "23.52%",
     backgroundColor: Colors.BLUE,
     borderRadius: scale(4),
   },
-
   scrollContent: {
     paddingHorizontal: scale(20),
     paddingTop: verticalScale(24),
     paddingBottom: verticalScale(120),
-
   },
-
   title: {
     fontFamily: Fonts.bold,
-    fontSize: scale(24),
+    fontSize: moderateScale(24),
     lineHeight: verticalScale(32),
     color: Colors.INK,
     marginBottom: verticalScale(6),
     marginTop: verticalScale(10),
     paddingTop: verticalScale(6.5),
+    letterSpacing: 0.3,
   },
   subtitle: {
     fontFamily: Fonts.primary,
-    fontSize: scale(16),
+    fontSize: moderateScale(16),
     lineHeight: verticalScale(24),
     color: Colors.BLUE,
     marginBottom: verticalScale(20),
   },
-
   iconContainer: {
     alignItems: "center",
     justifyContent: "center",
@@ -427,7 +419,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
     elevation: 4,
   },
-
   sliderWrapper: {
     width: "100%",
     marginTop: verticalScale(5),
@@ -448,19 +439,20 @@ const styles = StyleSheet.create({
   },
   label: {
     fontFamily: Fonts.bold,
-    fontSize: scale(16),
+    fontSize: moderateScale(16),
     color: Colors.INK,
+    letterSpacing: 0.2,
   },
-
   rightControls: {
     flexDirection: "row",
     alignItems: "center",
   },
   valueText: {
     fontFamily: Fonts.bold,
-    fontSize: scale(16),
+    fontSize: moderateScale(16),
     color: Colors.BLUE,
     marginRight: scale(10),
+    letterSpacing: 0.2,
   },
   unitSwitch: {
     flexDirection: "row",
@@ -477,18 +469,43 @@ const styles = StyleSheet.create({
   },
   unitText: {
     fontFamily: Fonts.bold,
-    fontSize: scale(12),
+    fontSize: moderateScale(12),
     color: "rgba(10,14,26,0.6)",
   },
   unitTextActive: {
     color: "#FFFFFF",
   },
-
   slider: {
     width: "100%",
     height: verticalScale(40),
   },
-
+  infoNote: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: scale(16),
+    backgroundColor: "rgba(27,68,205,0.06)",
+    borderRadius: scale(14),
+    borderWidth: 1,
+    borderColor: "rgba(27,68,205,0.12)",
+    gap: scale(12),
+    marginTop: verticalScale(24),
+  },
+  infoIconCircle: {
+    width: scale(32),
+    height: scale(32),
+    borderRadius: scale(16),
+    backgroundColor: "rgba(27,68,205,0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  infoNoteText: {
+    flex: 1,
+    fontSize: moderateScale(13),
+    fontFamily: Fonts.primary,
+    color: "rgba(10,14,26,0.6)",
+    lineHeight: verticalScale(18),
+    paddingTop: verticalScale(0.5),
+  },
   nextButton: {
     position: "absolute",
     bottom: verticalScale(40),
@@ -504,5 +521,10 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
     elevation: 6,
+  },
+  nextButtonDisabled: {
+    backgroundColor: "rgba(27,68,205,0.3)",
+    shadowOpacity: 0,
+    elevation: 0,
   },
 });

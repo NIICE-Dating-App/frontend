@@ -52,3 +52,8 @@ Join our community of developers creating universal apps.
 - [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
 - [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
 >>>>>>> 9c8edf6 (Initial commit for KennyFrontend)
+
+
+To run docker, after composing the docker in the main frontend terminal, open another terminal and run:
+
+['docker attach frontend-expo-app-1']

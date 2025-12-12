@@ -1,10 +1,10 @@
-// app/(auth)/notification_signup.tsx
-import { scale, verticalScale } from "@/utils/responsive";
+import { moderateScale, scale, verticalScale } from "@/utils/responsive";
 import { Ionicons } from "@expo/vector-icons";
 import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Animated,
   Dimensions,
@@ -28,14 +28,12 @@ const Colors = {
 const { width: W } = Dimensions.get("window");
 const isSmall = W < 380;
 
-/** Bell with ringing + animated waves */
 const BellRinging = ({ size = 250 }: { size?: number }) => {
   const ringAnim = useRef(new Animated.Value(0)).current;
   const waveScale = useRef(new Animated.Value(0.8)).current;
   const waveOpacity = useRef(new Animated.Value(0.6)).current;
 
   useEffect(() => {
-    // Bell swing loop
     Animated.loop(
       Animated.sequence([
         Animated.timing(ringAnim, {
@@ -59,7 +57,6 @@ const BellRinging = ({ size = 250 }: { size?: number }) => {
       ])
     ).start();
 
-    // Wave pulsing loop
     Animated.loop(
       Animated.sequence([
         Animated.parallel([
@@ -106,7 +103,6 @@ const BellRinging = ({ size = 250 }: { size?: number }) => {
         justifyContent: "flex-start",
       }}
     >
-      {/* Animated Bell */}
       <Animated.View
         style={{
           transform: [{ rotate: ringRotation }],
@@ -124,7 +120,6 @@ const BellRinging = ({ size = 250 }: { size?: number }) => {
         </Svg>
       </Animated.View>
 
-      {/* Shadow */}
       <Svg
         width={size}
         height={12}
@@ -138,7 +133,6 @@ const BellRinging = ({ size = 250 }: { size?: number }) => {
         />
       </Svg>
 
-      {/* Animated Waves */}
       <Animated.View
         style={{
           position: "absolute",
@@ -197,7 +191,6 @@ export default function NotificationSignup() {
     <SafeAreaView style={styles.container} edges={["top"]}>
       <StatusBar barStyle="dark-content" />
       
-      {/* Back Button */}
       <TouchableOpacity
         style={styles.backButton}
         onPress={() => router.back()}
@@ -208,7 +201,6 @@ export default function NotificationSignup() {
         </View>
       </TouchableOpacity>
 
-      {/* Header */}
       <View style={styles.headerContainer}>
         <Text style={styles.pageTitle}>Get the latest likes{"\n"}in your area</Text>
         <Text style={styles.pageSubtitle}>
@@ -216,20 +208,25 @@ export default function NotificationSignup() {
         </Text>
       </View>
 
-      {/* Bell Animation */}
       <View style={styles.bellWrapper}>
         <BellRinging size={isSmall ? 180 : 220} />
       </View>
 
-      {/* Buttons */}
       <View style={styles.buttonContainer}>
         <TouchableOpacity
           activeOpacity={0.8}
-          style={[styles.primaryButton, loading && { opacity: 0.6 }]}
+          style={[styles.primaryButton, loading && styles.primaryButtonDisabled]}
           onPress={onAllow}
           disabled={loading}
         >
-          <Text style={styles.primaryButtonText}>Allow Notifications</Text>
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator color="#FFFFFF" size="small" />
+              <Text style={styles.primaryButtonText}>Requesting...</Text>
+            </View>
+          ) : (
+            <Text style={styles.primaryButtonText}>Allow Notifications</Text>
+          )}
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -240,14 +237,10 @@ export default function NotificationSignup() {
           <Text style={styles.secondaryButtonText}>Not Now</Text>
         </TouchableOpacity>
 
-        {/* Info Note */}
         <View style={styles.infoNote}>
-          <Ionicons
-            name="information-circle-outline"
-            size={18}
-            color="rgba(10,14,26,0.5)"
-            style={{ marginRight: scale(8) }}
-          />
+          <View style={styles.infoIconCircle}>
+            <Ionicons name="information-circle" size={18} color={Colors.BLUE} />
+          </View>
           <Text style={styles.infoNoteText}>
             You can always change this later in your device settings
           </Text>
@@ -275,24 +268,25 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
   },
   headerContainer: {
     paddingHorizontal: scale(20),
     marginTop: verticalScale(24),
   },
   pageTitle: {
-    fontSize: scale(28),
+    fontSize: moderateScale(28),
     fontFamily: Fonts.bold,
     color: Colors.INK,
     lineHeight: verticalScale(36),
     marginBottom: verticalScale(12),
     paddingTop: verticalScale(6.5),
+    letterSpacing: 0.3,
   },
   pageSubtitle: {
-    fontSize: scale(15),
+    fontSize: moderateScale(15),
     fontFamily: Fonts.primary,
     color: "rgba(10,14,26,0.6)",
     lineHeight: verticalScale(22),
@@ -320,10 +314,21 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 4,
   },
+  primaryButtonDisabled: {
+    backgroundColor: "rgba(27,68,205,0.3)",
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  loadingContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: scale(10),
+  },
   primaryButtonText: {
-    fontSize: scale(16),
+    fontSize: moderateScale(16),
     fontFamily: Fonts.bold,
     color: "#FFFFFF",
+    letterSpacing: 0.3,
   },
   secondaryButton: {
     backgroundColor: "#FFFFFF",
@@ -340,9 +345,10 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   secondaryButtonText: {
-    fontSize: scale(16),
+    fontSize: moderateScale(16),
     fontFamily: Fonts.bold,
     color: Colors.INK,
+    letterSpacing: 0.3,
   },
   infoNote: {
     flexDirection: "row",
@@ -350,11 +356,23 @@ const styles = StyleSheet.create({
     marginTop: verticalScale(8),
     padding: scale(16),
     backgroundColor: "rgba(27,68,205,0.06)",
-    borderRadius: scale(12),
+    borderRadius: scale(14),
+    borderWidth: 1,
+    borderColor: "rgba(27,68,205,0.12)",
+    gap: scale(12),
+  },
+  infoIconCircle: {
+    width: scale(32),
+    height: scale(32),
+    borderRadius: scale(16),
+    backgroundColor: "rgba(27,68,205,0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: verticalScale(2),
   },
   infoNoteText: {
     flex: 1,
-    fontSize: scale(13),
+    fontSize: moderateScale(13),
     fontFamily: Fonts.primary,
     color: "rgba(10,14,26,0.6)",
     lineHeight: verticalScale(18),

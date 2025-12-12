@@ -50,6 +50,21 @@ interface MatchRequest {
   access_level: ProfileAccessLevel;
 }
 
+interface GroupInvite {
+  invite_id: string;
+  group_id: string;
+  group_name: string;
+  group_description: string | null;
+  group_cover_image_url: string | null;
+  group_member_count: number;
+  invited_by_id: string;
+  invited_by_name: string;
+  invited_by_photo_url: string | null;
+  role: 'member' | 'admin';
+  message: string | null;
+  created_at: string;
+}
+
 // ================== UTILITY FUNCTIONS ==================
 const capitalizeName = (name: string | null): string => {
   if (!name) return "";
@@ -208,11 +223,112 @@ const RequestRow: React.FC<{
   );
 };
 
+// ================== GROUP INVITE ROW ==================
+const GroupInviteRow: React.FC<{ 
+  invite: GroupInvite; 
+  onPress: () => void; 
+  onAccept: () => void; 
+  onDecline: () => void 
+}> = ({ invite, onPress, onAccept, onDecline }) => {
+  const scaleAnim = useRef(new RNAnimated.Value(1)).current;
+  
+  const handlePressIn = () => {
+    RNAnimated.timing(scaleAnim, {
+      toValue: 0.98,
+      duration: 100,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    RNAnimated.spring(scaleAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+      friction: 5,
+    }).start();
+  };
+
+  return (
+    <TouchableOpacity 
+      style={styles.requestRowWrapper} 
+      onPress={onPress} 
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      activeOpacity={1}
+    >
+      <RNAnimated.View 
+        style={[
+          styles.requestRow,
+          styles.groupInviteRow,
+          { transform: [{ scale: scaleAnim }] },
+        ]}
+      >
+        <View style={styles.requestAvatar}>
+          {invite.group_cover_image_url ? (
+            <Image source={{ uri: invite.group_cover_image_url }} style={styles.requestPhoto} />
+          ) : (
+            <View style={[styles.requestPhotoPlaceholder, styles.groupPhotoPlaceholder]}>
+              <Ionicons name="people" size={20} color={BLUE} />
+            </View>
+          )}
+          <View style={styles.groupBadge}>
+            <Ionicons name="people" size={10} color="#FFFFFF" />
+          </View>
+        </View>
+        <View style={styles.requestInfo}>
+          <View style={styles.nameRow}>
+            <Text style={styles.requestName} numberOfLines={1}>
+              {invite.group_name}
+            </Text>
+            <View style={styles.groupTagBadge}>
+              <Text style={styles.groupTagBadgeText}>Group</Text>
+            </View>
+          </View>
+          <Text style={styles.requestSubtext}>
+            {capitalizeName(invite.invited_by_name)} invited you as {invite.role}
+          </Text>
+          {invite.message && (
+            <Text style={styles.requestMessage} numberOfLines={1}>"{invite.message}"</Text>
+          )}
+          <View style={styles.groupMetaRow}>
+            <Ionicons name="people-outline" size={12} color="rgba(10,14,26,0.4)" />
+            <Text style={styles.groupMetaText}>{invite.group_member_count} members</Text>
+          </View>
+          <Text style={styles.requestTime}>{formatRelativeTime(invite.created_at)}</Text>
+        </View>
+        <View style={styles.requestActions}>
+          <TouchableOpacity 
+            style={styles.requestDeclineBtn} 
+            onPress={(e) => {
+              e.stopPropagation();
+              onDecline();
+            }}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="close" size={20} color="rgba(10,14,26,0.5)" />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.requestAcceptBtn} 
+            onPress={(e) => {
+              e.stopPropagation();
+              onAccept();
+            }}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="checkmark" size={22} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+      </RNAnimated.View>
+    </TouchableOpacity>
+  );
+};
+
 // ================== MAIN SCREEN ==================
 function RequestsScreen() {
   const [userId, setUserId] = useState<string | null>(null);
   const [incomingRequests, setIncomingRequests] = useState<MatchRequest[]>([]);
   const [outgoingRequests, setOutgoingRequests] = useState<MatchRequest[]>([]);
+  const [groupInvites, setGroupInvites] = useState<GroupInvite[]>([]);
   const [loadingRequests, setLoadingRequests] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [requestsTab, setRequestsTab] = useState<"incoming" | "outgoing">("incoming");
@@ -278,6 +394,59 @@ function RequestsScreen() {
     }
   }, []);
 
+  const loadGroupInvites = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.rpc('get_my_pending_group_invites');
+      
+      if (error) {
+        console.error("Error loading group invites:", error);
+        setGroupInvites([]);
+        return;
+      }
+      
+      // Sign photo URLs if needed
+      const invites = await Promise.all((data || []).map(async (invite: any) => {
+        let photoUrl = invite.invited_by_photo_url;
+        let coverUrl = invite.group_cover_image_url;
+        
+        // Sign URLs if they're storage paths
+        if (photoUrl && !photoUrl.startsWith('http')) {
+          const { data: signedData } = await supabase.storage
+            .from("user_photos")
+            .createSignedUrl(photoUrl, 3600);
+          photoUrl = signedData?.signedUrl || null;
+        }
+        
+        if (coverUrl && !coverUrl.startsWith('http')) {
+          const { data: signedData } = await supabase.storage
+            .from("group_photos")
+            .createSignedUrl(coverUrl, 3600);
+          coverUrl = signedData?.signedUrl || null;
+        }
+        
+        return {
+          invite_id: invite.invite_id,
+          group_id: invite.group_id,
+          group_name: invite.group_name,
+          group_description: invite.group_description,
+          group_cover_image_url: coverUrl,
+          group_member_count: invite.group_member_count,
+          invited_by_id: invite.invited_by_id,
+          invited_by_name: invite.invited_by_name,
+          invited_by_photo_url: photoUrl,
+          role: invite.role,
+          message: invite.message,
+          created_at: invite.created_at,
+        };
+      }));
+      
+      setGroupInvites(invites);
+    } catch (err) {
+      console.error("Error in loadGroupInvites:", err);
+      setGroupInvites([]);
+    }
+  }, []);
+
   const loadRequests = useCallback(async (uid: string) => {
     try {
       setLoadingRequests(true);
@@ -338,18 +507,24 @@ function RequestsScreen() {
       const init = async () => {
         const uid = await loadUserId();
         if (uid) {
-          await loadRequests(uid);
+          await Promise.all([
+            loadRequests(uid),
+            loadGroupInvites()
+          ]);
         }
       };
       init();
-    }, [loadUserId, loadRequests])
+    }, [loadUserId, loadRequests, loadGroupInvites])
   );
 
   // ================== HANDLERS ==================
   const handleRefresh = async () => {
     setRefreshing(true);
     if (userId) {
-      await loadRequests(userId);
+      await Promise.all([
+        loadRequests(userId),
+        loadGroupInvites()
+      ]);
     }
     setRefreshing(false);
   };
@@ -386,6 +561,45 @@ function RequestsScreen() {
     }
   };
 
+  const handleAcceptGroupInvite = async (invite: GroupInvite) => {
+    try {
+      const { data, error } = await supabase.rpc('accept_group_invite', {
+        p_invite_id: invite.invite_id
+      });
+      
+      if (error) {
+        console.error("Error accepting group invite:", error);
+        Alert.alert("Error", "Failed to accept group invite");
+        return;
+      }
+      
+      Alert.alert("Success", `You've joined ${invite.group_name}!`);
+      await loadGroupInvites();
+    } catch (error) {
+      console.error("Error accepting group invite:", error);
+      Alert.alert("Error", "Failed to accept group invite");
+    }
+  };
+
+  const handleDeclineGroupInvite = async (invite: GroupInvite) => {
+    try {
+      const { error } = await supabase.rpc('decline_group_invite', {
+        p_invite_id: invite.invite_id
+      });
+      
+      if (error) {
+        console.error("Error declining group invite:", error);
+        Alert.alert("Error", "Failed to decline group invite");
+        return;
+      }
+      
+      await loadGroupInvites();
+    } catch (error) {
+      console.error("Error declining group invite:", error);
+      Alert.alert("Error", "Failed to decline group invite");
+    }
+  };
+
   const handleViewProfile = (request: MatchRequest) => {
     // Only navigate to full profile for users with 'full' access
     if (request.access_level === 'full') {
@@ -405,8 +619,16 @@ function RequestsScreen() {
     }
   };
 
-  const pendingCount = incomingRequests.filter(r => r.status === "pending").length;
+  const handleViewGroupInvite = (invite: GroupInvite) => {
+    router.push({
+      pathname: "/(tabs_support)/detailed_group_request",
+      params: { inviteId: invite.invite_id }
+    });
+  };
+
+  const pendingCount = incomingRequests.filter(r => r.status === "pending").length + groupInvites.length;
   const currentRequests = requestsTab === "incoming" ? incomingRequests : outgoingRequests;
+  const hasIncomingContent = currentRequests.length > 0 || (requestsTab === "incoming" && groupInvites.length > 0);
 
   // ================== RENDER ==================
   return (
@@ -483,7 +705,7 @@ function RequestsScreen() {
             <ActivityIndicator size="large" color={BLUE} />
             <Text style={styles.loadingText}>Loading requests...</Text>
           </View>
-        ) : currentRequests.length === 0 ? (
+        ) : !hasIncomingContent ? (
           <View style={styles.emptyState}>
             <View style={styles.emptyIconContainer}>
               <Ionicons 
@@ -503,6 +725,26 @@ function RequestsScreen() {
           </View>
         ) : (
           <View style={styles.requestsList}>
+            {/* Group Invites Section - Only show in incoming tab */}
+            {requestsTab === "incoming" && groupInvites.length > 0 && (
+              <>
+                <Text style={styles.sectionTitle}>Group Invites</Text>
+                {groupInvites.map((invite) => (
+                  <GroupInviteRow
+                    key={invite.invite_id}
+                    invite={invite}
+                    onPress={() => handleViewGroupInvite(invite)}
+                    onAccept={() => handleAcceptGroupInvite(invite)}
+                    onDecline={() => handleDeclineGroupInvite(invite)}
+                  />
+                ))}
+                {currentRequests.length > 0 && (
+                  <Text style={[styles.sectionTitle, { marginTop: verticalScale(16) }]}>Connection Requests</Text>
+                )}
+              </>
+            )}
+            
+            {/* Connection Requests */}
             {currentRequests.map((r) => (
               <RequestRow 
                 key={r.id} 
@@ -680,6 +922,16 @@ const styles = StyleSheet.create({
     gap: verticalScale(12) 
   },
 
+  // Section Title
+  sectionTitle: {
+    fontFamily: Fonts.bold,
+    fontSize: scale(14),
+    color: "rgba(10,14,26,0.5)",
+    marginBottom: verticalScale(8),
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+
   // Request Row
   requestRowWrapper: {
     borderRadius: scale(20),
@@ -703,6 +955,10 @@ const styles = StyleSheet.create({
     borderColor: "rgba(156,163,175,0.2)",
     backgroundColor: "#FAFAFA",
   },
+  groupInviteRow: {
+    borderColor: "rgba(27,68,205,0.15)",
+    backgroundColor: "#FAFBFF",
+  },
   requestAvatar: { 
     width: scale(56), 
     height: scale(56), 
@@ -721,6 +977,9 @@ const styles = StyleSheet.create({
     alignItems: "center", 
     justifyContent: "center" 
   },
+  groupPhotoPlaceholder: {
+    backgroundColor: "rgba(27,68,205,0.1)",
+  },
   limitedBadge: {
     position: "absolute",
     bottom: 0,
@@ -729,6 +988,19 @@ const styles = StyleSheet.create({
     height: scale(18),
     borderRadius: scale(9),
     backgroundColor: "rgba(107,114,128,0.9)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+  },
+  groupBadge: {
+    position: "absolute",
+    bottom: 0,
+    right: 0,
+    width: scale(18),
+    height: scale(18),
+    borderRadius: scale(9),
+    backgroundColor: BLUE,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
@@ -761,6 +1033,17 @@ const styles = StyleSheet.create({
     fontSize: scale(10),
     color: "rgba(107,114,128,0.8)",
   },
+  groupTagBadge: {
+    backgroundColor: "rgba(27,68,205,0.1)",
+    paddingHorizontal: scale(6),
+    paddingVertical: verticalScale(2),
+    borderRadius: scale(4),
+  },
+  groupTagBadgeText: {
+    fontFamily: Fonts.primary,
+    fontSize: scale(10),
+    color: BLUE,
+  },
   requestSubtext: { 
     fontFamily: Fonts.primary, 
     fontSize: scale(13), 
@@ -779,6 +1062,17 @@ const styles = StyleSheet.create({
     color: "rgba(10,14,26,0.5)", 
     fontStyle: "italic",
     marginBottom: verticalScale(2)
+  },
+  groupMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: scale(4),
+    marginBottom: verticalScale(2),
+  },
+  groupMetaText: {
+    fontFamily: Fonts.primary,
+    fontSize: scale(11),
+    color: "rgba(10,14,26,0.4)",
   },
   requestTime: { 
     fontFamily: Fonts.primary, 

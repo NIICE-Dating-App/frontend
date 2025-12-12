@@ -3,6 +3,10 @@ import { Dimensions, Platform, StatusBar } from "react-native";
 
 const { width, height } = Dimensions.get("window");
 
+// Export screen dimensions for components that need them
+export const SCREEN_WIDTH = width;
+export const SCREEN_HEIGHT = height;
+
 // Reference design is 393x852 (iPhone 14 Pro)
 const guidelineBaseWidth = 393;
 const guidelineBaseHeight = 852;

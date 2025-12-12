@@ -1,3 +1,5 @@
+//frontend/app/%28tabs%29/_layout.tsx
+import { NotificationProvider } from "@/components/NotificationContext";
 import { supabase } from "@/lib/supabase";
 import { scale, verticalScale } from "@/utils/responsive";
 import { BottomTabBarProps } from "@react-navigation/bottom-tabs";
@@ -249,6 +251,7 @@ export default function TabsLayout() {
   const WITH_HEADER = new Set(["chat", "nicees", "event", "events"]);
 
   return (
+    <NotificationProvider>
     <View style={{ flex: 1, backgroundColor: BG }}>
       <Tabs
         initialRouteName="map"
@@ -274,6 +277,7 @@ export default function TabsLayout() {
         <Tabs.Screen name="niices" options={{ title: "Chat" }} />
       </Tabs>
     </View>
+    </NotificationProvider>
   );
 }
 

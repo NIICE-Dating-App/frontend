@@ -217,13 +217,16 @@ export default function HopeToFindSignup() {
           <Text style={styles.counterLabel}>selected</Text>
         </View>
 
-        {/* Dating Section */}
+        {/* Events & Activities Section */}
         <View style={styles.sectionContainer}>
           <View style={styles.sectionHeader}>
-            
-            <Text style={styles.sectionLabel}>Dating</Text>
+           
+            <Text style={styles.sectionLabel}>Events & Activities</Text>
           </View>
-          {datingOptions.map(renderOption)}
+          <Text style={styles.sectionDescription}>
+            Find people to create or join events with
+          </Text>
+          {eventOptions.map(renderOption)}
         </View>
 
         {/* Friendship Section */}
@@ -235,16 +238,13 @@ export default function HopeToFindSignup() {
           {friendshipOptions.map(renderOption)}
         </View>
 
-        {/* Events & Activities Section */}
+        {/* Dating Section */}
         <View style={styles.sectionContainer}>
           <View style={styles.sectionHeader}>
-           
-            <Text style={styles.sectionLabel}>Events & Activities</Text>
+            
+            <Text style={styles.sectionLabel}>Dating</Text>
           </View>
-          <Text style={styles.sectionDescription}>
-            Find people to create or join events with
-          </Text>
-          {eventOptions.map(renderOption)}
+          {datingOptions.map(renderOption)}
         </View>
 
         {/* Neutral Section */}

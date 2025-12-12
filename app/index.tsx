@@ -137,6 +137,9 @@ const CircleWithPin: React.FC<CircleWithPinProps> = ({
           top: y,
         },
       ]}
+      collapsable={false}
+      renderToHardwareTextureAndroid
+      shouldRasterizeIOS
     >
       <View
         style={[
@@ -154,6 +157,9 @@ const CircleWithPin: React.FC<CircleWithPinProps> = ({
           pulseStyle,
           { top: -pinSize * 0.6 },
         ]}
+        collapsable={false}
+        renderToHardwareTextureAndroid
+        shouldRasterizeIOS
       >
         <MapPinSvg size={pinSize} />
       </Animated.View>

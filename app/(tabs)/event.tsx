@@ -1,4 +1,4 @@
-//EVENT.TSX
+//EVENT.TSX - MODIFIED WITH PAST EVENTS BUTTON
 import { Fonts } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
 import { scale, verticalScale } from "@/utils/responsive";
@@ -6,7 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Dimensions,
@@ -67,6 +67,7 @@ interface Event {
   community_name?: string;
   host_name?: string;
   host_photo_url?: string;
+  isHosting?: boolean; // NEW: to distinguish hosting vs joining
 }
 
 // Utils
@@ -125,6 +126,26 @@ const EventCardHorizontal: React.FC<{
         style={StyleSheet.absoluteFillObject}
       />
       
+      {/* Hosting/Joining Badge - NEW */}
+      {event.isHosting !== undefined && (
+        <View style={[
+          styles.statusBadge,
+          event.isHosting ? styles.hostingBadge : styles.joiningBadge
+        ]}>
+          <Ionicons
+            name={event.isHosting ? "star" : "checkmark-circle"}
+            size={10}
+            color={event.isHosting ? "#F59E0B" : "#10B981"}
+          />
+          <Text style={[
+            styles.statusBadgeText,
+            event.isHosting ? styles.hostingBadgeText : styles.joiningBadgeText
+          ]}>
+            {event.isHosting ? "Hosting" : "Joined"}
+          </Text>
+        </View>
+      )}
+      
       {/* Category Badge */}
       <View style={styles.eventCategoryBadge}>
         <Ionicons
@@ -169,8 +190,11 @@ const EventCardHorizontal: React.FC<{
         </View>
       </View>
 
-      {/* Accent Line */}
-      <View style={styles.eventCardAccent} />
+      {/* Accent Line - Color changes based on hosting status */}
+      <View style={[
+        styles.eventCardAccent,
+        event.isHosting && styles.eventCardAccentHosting
+      ]} />
     </TouchableOpacity>
   );
 };
@@ -221,11 +245,27 @@ const EmptyState: React.FC<{
   </View>
 );
 
+// Haversine distance formula
+const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+  const R = 6371; // Earth's radius in km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
+
 // Main Component
 export default function EventScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState("all");
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   // Event data states
   const [upcomingEvents, setUpcomingEvents] = useState<Event[]>([]);
@@ -259,12 +299,24 @@ export default function EventScreen() {
     }
   };
 
-  // Fetch upcoming events (user has joined)
+  // MODIFIED: Fetch upcoming events (both hosting AND joining)
   const fetchUpcomingEvents = async (userId: string) => {
     try {
       const now = new Date().toISOString();
 
-      const { data, error } = await supabase
+      // Fetch events user is HOSTING
+      const { data: hostedEvents, error: hostError } = await supabase
+        .from("events")
+        .select("*")
+        .eq("host_id", userId)
+        .eq("status", "active")
+        .gte("time_start", now)
+        .order("time_start", { ascending: true });
+
+      if (hostError) throw hostError;
+
+      // Fetch events user has JOINED (approved applications)
+      const { data: joinedData, error: joinError } = await supabase
         .from("event_applications")
         .select(`
           event_id,
@@ -285,16 +337,26 @@ export default function EventScreen() {
         .eq("applicant_id", userId)
         .eq("status", "approved");
 
-      if (error) throw error;
+      if (joinError) throw joinError;
 
-      const events = (data || [])
+      const joinedEvents = (joinedData || [])
         .map((item: any) => item.events)
-        .filter((event: any) => event && event.status === "active" && new Date(event.time_start) > new Date(now))
-        .sort((a: any, b: any) => new Date(a.time_start).getTime() - new Date(b.time_start).getTime());
+        .filter((event: any) => 
+          event && 
+          event.status === "active" && 
+          new Date(event.time_start) > new Date(now) &&
+          event.host_id !== userId // Exclude events user is hosting (avoid duplicates)
+        );
+
+      // Combine and mark events
+      const allEvents = [
+        ...(hostedEvents || []).map((e: any) => ({ ...e, isHosting: true })),
+        ...joinedEvents.map((e: any) => ({ ...e, isHosting: false })),
+      ];
 
       // Fetch attendee counts for each event
       const eventsWithCounts = await Promise.all(
-        events.map(async (event: any) => {
+        allEvents.map(async (event: any) => {
           const { count } = await supabase
             .from("event_applications")
             .select("*", { count: "exact", head: true })
@@ -306,6 +368,11 @@ export default function EventScreen() {
             current_attendees: count || 0,
           };
         })
+      );
+
+      // Sort by time_start
+      eventsWithCounts.sort((a, b) => 
+        new Date(a.time_start).getTime() - new Date(b.time_start).getTime()
       );
 
       setUpcomingEvents(eventsWithCounts);
@@ -466,30 +533,23 @@ export default function EventScreen() {
     }
   };
 
-  // Calculate distance between two points (Haversine formula)
-  const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
-    const R = 6371; // Earth's radius in km
-    const dLat = ((lat2 - lat1) * Math.PI) / 180;
-    const dLng = ((lng2 - lng1) * Math.PI) / 180;
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos((lat1 * Math.PI) / 180) *
-        Math.cos((lat2 * Math.PI) / 180) *
-        Math.sin(dLng / 2) *
-        Math.sin(dLng / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-  };
-
   // Load all data
-  const loadData = useCallback(async () => {
+  const loadAllData = async () => {
     try {
-      const { data: auth } = await supabase.auth.getUser();
-      const userId = auth?.user?.id;
-      if (!userId) return;
+      const { data: authData } = await supabase.auth.getUser();
+      const userId = authData?.user?.id;
 
+      if (!userId) {
+        setLoading(false);
+        return;
+      }
+
+      setCurrentUserId(userId);
+
+      // Fetch user location first
       const location = await fetchUserLocation(userId);
-      
+
+      // Fetch all event data in parallel
       await Promise.all([
         fetchUpcomingEvents(userId),
         fetchNearbyEvents(userId, location),
@@ -500,27 +560,22 @@ export default function EventScreen() {
       console.error("Error loading event data:", error);
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
-  }, []);
+  };
 
   // Initial load
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
-
-  // Reload on focus
   useFocusEffect(
     useCallback(() => {
-      loadData();
-    }, [loadData])
+      loadAllData();
+    }, [])
   );
 
-  // Refresh handler
-  const onRefresh = useCallback(() => {
+  // Pull to refresh
+  const onRefresh = async () => {
     setRefreshing(true);
-    loadData();
-  }, [loadData]);
+    await loadAllData();
+    setRefreshing(false);
+  };
 
   // Filter nearby events by category
   const filteredNearbyEvents = useMemo(() => {
@@ -528,21 +583,20 @@ export default function EventScreen() {
     return nearbyEvents.filter((event) => event.category === selectedCategory);
   }, [nearbyEvents, selectedCategory]);
 
-  // Navigate to event details
+  // Navigation functions
   const navigateToEvent = (eventId: string) => {
     router.push({
       pathname: "/(events)/event_details",
-      params: { id: eventId },
+      params: { eventId },
     });
   };
 
-  // Navigate to see all screens
   const navigateToUpcomingAll = () => {
-    router.push("/(events)/upcoming_events");
+    router.push("/(events)/see_all");
   };
 
   const navigateToNearbyAll = () => {
-    router.push("/(events)/nearby_events");
+    router.push("/(events)/see_all_nearby");
   };
 
   const navigateToGroupEventsAll = () => {
@@ -555,6 +609,11 @@ export default function EventScreen() {
 
   const navigateToCreateEvent = () => {
     router.push("/(events)/add_event");
+  };
+
+  // NEW: Navigate to past events
+  const navigateToPastEvents = () => {
+    router.push("/(events)/past_events");
   };
 
   if (loading) {
@@ -573,17 +632,29 @@ export default function EventScreen() {
     <SafeAreaView style={styles.container} edges={["top"]}>
       <StatusBar barStyle="dark-content" />
 
-      {/* Top Bar */}
+      {/* Top Bar - MODIFIED with past events button */}
       <View style={styles.topBar}>
         <Text style={styles.pageTitle}>Events</Text>
-        <TouchableOpacity
-          style={styles.createEventButton}
-          activeOpacity={0.8}
-          onPress={navigateToCreateEvent}
-        >
-          <Ionicons name="add" size={20} color="#FFFFFF" />
-          <Text style={styles.createEventText}>Create</Text>
-        </TouchableOpacity>
+        <View style={styles.headerButtonsRow}>
+          {/* Past Events Button - NEW */}
+          <TouchableOpacity
+            style={styles.pastEventsButton}
+            activeOpacity={0.8}
+            onPress={navigateToPastEvents}
+          >
+            <Ionicons name="time-outline" size={20} color={BLUE} />
+          </TouchableOpacity>
+          
+          {/* Create Event Button */}
+          <TouchableOpacity
+            style={styles.createEventButton}
+            activeOpacity={0.8}
+            onPress={navigateToCreateEvent}
+          >
+            <Ionicons name="add" size={20} color="#FFFFFF" />
+            <Text style={styles.createEventText}>Create</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
@@ -599,7 +670,7 @@ export default function EventScreen() {
           />
         }
       >
-        {/* Upcoming Events Section */}
+        {/* Upcoming Events Section - NOW SHOWS HOSTING + JOINING */}
         <View style={styles.section}>
           <SectionHeader
             title="Upcoming Events"
@@ -627,7 +698,7 @@ export default function EventScreen() {
             <EmptyState
               icon="calendar-outline"
               title="No upcoming events"
-              subtitle="Join events to see them here"
+              subtitle="Create or join events to see them here"
               action={{ label: "Explore Events", onPress: navigateToNearbyAll }}
             />
           )}
@@ -788,14 +859,13 @@ export default function EventScreen() {
           )}
         </View>
 
-        {/* Bottom Spacing */}
-        <View style={{ height: verticalScale(100) }} />
+        {/* Bottom Padding */}
+        <View style={{ height: verticalScale(20) }} />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-// Styles
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -830,6 +900,25 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.bold,
     color: INK,
     letterSpacing: 0.3,
+  },
+
+  // NEW: Header buttons row
+  headerButtonsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: scale(10),
+  },
+
+  // NEW: Past events button
+  pastEventsButton: {
+    width: scale(40),
+    height: scale(40),
+    borderRadius: scale(20),
+    backgroundColor: "rgba(27,68,205,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(27,68,205,0.15)",
   },
 
   createEventButton: {
@@ -917,6 +1006,41 @@ const styles = StyleSheet.create({
     minHeight: verticalScale(140),
   },
 
+  // NEW: Status badge styles for hosting/joining
+  statusBadge: {
+    position: "absolute",
+    top: scale(10),
+    right: scale(10),
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: verticalScale(3),
+    paddingHorizontal: scale(8),
+    borderRadius: scale(10),
+    gap: scale(4),
+    zIndex: 1,
+  },
+  
+  hostingBadge: {
+    backgroundColor: "rgba(245,158,11,0.12)",
+  },
+  
+  joiningBadge: {
+    backgroundColor: "rgba(16,185,129,0.12)",
+  },
+  
+  statusBadgeText: {
+    fontSize: scale(10),
+    fontFamily: Fonts.bold,
+  },
+  
+  hostingBadgeText: {
+    color: "#F59E0B",
+  },
+  
+  joiningBadgeText: {
+    color: "#10B981",
+  },
+
   eventCategoryBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -974,6 +1098,11 @@ const styles = StyleSheet.create({
     backgroundColor: BLUE,
     borderTopLeftRadius: scale(16),
     borderBottomLeftRadius: scale(16),
+  },
+
+  // NEW: Orange accent for hosting events
+  eventCardAccentHosting: {
+    backgroundColor: "#F59E0B",
   },
 
   // Category Section

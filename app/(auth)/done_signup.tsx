@@ -1,8 +1,9 @@
-// app/(auth)/done_signup.tsx
-import { scale, verticalScale } from "@/utils/responsive";
+import { moderateScale, scale, verticalScale } from "@/utils/responsive";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Dimensions,
   StatusBar,
@@ -24,25 +25,25 @@ const Colors = {
 const { width: W, height: H } = Dimensions.get("window");
 
 export default function DoneSignup() {
+  const [loading, setLoading] = useState(false);
+
   const onCreateProfile = async () => {
     try {
-      // get current Supabase session
+      setLoading(true);
       const { data: { session }, error } = await supabase.auth.getSession();
       if (error || !session?.user) {
         console.error("Session error:", error);
         Alert.alert("Error", "Session not found. Please log in again.");
+        setLoading(false);
         return;
       }
 
       console.log("Creating profile for user:", session.user.id);
 
-      // Create an empty profile row for onboarding with defaults
       const { data, error: upsertError } = await supabase.from("profiles").upsert({
         id: session.user.id,
         onboarding_step: 0,
         onboarding_completed: false,
-
-        // Set defaults for non-nullable fields only
         gender: "man",
         interested_in: ["woman"],
         prompt: "To be filled soon",
@@ -51,16 +52,16 @@ export default function DoneSignup() {
       if (upsertError) {
         console.error("Profile upsert error:", upsertError);
         Alert.alert("Error", upsertError.message);
+        setLoading(false);
         return;
       }
 
       console.log("Profile created successfully:", data);
-
-      // move to the first onboarding screen
       router.push("/(onboarding)/name_age_signup");
     } catch (err) {
       console.error("Profile creation error:", err);
       Alert.alert("Unexpected error", "Please try again.");
+      setLoading(false);
     }
   };
 
@@ -68,44 +69,58 @@ export default function DoneSignup() {
     <SafeAreaView style={styles.container} edges={["top"]}>
       <StatusBar barStyle="dark-content" />
       
-      {/* Back Button */}
-      <TouchableOpacity
-        style={styles.backButton}
-        onPress={() => router.back()}
-        activeOpacity={0.7}
-      >
-        <View style={styles.backButtonCircle}>
-          <Ionicons name="arrow-back" size={24} color={Colors.INK} />
-        </View>
-      </TouchableOpacity>
-
-      {/* Header */}
-      <View style={styles.headerContainer}>
-        <Text style={styles.pageTitle}>You are set!</Text>
-        <Text style={styles.accentTitle}>That's Niice</Text>
-      </View>
-
-      {/* Button */}
-      <View style={styles.buttonContainer}>
+      <View style={styles.content}>
         <TouchableOpacity
-          activeOpacity={0.8}
-          style={styles.primaryButton}
-          onPress={onCreateProfile}
+          style={styles.backButton}
+          onPress={() => router.back()}
+          activeOpacity={0.7}
+          disabled={loading}
         >
-          <Text style={styles.primaryButtonText}>Create Your Profile</Text>
+          <Ionicons name="arrow-back" size={24} color={Colors.INK} />
         </TouchableOpacity>
 
-        {/* Info Note */}
-        <View style={styles.infoNote}>
-          <Ionicons
-            name="information-circle-outline"
-            size={18}
-            color="rgba(10,14,26,0.5)"
-            style={{ marginRight: scale(8) }}
-          />
-          <Text style={styles.infoNoteText}>
-            Let's create your profile and start meeting Niice people
+        <View style={styles.centerContent}>
+          <View style={styles.iconBadge}>
+            <View style={styles.iconCircle}>
+              <Ionicons name="checkmark-circle" size={48} color={Colors.BLUE} />
+            </View>
+          </View>
+
+          <Text style={styles.pageTitle}>You're all set!</Text>
+          <Text style={styles.accentTitle}>That's Niice</Text>
+          <Text style={styles.pageSubtitle}>
+            Let's create your profile and start connecting with people nearby
           </Text>
+        </View>
+
+        <View style={styles.bottomSection}>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            style={[styles.primaryButton, loading && styles.primaryButtonDisabled]}
+            onPress={onCreateProfile}
+            disabled={loading}
+          >
+            {loading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator color="#FFFFFF" size="small" />
+                <Text style={styles.primaryButtonText}>Creating profile...</Text>
+              </View>
+            ) : (
+              <>
+                <Ionicons name="person-add" size={20} color="#FFFFFF" style={{ marginRight: scale(8) }} />
+                <Text style={styles.primaryButtonText}>Create Your Profile</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          <View style={styles.infoNote}>
+            <View style={styles.infoIconCircle}>
+              <Ionicons name="sparkles" size={16} color={Colors.BLUE} />
+            </View>
+            <Text style={styles.infoNoteText}>
+              This will only take a few minutes to complete
+            </Text>
+          </View>
         </View>
       </View>
     </SafeAreaView>
@@ -117,52 +132,77 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.BG,
   },
-  backButton: {
-    marginTop: verticalScale(16),
-    marginLeft: scale(20),
+  content: {
+    flex: 1,
+    paddingHorizontal: scale(20),
+    paddingTop: verticalScale(20),
   },
-  backButtonCircle: {
+  backButton: {
     width: scale(40),
     height: scale(40),
     borderRadius: scale(20),
     backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
+    marginBottom: verticalScale(32),
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  headerContainer: {
-    paddingHorizontal: scale(20),
-    marginTop: verticalScale(H * 0.12),
+  centerContent: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingBottom: verticalScale(60),
+  },
+  iconBadge: {
+    marginBottom: verticalScale(32),
+  },
+  iconCircle: {
+    width: scale(96),
+    height: scale(96),
+    borderRadius: scale(48),
+    backgroundColor: "rgba(27,68,205,0.08)",
+    borderWidth: 2,
+    borderColor: "rgba(27,68,205,0.15)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   pageTitle: {
-    fontSize: scale(32),
+    fontSize: moderateScale(32),
     fontFamily: Fonts.bold,
     color: Colors.INK,
-    lineHeight: verticalScale(42),
+    textAlign: "center",
     marginBottom: verticalScale(8),
-    paddingTop: verticalScale(4),
+    letterSpacing: 0.3,
   },
   accentTitle: {
-    fontSize: scale(48),
+    fontSize: moderateScale(48),
     fontFamily: Fonts.bold,
     color: Colors.BLUE,
-    lineHeight: verticalScale(58),
-    paddingTop: verticalScale(16),
+    textAlign: "center",
+    marginBottom: verticalScale(16),
+    letterSpacing: 0.5,
   },
-  buttonContainer: {
-    marginTop: "auto",
+  pageSubtitle: {
+    fontSize: moderateScale(15),
+    fontFamily: Fonts.primary,
+    color: "rgba(10,14,26,0.6)",
+    textAlign: "center",
+    lineHeight: verticalScale(22),
     paddingHorizontal: scale(20),
-    paddingBottom: verticalScale(30),
-    gap: verticalScale(16),
+  },
+  bottomSection: {
+    paddingBottom: verticalScale(40),
+    gap: verticalScale(12),
   },
   primaryButton: {
     backgroundColor: Colors.BLUE,
     borderRadius: scale(50),
     paddingVertical: verticalScale(16),
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     shadowColor: Colors.BLUE,
@@ -171,24 +211,46 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 4,
   },
+  primaryButtonDisabled: {
+    backgroundColor: "rgba(27,68,205,0.3)",
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  loadingContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: scale(10),
+  },
   primaryButtonText: {
-    fontSize: scale(16),
+    fontSize: moderateScale(16),
     fontFamily: Fonts.bold,
     color: "#FFFFFF",
+    letterSpacing: 0.3,
   },
   infoNote: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     padding: scale(16),
     backgroundColor: "rgba(27,68,205,0.06)",
-    borderRadius: scale(12),
+    borderRadius: scale(14),
+    borderWidth: 1,
+    borderColor: "rgba(27,68,205,0.12)",
+    gap: scale(12),
+  },
+  infoIconCircle: {
+    width: scale(32),
+    height: scale(32),
+    borderRadius: scale(16),
+    backgroundColor: "rgba(27,68,205,0.12)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   infoNoteText: {
     flex: 1,
-    fontSize: scale(13),
+    fontSize: moderateScale(13),
     fontFamily: Fonts.primary,
     color: "rgba(10,14,26,0.6)",
     lineHeight: verticalScale(18),
-    paddingTop: verticalScale(1.3),
+    paddingTop: verticalScale(0.5),
   },
 });
