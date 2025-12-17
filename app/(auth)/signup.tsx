@@ -1,7 +1,8 @@
+// signup.tsx - FIXED FOR RESPONSIVENESS
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import React from 'react';
+import { scale, verticalScale } from '@/utils/responsive';
 import { Image, Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 export default function SignupScreen() {
@@ -122,30 +123,30 @@ export default function SignupScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    maxWidth: 480,
+    maxWidth: scale(480),
     alignSelf: 'center',
     width: '100%',
   },
   decorativeSection: {
     flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 60,
+    paddingHorizontal: scale(20),
+    paddingTop: verticalScale(60),
   },
   decorativeRow1: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    marginBottom: 24,
+    marginBottom: verticalScale(24),
   },
   decorativeRow2: {
     flexDirection: 'row',
     flex: 1,
-    gap: 2,
+    gap: scale(2),
   },
   decorativeColumn: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 11,
+    gap: scale(11),
   },
   decorativeSubColumn: {
     flexDirection: 'column',
@@ -159,7 +160,7 @@ const styles = StyleSheet.create({
   decorativeTopRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 25,
+    gap: scale(25),
   },
   decorativeInnerColumn: {
     flexDirection: 'column',
@@ -167,8 +168,8 @@ const styles = StyleSheet.create({
   },
   decorativeBottomSection: {
     flexDirection: 'row',
-    marginTop: 11,
-    gap: 7,
+    marginTop: verticalScale(11),
+    gap: scale(7),
   },
   decorativeBottomColumn: {
     flexDirection: 'column',
@@ -176,9 +177,9 @@ const styles = StyleSheet.create({
   decorativeBottomRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 20,
+    gap: scale(20),
     justifyContent: 'space-between',
-    width: 205,
+    width: scale(205),  // FIXED: Now uses scale()
   },
   decorativeRightColumn: {
     flexDirection: 'column',
@@ -186,55 +187,57 @@ const styles = StyleSheet.create({
   decorativeRightRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 20,
+    gap: scale(20),
     justifyContent: 'space-between',
   },
   decorativeRightBottom: {
     flexDirection: 'column',
-    marginTop: 25,
-    paddingLeft: 29,
+    marginTop: verticalScale(25),
+    paddingLeft: scale(29),
   },
   circle: {
-    borderRadius: 50,
+    borderRadius: scale(50),
     backgroundColor: '#E5E5E5',
   },
+  // FIXED: All circle sizes now use scale()
   smallCircle: {
-    width: 35,
-    height: 71,
+    width: scale(35),
+    height: verticalScale(71),
   },
   mediumCircle: {
-    width: 71,
-    height: 26,
+    width: scale(71),
+    height: verticalScale(26),
   },
   largeCircle: {
-    width: 71,
-    height: 71,
+    width: scale(71),
+    height: scale(71),  // Square, so using scale for both
   },
   mediumTallCircle: {
-    width: 54,
-    height: 71,
+    width: scale(54),
+    height: verticalScale(71),
   },
   smallTallCircle: {
-    width: 39,
-    height: 71,
+    width: scale(39),
+    height: verticalScale(71),
   },
+  // FIXED: All offset values now use verticalScale()
   offsetCircle: {
-    marginTop: 38,
+    marginTop: verticalScale(38),
   },
   offsetSmall: {
-    marginTop: 46,
+    marginTop: verticalScale(46),
   },
   offsetLarge: {
-    marginTop: 99,
+    marginTop: verticalScale(99),
   },
   offsetTop: {
-    marginTop: 21,
+    marginTop: verticalScale(21),
   },
   offsetBottom: {
-    marginTop: 58,
+    marginTop: verticalScale(58),
   },
   offsetRight: {
-    marginTop: 40,
+    marginTop: verticalScale(40),
   },
   centeredSmall: {
     alignSelf: 'center',
@@ -243,8 +246,8 @@ const styles = StyleSheet.create({
   },
   centeredBottom: {
     alignSelf: 'center',
-    marginTop: 35,
-    marginLeft: 10,
+    marginTop: verticalScale(35),
+    marginLeft: scale(10),
   },
   centeredRight: {
     alignSelf: 'center',
@@ -253,21 +256,23 @@ const styles = StyleSheet.create({
     width: '100%',
     aspectRatio: 2.65,
   },
+  // FIXED: Bottom section with responsive padding
   bottomSection: {
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    paddingHorizontal: 24,
-    paddingVertical: 28,
+    borderTopLeftRadius: scale(30),
+    borderTopRightRadius: scale(30),
+    paddingHorizontal: scale(24),
+    paddingVertical: verticalScale(28),
   },
+  // FIXED: Social buttons with responsive padding
   socialButton: {
-    borderRadius: 30,
+    borderRadius: scale(30),
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 13,
-    paddingHorizontal: 48,
-    gap: 7,
-    marginBottom: 12,
+    paddingVertical: verticalScale(13),
+    paddingHorizontal: scale(48),
+    gap: scale(7),
+    marginBottom: verticalScale(12),
   },
   appleButton: {
     backgroundColor: '#FFFFFF',
@@ -277,13 +282,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(238, 247, 255, 0.3)',
   },
+  // FIXED: Action buttons with responsive padding
   actionButton: {
-    borderRadius: 30,
-    paddingVertical: 13,
-    paddingHorizontal: 70,
+    borderRadius: scale(30),
+    paddingVertical: verticalScale(13),
+    paddingHorizontal: scale(70),
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+    marginBottom: verticalScale(12),
   },
   signUpButton: {
     backgroundColor: '#FFFFFF',
@@ -293,12 +299,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(238, 247, 255, 0.3)',
   },
+  // FIXED: Icon size now uses scale()
   socialIcon: {
-    width: 22,
-    height: 22,
+    width: scale(22),
+    height: scale(22),
   },
+  // FIXED: Font size now uses scale()
   buttonText: {
-    fontSize: 18,
+    fontSize: scale(18),
     fontWeight: '700',
     letterSpacing: -0.36,
     textAlign: 'center',
